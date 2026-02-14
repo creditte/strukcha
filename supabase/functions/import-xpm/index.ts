@@ -65,9 +65,10 @@ function parseCSV(text: string): RawRow[] {
     client: header.findIndex((h) => h === "client" || h.includes("client-client") || h === "client-client"),
     uuid: header.findIndex((h) => h.includes("uuid")),
     bs: header.findIndex((h) => h.includes("business") || h.includes("structure")),
-    rel: header.findIndex((h) => h.includes("relationship") && h.includes("type")),
+    rel: header.findIndex((h) => h.includes("relationship")),
     related: header.findIndex((h) => h.includes("related")),
   };
+  console.log("CSV header indices:", JSON.stringify(idx), "from headers:", JSON.stringify(header));
 
   const rows: RawRow[] = [];
   for (let i = 1; i < lines.length; i++) {
@@ -336,7 +337,14 @@ Deno.serve(async (req) => {
       // Skip rows with no relationship data
       if (!row.relationshipType || !row.client || !row.relatedClient) continue;
 
-      const rule = RELATIONSHIP_MAP[row.relationshipType.toLowerCase()];
+      // Normalize relationshipType: strip quotes, trim, lowercase
+      const normalizedRelType = row.relationshipType
+        .replace(/^"+|"+$/g, '')
+        .replace(/""+/g, '"')
+        .trim()
+        .toLowerCase();
+      console.log(`Row ${row.rowNum}: relType="${row.relationshipType}" normalized="${normalizedRelType}" client="${row.client}" related="${row.relatedClient}"`);
+      const rule = RELATIONSHIP_MAP[normalizedRelType];
       if (!rule) {
         warnings.push(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
         relationshipsSkipped++;
