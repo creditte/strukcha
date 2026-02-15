@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -11,6 +11,8 @@ import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
 import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPanel";
 import RelationshipLegend from "@/components/structure/RelationshipLegend";
 import ExportMenu from "@/components/structure/ExportMenu";
+
+export type ViewMode = "ownership" | "control" | "full";
 
 export default function StructureView() {
   const { id } = useParams();
@@ -27,12 +29,13 @@ export default function StructureView() {
   const [autoLayoutTrigger, setAutoLayoutTrigger] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("balanced");
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<ViewMode>("ownership");
 
   const graphRef = useRef<HTMLDivElement>(null);
 
   const { visibleEntities, visibleRelationships } = useFilteredGraph(
     entities, relationships,
-    { search, showFamily, filterRelType: filterRelType === "all" ? "" : filterRelType, depth, selectedEntityId }
+    { search, showFamily, filterRelType: filterRelType === "all" ? "" : filterRelType, depth, selectedEntityId, viewMode }
   );
 
   const selectedEntity = selectedEntityId ? entities.find((e) => e.id === selectedEntityId) ?? null : null;
@@ -74,6 +77,19 @@ export default function StructureView() {
           {entities.length} entities · {relationships.length} relationships
         </span>
         <div className="ml-auto flex items-center gap-1">
+          {/* View mode selector */}
+          <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+            <SelectTrigger className="h-9 w-[130px] text-xs">
+              <Eye className="h-3.5 w-3.5 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ownership">Ownership</SelectItem>
+              <SelectItem value="control">Control</SelectItem>
+              <SelectItem value="full">Full</SelectItem>
+            </SelectContent>
+          </Select>
+
           {/* Layout mode selector */}
           <Select value={layoutMode} onValueChange={(v) => { setLayoutMode(v as LayoutMode); setAutoLayoutTrigger((c) => c + 1); }}>
             <SelectTrigger className="h-9 w-[130px] text-xs">
@@ -136,6 +152,7 @@ export default function StructureView() {
             layoutMode={layoutMode}
             pinnedNodeIds={pinnedNodeIds}
             onTogglePin={handleTogglePin}
+            viewMode={viewMode}
           />
         )}
 
