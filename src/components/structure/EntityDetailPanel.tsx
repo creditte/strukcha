@@ -201,6 +201,43 @@ export default function EntityDetailPanel({
           </>
         )}
 
+        {/* Control & Ownership Summary */}
+        {!editing && (() => {
+          const groups: Record<string, { name: string; id: string }[]> = {
+            director: [], trustee: [], appointer: [], settlor: [], shareholder: [], beneficiary: [],
+          };
+          for (const r of related) {
+            if (groups[r.relationship_type]) {
+              groups[r.relationship_type].push({ name: r.otherName, id: r.otherId });
+            }
+          }
+          const hasAny = Object.values(groups).some((g) => g.length > 0);
+          if (!hasAny) return null;
+          return (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Control & Ownership Summary</p>
+              {Object.entries(groups).map(([type, items]) =>
+                items.length > 0 ? (
+                  <div key={type}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                      {type}s
+                    </p>
+                    {items.map((item) => (
+                      <button
+                        key={item.id}
+                        className="block w-full text-left text-xs truncate rounded px-2 py-0.5 hover:bg-accent transition-colors"
+                        onClick={() => onSelectEntity(item.id)}
+                      >
+                        {item.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : null
+              )}
+            </div>
+          );
+        })()}
+
         {/* Relationships */}
         <div>
           <div className="flex items-center justify-between mb-2">

@@ -93,6 +93,9 @@ export function useStructureData(structureId: string | undefined) {
   return { entities, relationships, structureName, loading, reload };
 }
 
+const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner"]);
+const CONTROL_VIEW_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
+
 export function useFilteredGraph(
   entities: EntityNode[],
   relationships: RelationshipEdge[],
@@ -102,13 +105,16 @@ export function useFilteredGraph(
     filterRelType: string;
     depth: number;
     selectedEntityId: string | null;
+    viewMode: string;
   }
 ) {
   return useMemo(() => {
-    const { search, showFamily, filterRelType, depth, selectedEntityId } = options;
+    const { search, showFamily, filterRelType, depth, selectedEntityId, viewMode } = options;
 
-    // Filter relationships by type
+    // Filter relationships by view mode first
     let filteredRels = relationships.filter((r) => {
+      if (viewMode === "ownership" && !OWNERSHIP_VIEW_TYPES.has(r.relationship_type)) return false;
+      if (viewMode === "control" && !CONTROL_VIEW_TYPES.has(r.relationship_type)) return false;
       if (!showFamily && FAMILY_TYPES.has(r.relationship_type)) return false;
       if (filterRelType && r.relationship_type !== filterRelType) return false;
       return true;
@@ -134,7 +140,6 @@ export function useFilteredGraph(
         }
         frontier = nextFrontier;
       }
-      // Add last frontier
       for (const eid of frontier) visibleEntityIds.add(eid);
     } else {
       visibleEntityIds = new Set(entities.map((e) => e.id));
@@ -147,7 +152,6 @@ export function useFilteredGraph(
       const matchIds = new Set(
         visibleEntities.filter((e) => e.name.toLowerCase().includes(q)).map((e) => e.id)
       );
-      // Show matched + their direct connections
       const connectedIds = new Set(matchIds);
       for (const rel of filteredRels) {
         if (matchIds.has(rel.from_entity_id)) connectedIds.add(rel.to_entity_id);
@@ -162,5 +166,5 @@ export function useFilteredGraph(
     );
 
     return { visibleEntities, visibleRelationships: filteredRels };
-  }, [entities, relationships, options.search, options.showFamily, options.filterRelType, options.depth, options.selectedEntityId]);
+  }, [entities, relationships, options.search, options.showFamily, options.filterRelType, options.depth, options.selectedEntityId, options.viewMode]);
 }

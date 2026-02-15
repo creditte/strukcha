@@ -83,25 +83,36 @@ function dagreLayout(
   });
 }
 
-function buildEdges(relationships: RelationshipEdge[]): Edge[] {
-  return relationships.map((r) => ({
-    id: r.id,
-    source: r.from_entity_id,
-    target: r.to_entity_id,
-    label: r.relationship_type,
-    type: "default",
-    animated: false,
-    style: { stroke: EDGE_COLORS[r.relationship_type] ?? "#94a3b8", strokeWidth: 2, cursor: "pointer" },
-    labelStyle: { fontSize: 10, fill: "#64748b" },
-    labelBgStyle: { fill: "hsl(var(--card))", fillOpacity: 0.9 },
-    labelBgPadding: [4, 2] as [number, number],
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      width: 14,
-      height: 14,
-      color: EDGE_COLORS[r.relationship_type] ?? "#94a3b8",
-    },
-  }));
+const CONTROL_EDGE_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
+
+function buildEdges(relationships: RelationshipEdge[], viewMode: string = "full"): Edge[] {
+  return relationships.map((r) => {
+    const isControl = CONTROL_EDGE_TYPES.has(r.relationship_type);
+    const deEmphasize = viewMode !== "control" && isControl;
+    return {
+      id: r.id,
+      source: r.from_entity_id,
+      target: r.to_entity_id,
+      label: r.relationship_type,
+      type: "default",
+      animated: false,
+      style: {
+        stroke: EDGE_COLORS[r.relationship_type] ?? "#94a3b8",
+        strokeWidth: deEmphasize ? 1 : 2,
+        opacity: deEmphasize ? 0.4 : 1,
+        cursor: "pointer",
+      },
+      labelStyle: { fontSize: 10, fill: "#64748b", opacity: deEmphasize ? 0.5 : 1 },
+      labelBgStyle: { fill: "hsl(var(--card))", fillOpacity: 0.9 },
+      labelBgPadding: [4, 2] as [number, number],
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 14,
+        height: 14,
+        color: EDGE_COLORS[r.relationship_type] ?? "#94a3b8",
+      },
+    };
+  });
 }
 
 interface Props {
@@ -114,11 +125,12 @@ interface Props {
   layoutMode: LayoutMode;
   pinnedNodeIds: Set<string>;
   onTogglePin: (id: string) => void;
+  viewMode: string;
 }
 
 function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
-  autoLayoutTrigger, layoutMode, pinnedNodeIds, onTogglePin,
+  autoLayoutTrigger, layoutMode, pinnedNodeIds, onTogglePin, viewMode,
 }: Props) {
   const { fitView } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
@@ -137,7 +149,7 @@ function StructureGraphInner({
     () => dagreLayout(entities, relationships, layoutMode, getPinnedPositions()),
     [entities, relationships, layoutMode, getPinnedPositions]
   );
-  const initialEdges = useMemo(() => buildEdges(relationships), [relationships]);
+  const initialEdges = useMemo(() => buildEdges(relationships, viewMode), [relationships, viewMode]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -158,14 +170,13 @@ function StructureGraphInner({
   useEffect(() => {
     const newNodes = dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
     setNodes(newNodes);
-    setEdges(buildEdges(relationships));
-    // Store initial positions
+    setEdges(buildEdges(relationships, viewMode));
     for (const n of newNodes) {
       if (!nodePositionsRef.current.has(n.id)) {
         nodePositionsRef.current.set(n.id, n.position);
       }
     }
-  }, [entities, relationships, layoutMode, setNodes, setEdges, getPinnedPositions]);
+  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions]);
 
   // Auto-layout button trigger
   useEffect(() => {
