@@ -3,6 +3,14 @@ import { useEffect, useState, useMemo } from "react";
 export interface OwnershipError { entityId: string; entityName: string; total: number }
 export interface OwnershipWarning { entityId: string; entityName: string; total: number; missing: number }
 export interface OwnershipValidation { errors: OwnershipError[]; warnings: OwnershipWarning[]; infoOnly: string[] }
+
+export interface EntityIssue {
+  entity_id: string;
+  entity_name: string;
+  issue_type: "missing_trustee" | "missing_member" | "missing_shareholder";
+  severity: "error" | "warning";
+  message: string;
+}
 import { supabase } from "@/integrations/supabase/client";
 
 export interface EntityNode {
@@ -151,7 +159,77 @@ export function useStructureData(structureId: string | undefined) {
     return { errors, warnings, infoOnly };
   }, [entities, relationships]);
 
-  return { entities, relationships, structureName, loading, reload, ownershipValidation };
+  const entityIntegrity = useMemo<EntityIssue[]>(() => {
+    const issues: EntityIssue[] = [];
+
+    // Build lookup: entity_id -> set of inbound relationship types (where entity is to_entity)
+    const inboundTypes = new Map<string, Set<string>>();
+    for (const rel of relationships) {
+      const s = inboundTypes.get(rel.to_entity_id) ?? new Set();
+      s.add(rel.relationship_type);
+      inboundTypes.set(rel.to_entity_id, s);
+    }
+    // Also check from_entity side for trustee (trustee points FROM entity TO trust)
+    const outboundTypes = new Map<string, Set<string>>();
+    for (const rel of relationships) {
+      const s = outboundTypes.get(rel.from_entity_id) ?? new Set();
+      s.add(rel.relationship_type);
+      outboundTypes.set(rel.from_entity_id, s);
+    }
+
+    for (const entity of entities) {
+      const t = entity.entity_type;
+      const inbound = inboundTypes.get(entity.id) ?? new Set();
+      const outbound = outboundTypes.get(entity.id) ?? new Set();
+
+      // Trusts must have at least one trustee relationship pointing to them
+      if (t.startsWith("trust_") || t === "Trust") {
+        if (!inbound.has("trustee")) {
+          issues.push({
+            entity_id: entity.id,
+            entity_name: entity.name,
+            issue_type: "missing_trustee",
+            severity: "error",
+            message: `Trust "${entity.name}" has no trustee assigned`,
+          });
+        }
+      }
+
+      // SMSF must have at least one member
+      if (t === "smsf") {
+        if (!inbound.has("member")) {
+          issues.push({
+            entity_id: entity.id,
+            entity_name: entity.name,
+            issue_type: "missing_member",
+            severity: "error",
+            message: `SMSF "${entity.name}" has no members assigned`,
+          });
+        }
+      }
+
+      // Company must have at least one shareholder
+      if (t === "Company") {
+        if (!inbound.has("shareholder")) {
+          issues.push({
+            entity_id: entity.id,
+            entity_name: entity.name,
+            issue_type: "missing_shareholder",
+            severity: "warning",
+            message: `Company "${entity.name}" has no shareholders`,
+          });
+        }
+      }
+    }
+
+    if (issues.length) {
+      console.log("[Entity Integrity]", issues);
+    }
+
+    return issues;
+  }, [entities, relationships]);
+
+  return { entities, relationships, structureName, loading, reload, ownershipValidation, entityIntegrity };
 }
 
 const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
