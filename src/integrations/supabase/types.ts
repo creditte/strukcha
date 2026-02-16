@@ -448,14 +448,20 @@ export type Database = {
       structure_entities: {
         Row: {
           entity_id: string
+          position_x: number | null
+          position_y: number | null
           structure_id: string
         }
         Insert: {
           entity_id: string
+          position_x?: number | null
+          position_y?: number | null
           structure_id: string
         }
         Update: {
           entity_id?: string
+          position_x?: number | null
+          position_y?: number | null
           structure_id?: string
         }
         Relationships: [
@@ -510,6 +516,7 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           id: string
+          layout_mode: Database["public"]["Enums"]["layout_mode"]
           name: string
           tenant_id: string
           updated_at: string
@@ -518,6 +525,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          layout_mode?: Database["public"]["Enums"]["layout_mode"]
           name: string
           tenant_id: string
           updated_at?: string
@@ -526,6 +534,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          layout_mode?: Database["public"]["Enums"]["layout_mode"]
           name?: string
           tenant_id?: string
           updated_at?: string
@@ -641,6 +650,7 @@ export type Database = {
         | "trust_family"
         | "smsf"
       import_status: "pending" | "processing" | "completed" | "failed"
+      layout_mode: "auto" | "manual"
       relationship_type:
         | "director"
         | "shareholder"
@@ -812,6 +822,7 @@ export const Constants = {
         "smsf",
       ],
       import_status: ["pending", "processing", "completed", "failed"],
+      layout_mode: ["auto", "manual"],
       relationship_type: [
         "director",
         "shareholder",
