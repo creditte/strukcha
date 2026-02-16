@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy, GitCompareArrows } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -287,6 +287,15 @@ export default function StructureView() {
           {!isViewingSnapshot && (
             <Button variant={showAiPanel ? "secondary" : "outline"} size="sm" className="gap-1.5" onClick={() => setShowAiPanel(!showAiPanel)}>
               <Sparkles className="h-3.5 w-3.5" /> AI Assist
+            </Button>
+          )}
+
+          {/* Compare button */}
+          {id && (
+            <Button variant="outline" size="sm" className="gap-1.5" asChild>
+              <Link to={`/structures/${id}/compare${activeSnapshotId ? `?right=snapshot:${activeSnapshotId}` : isScenario ? `?right=live:${id}` : ""}`}>
+                <GitCompareArrows className="h-3.5 w-3.5" /> Compare
+              </Link>
             </Button>
           )}
 
