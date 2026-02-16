@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +14,7 @@ import RelationshipLegend from "@/components/structure/RelationshipLegend";
 import ExportMenu from "@/components/structure/ExportMenu";
 import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
+import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
 
 export type ViewMode = "ownership" | "control" | "full";
 
@@ -35,6 +36,7 @@ export default function StructureView() {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("balanced");
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>("ownership");
+  const [showAiPanel, setShowAiPanel] = useState(false);
 
   const graphRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +160,10 @@ export default function StructureView() {
             <Palette className="h-3.5 w-3.5" /> Legend
           </Button>
 
+          <Button variant={showAiPanel ? "secondary" : "outline"} size="sm" className="gap-1.5" onClick={() => setShowAiPanel(!showAiPanel)}>
+            <Sparkles className="h-3.5 w-3.5" /> AI Assist
+          </Button>
+
           <ExportMenu
             graphRef={graphRef}
             entities={visibleEntities}
@@ -182,6 +188,15 @@ export default function StructureView() {
       {/* Graph + Panel */}
       <div className="relative mt-3 flex-1 rounded-lg border bg-card overflow-hidden">
         {showOnboarding && <OnboardingTooltips onDismiss={dismissOnboarding} />}
+
+        {showAiPanel && (
+          <AiAssistantPanel
+            entities={visibleEntities}
+            relationships={visibleRelationships}
+            structureName={structureName}
+            onClose={() => setShowAiPanel(false)}
+          />
+        )}
         {visibleEntities.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-muted-foreground">No entities to display.</p>
