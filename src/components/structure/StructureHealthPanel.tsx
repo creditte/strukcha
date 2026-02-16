@@ -1,20 +1,22 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, HeartPulse, XCircle, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, HeartPulse, XCircle, AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { OwnershipValidation, EntityIssue } from "@/hooks/useStructureData";
+import type { OwnershipValidation, EntityIssue, OwnershipCycle } from "@/hooks/useStructureData";
 
 interface Props {
   ownershipValidation: OwnershipValidation;
   entityIntegrity: EntityIssue[];
+  ownershipCycles: OwnershipCycle[];
 }
 
-export default function StructureHealthPanel({ ownershipValidation, entityIntegrity }: Props) {
+export default function StructureHealthPanel({ ownershipValidation, entityIntegrity, ownershipCycles }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const errorCount =
     ownershipValidation.errors.length +
-    entityIntegrity.filter((i) => i.severity === "error").length;
+    entityIntegrity.filter((i) => i.severity === "error").length +
+    ownershipCycles.length;
   const warningCount =
     ownershipValidation.warnings.length +
     entityIntegrity.filter((i) => i.severity === "warning").length;
@@ -46,6 +48,15 @@ export default function StructureHealthPanel({ ownershipValidation, entityIntegr
 
       {expanded && (
         <div className="mt-1 space-y-1 max-h-48 overflow-y-auto">
+          {/* Circular ownership errors */}
+          {ownershipCycles.map((c, i) => (
+            <Alert key={`cycle-${i}`} variant="destructive" className="flex items-center gap-2 py-1.5 px-3">
+              <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+              <AlertDescription className="text-xs">
+                Circular ownership detected: {c.entityNames.join(" → ")} → {c.entityNames[0]}
+              </AlertDescription>
+            </Alert>
+          ))}
           {/* Entity integrity errors */}
           {entityIntegrity
             .filter((i) => i.severity === "error")

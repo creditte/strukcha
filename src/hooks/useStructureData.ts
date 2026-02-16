@@ -13,6 +13,8 @@ export interface EntityIssue {
 }
 import { supabase } from "@/integrations/supabase/client";
 
+export interface OwnershipCycle { entityNames: string[] }
+
 export interface EntityNode {
   id: string;
   name: string;
@@ -229,7 +231,64 @@ export function useStructureData(structureId: string | undefined) {
     return issues;
   }, [entities, relationships]);
 
-  return { entities, relationships, structureName, loading, reload, ownershipValidation, entityIntegrity };
+  // Circular ownership detection via DFS
+  const ownershipCycles = useMemo<OwnershipCycle[]>(() => {
+    // Build adjacency list from shareholder relationships (from_entity owns to_entity)
+    const adj = new Map<string, string[]>();
+    for (const rel of relationships) {
+      if (rel.relationship_type !== "shareholder") continue;
+      const arr = adj.get(rel.from_entity_id) ?? [];
+      arr.push(rel.to_entity_id);
+      adj.set(rel.from_entity_id, arr);
+    }
+
+    const entityMap = new Map(entities.map((e) => [e.id, e.name]));
+    const visited = new Set<string>();
+    const inStack = new Set<string>();
+    const stack: string[] = [];
+    const cycles: OwnershipCycle[] = [];
+    const reportedSets = new Set<string>();
+
+    function dfs(node: string) {
+      if (inStack.has(node)) {
+        // Extract cycle from stack
+        const cycleStart = stack.indexOf(node);
+        const cycleIds = stack.slice(cycleStart);
+        const key = [...cycleIds].sort().join(",");
+        if (!reportedSets.has(key)) {
+          reportedSets.add(key);
+          cycles.push({
+            entityNames: cycleIds.map((id) => entityMap.get(id) ?? id),
+          });
+        }
+        return;
+      }
+      if (visited.has(node)) return;
+
+      visited.add(node);
+      inStack.add(node);
+      stack.push(node);
+
+      for (const neighbor of adj.get(node) ?? []) {
+        dfs(neighbor);
+      }
+
+      stack.pop();
+      inStack.delete(node);
+    }
+
+    for (const nodeId of adj.keys()) {
+      if (!visited.has(nodeId)) dfs(nodeId);
+    }
+
+    if (cycles.length) {
+      console.log("[Circular Ownership]", cycles);
+    }
+
+    return cycles;
+  }, [entities, relationships]);
+
+  return { entities, relationships, structureName, loading, reload, ownershipValidation, entityIntegrity, ownershipCycles };
 }
 
 const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
