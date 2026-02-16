@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+type LayoutStrategy = "auto" | "manual";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ export function useStructureData(structureId: string | undefined) {
   const [structureName, setStructureName] = useState("");
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
+  const [layoutMode, setLayoutModeState] = useState<LayoutStrategy>("auto");
+  const [nodePositions, setNodePositions] = useState<Map<string, { x: number; y: number }>>(new Map());
 
   const reload = () => setVersion((v) => v + 1);
 
@@ -70,17 +73,28 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: struct } = await supabase
         .from("structures")
-        .select("name")
+        .select("name, layout_mode")
         .eq("id", structureId)
         .single();
       setStructureName(struct?.name ?? "");
+      setLayoutModeState((struct?.layout_mode as LayoutStrategy) ?? "auto");
 
       const { data: seRows } = await supabase
         .from("structure_entities")
-        .select("entity_id")
+        .select("entity_id, position_x, position_y")
         .eq("structure_id", structureId);
 
-      const entityIds = (seRows ?? []).map((r) => r.entity_id);
+      // Build positions map from DB
+      const posMap = new Map<string, { x: number; y: number }>();
+      const entityIds: string[] = [];
+      for (const row of seRows ?? []) {
+        entityIds.push(row.entity_id);
+        if (row.position_x != null && row.position_y != null) {
+          posMap.set(row.entity_id, { x: row.position_x, y: row.position_y });
+        }
+      }
+      setNodePositions(posMap);
+
       if (entityIds.length === 0) {
         setEntities([]);
         setRelationships([]);
@@ -129,6 +143,70 @@ export function useStructureData(structureId: string | undefined) {
 
     load();
   }, [structureId, version]);
+
+  // ── Layout mode change (persisted to DB + audit) ─────────────────
+  const setLayoutMode = useCallback(async (newMode: LayoutStrategy) => {
+    if (!structureId) return;
+    const prevMode = layoutMode;
+    setLayoutModeState(newMode);
+
+    await supabase
+      .from("structures")
+      .update({ layout_mode: newMode } as any)
+      .eq("id", structureId);
+
+    // Audit log for mode change
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("tenant_id, user_id")
+      .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "")
+      .single();
+
+    if (profile) {
+      await supabase.from("audit_log").insert({
+        tenant_id: profile.tenant_id,
+        user_id: profile.user_id,
+        action: "layout_mode_change",
+        entity_type: "structure",
+        entity_id: structureId,
+        after_state: { previous_mode: prevMode, new_mode: newMode } as any,
+      });
+    }
+  }, [structureId, layoutMode]);
+
+  // ── Save node positions to DB (debounced from graph) ─────────────
+  const saveNodePositions = useCallback(async (positions: Map<string, { x: number; y: number }>) => {
+    if (!structureId) return;
+    setNodePositions(positions);
+
+    // Batch upsert positions
+    const updates = Array.from(positions.entries()).map(([entityId, pos]) => ({
+      structure_id: structureId,
+      entity_id: entityId,
+      position_x: Math.round(pos.x * 100) / 100,
+      position_y: Math.round(pos.y * 100) / 100,
+    }));
+
+    // Update each row individually (structure_entities has composite PK)
+    for (const u of updates) {
+      await supabase
+        .from("structure_entities")
+        .update({ position_x: u.position_x, position_y: u.position_y } as any)
+        .eq("structure_id", u.structure_id)
+        .eq("entity_id", u.entity_id);
+    }
+  }, [structureId]);
+
+  // ── Clear all positions (reset to auto) ──────────────────────────
+  const clearNodePositions = useCallback(async () => {
+    if (!structureId) return;
+    setNodePositions(new Map());
+
+    await supabase
+      .from("structure_entities")
+      .update({ position_x: null, position_y: null } as any)
+      .eq("structure_id", structureId);
+  }, [structureId]);
 
   // ── Compute unified StructureHealth ─────────────────────────────
 
@@ -349,7 +427,7 @@ export function useStructureData(structureId: string | undefined) {
     return { score, status, errors, warnings, info };
   }, [entities, relationships]);
 
-  return { entities, relationships, structureName, loading, reload, structureHealth };
+  return { entities, relationships, structureName, loading, reload, structureHealth, layoutMode, nodePositions, setLayoutMode, saveNodePositions, clearNodePositions };
 }
 
 // ── Hook: useFilteredGraph ─────────────────────────────────────────

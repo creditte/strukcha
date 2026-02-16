@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
 import { useOnboarding } from "@/hooks/useOnboarding";
-import StructureGraph, { type LayoutMode, type LayoutStrategy, clearSavedPositions } from "@/components/structure/StructureGraph";
+import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import GraphControls from "@/components/structure/GraphControls";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
 import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPanel";
@@ -21,7 +21,11 @@ export type ViewMode = "ownership" | "control" | "full";
 
 export default function StructureView() {
   const { id } = useParams();
-  const { entities, relationships, structureName, loading, reload, structureHealth } = useStructureData(id);
+  const {
+    entities, relationships, structureName, loading, reload, structureHealth,
+    layoutMode: dbLayoutMode, nodePositions, setLayoutMode: setDbLayoutMode,
+    saveNodePositions, clearNodePositions,
+  } = useStructureData(id);
   const { toast } = useToast();
   const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
 
@@ -34,17 +38,10 @@ export default function StructureView() {
   const [showLegend, setShowLegend] = useState(false);
   const [autoLayoutTrigger, setAutoLayoutTrigger] = useState(0);
   const [fitViewTrigger, setFitViewTrigger] = useState(0);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("balanced");
+  const [layoutAlgo, setLayoutAlgo] = useState<LayoutMode>("balanced");
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>("ownership");
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [layoutStrategy, setLayoutStrategy] = useState<LayoutStrategy>(() => {
-    // If saved positions exist for this structure, default to manual
-    try {
-      const saved = localStorage.getItem(`structure_node_positions_${id}`);
-      return saved ? "manual" : "auto";
-    } catch { return "auto"; }
-  });
 
   const graphRef = useRef<HTMLDivElement>(null);
 
@@ -53,7 +50,6 @@ export default function StructureView() {
     { search: "", showFamily, filterRelType: filterRelType === "all" ? "" : filterRelType, depth, selectedEntityId, viewMode }
   );
 
-  // Search highlight: find matching entity but don't filter the graph
   const searchHighlightId = useMemo(() => {
     if (!search) return null;
     const q = search.toLowerCase();
@@ -97,6 +93,22 @@ export default function StructureView() {
     });
   }, [id, toast]);
 
+  const handleSwitchToManual = useCallback(() => {
+    setDbLayoutMode("manual");
+    toast({ title: "Manual layout", description: "Drag nodes to arrange. Positions are saved for all users." });
+  }, [setDbLayoutMode, toast]);
+
+  const handleResetToAuto = useCallback(() => {
+    clearNodePositions();
+    setDbLayoutMode("auto");
+    setAutoLayoutTrigger((c) => c + 1);
+    toast({ title: "Auto layout restored" });
+  }, [clearNodePositions, setDbLayoutMode, toast]);
+
+  const handlePositionsChanged = useCallback((positions: Map<string, { x: number; y: number }>) => {
+    saveNodePositions(positions);
+  }, [saveNodePositions]);
+
   if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -130,8 +142,8 @@ export default function StructureView() {
             </SelectContent>
           </Select>
 
-          {/* Layout mode selector */}
-          <Select value={layoutMode} onValueChange={(v) => { setLayoutMode(v as LayoutMode); setAutoLayoutTrigger((c) => c + 1); }}>
+          {/* Layout algorithm selector */}
+          <Select value={layoutAlgo} onValueChange={(v) => { setLayoutAlgo(v as LayoutMode); setAutoLayoutTrigger((c) => c + 1); }}>
             <SelectTrigger className="h-9 w-[130px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -146,17 +158,17 @@ export default function StructureView() {
             <Maximize className="h-3.5 w-3.5" /> Fit View
           </Button>
 
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { clearSavedPositions(id!); setLayoutStrategy("auto"); setAutoLayoutTrigger((c) => c + 1); }}>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetToAuto}>
             <LayoutGrid className="h-3.5 w-3.5" /> Reset to Auto
           </Button>
 
           <Button
-            variant={layoutStrategy === "manual" ? "secondary" : "outline"}
+            variant={dbLayoutMode === "manual" ? "secondary" : "outline"}
             size="sm"
             className="gap-1.5"
-            onClick={() => setLayoutStrategy((s) => s === "auto" ? "manual" : "auto")}
+            onClick={() => dbLayoutMode === "auto" ? handleSwitchToManual() : handleResetToAuto()}
           >
-            {layoutStrategy === "manual" ? (
+            {dbLayoutMode === "manual" ? (
               <><MousePointer className="h-3.5 w-3.5" /> Manual</>
             ) : (
               <><Grid3x3 className="h-3.5 w-3.5" /> Auto</>
@@ -233,15 +245,15 @@ export default function StructureView() {
             onSelectEntity={setSelectedEntityId}
             onSelectEdge={setSelectedEdgeId}
             autoLayoutTrigger={autoLayoutTrigger}
-            layoutMode={layoutMode}
-            layoutStrategy={layoutStrategy}
+            layoutMode={layoutAlgo}
+            layoutStrategy={dbLayoutMode}
             pinnedNodeIds={pinnedNodeIds}
             onTogglePin={handleTogglePin}
             viewMode={viewMode}
             searchHighlightId={searchHighlightId}
             fitViewTrigger={fitViewTrigger}
-            structureId={id!}
-            onNodePositionsSaved={() => setLayoutStrategy("manual")}
+            dbPositions={nodePositions}
+            onPositionsChanged={handlePositionsChanged}
           />
         )}
 
