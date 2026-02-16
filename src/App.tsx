@@ -14,6 +14,7 @@ import Import from "./pages/Import";
 import Review from "./pages/Review";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
+import StructureCompare from "./pages/StructureCompare";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ const App = () => (
               <Route path="/" element={<Dashboard />} />
               <Route path="/structures" element={<Structures />} />
               <Route path="/structures/:id" element={<StructureView />} />
+              <Route path="/structures/:id/compare" element={<StructureCompare />} />
               <Route path="/import" element={<Import />} />
               <Route path="/review" element={<Review />} />
               <Route path="/settings" element={<SettingsPage />} />
