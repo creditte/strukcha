@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.invite-user]
 verify_jwt = false
+
+[functions.analyse-structure]
+verify_jwt = false
