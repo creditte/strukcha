@@ -778,6 +778,45 @@ export type Database = {
         }
         Relationships: []
       }
+      xero_connections: {
+        Row: {
+          access_token: string
+          connected_at: string | null
+          created_at: string | null
+          expires_at: string
+          id: string
+          refresh_token: string
+          tenant_id: string
+          updated_at: string | null
+          user_id: string
+          xero_tenant_id: string | null
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string | null
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          refresh_token: string
+          tenant_id: string
+          updated_at?: string | null
+          user_id: string
+          xero_tenant_id?: string | null
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string | null
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          refresh_token?: string
+          tenant_id?: string
+          updated_at?: string | null
+          user_id?: string
+          xero_tenant_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
