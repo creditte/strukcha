@@ -76,6 +76,7 @@ export default function Dashboard() {
         throw new Error(data.error || "Failed to start Xero auth");
       }
 
+      console.log("[Xero OAuth] Full authorization URL:", data.url);
       window.location.href = data.url;
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
