@@ -15,9 +15,8 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const { email, password, display_name, bootstrap_secret } = await req.json();
+    const { email, password, display_name, bootstrap_secret, action } = await req.json();
 
-    // Simple bootstrap secret to prevent unauthorized access
     if (bootstrap_secret !== "strukcha-bootstrap-2026") {
       return new Response(JSON.stringify({ error: "Invalid bootstrap secret" }), {
         status: 403,
@@ -36,7 +35,30 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Create auth user
+    if (action === "reset-password") {
+      // Find user by email and update password
+      const { data: { users } } = await adminClient.auth.admin.listUsers();
+      const user = users?.find((u) => u.email === email.toLowerCase().trim());
+      if (!user) {
+        return new Response(JSON.stringify({ error: "User not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { error } = await adminClient.auth.admin.updateUserById(user.id, { password });
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({ ok: true, message: "Password updated" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Default: create new user
     const { data: newUser, error: createError } =
       await adminClient.auth.admin.createUser({
         email,
@@ -52,7 +74,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Insert into super_admins
     const { error: insertError } = await adminClient
       .from("super_admins")
       .insert({
