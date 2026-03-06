@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Send magic link / invite email via Supabase Auth admin API
+    // 2. Send invite email via Supabase Auth admin API
     const { data: inviteData, error: inviteError } =
       await adminClient.auth.admin.inviteUserByEmail(_email, {
         data: { full_name: display_name || "" },
@@ -100,21 +100,71 @@ Deno.serve(async (req) => {
       });
 
     if (inviteError) {
-      // If user already exists, send a magic link instead
+      // If user already exists, update their profile to new tenant and reset onboarding
       if (inviteError.message?.includes("already been registered")) {
-        const { error: magicError } = await adminClient.auth.admin.generateLink({
-          type: "magiclink",
+        // Find the existing auth user
+        const { data: listData } = await adminClient.auth.admin.listUsers();
+        const existingUser = listData?.users?.find(
+          (u: any) => u.email?.toLowerCase() === _email
+        );
+
+        if (existingUser) {
+          // Update tenant_users to link this auth user
+          await adminClient
+            .from("tenant_users")
+            .update({
+              auth_user_id: existingUser.id,
+              status: "invited",
+              last_invited_at: new Date().toISOString(),
+            })
+            .eq("tenant_id", tenant_id)
+            .eq("email", _email);
+
+          // Update profile to new tenant and reset onboarding
+          const { error: profileError } = await adminClient
+            .from("profiles")
+            .update({
+              tenant_id,
+              onboarding_complete: false,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", existingUser.id);
+
+          // If no profile exists, create one
+          if (profileError) {
+            await adminClient.from("profiles").insert({
+              user_id: existingUser.id,
+              tenant_id,
+              full_name: display_name || "",
+              status: "active",
+              onboarding_complete: false,
+            });
+          }
+
+          // Update user_roles to match the new role
+          const appRole = (_role === "owner" || _role === "admin") ? "admin" : "user";
+          await adminClient
+            .from("user_roles")
+            .upsert(
+              { user_id: existingUser.id, role: appRole },
+              { onConflict: "user_id,role" }
+            );
+        }
+
+        // Send a password recovery email so user can set password for new tenant
+        const { error: resetError } = await adminClient.auth.admin.generateLink({
+          type: "recovery",
           email: _email,
           options: { redirectTo: frontendUrl },
         });
-        if (magicError) {
-          return new Response(
-            JSON.stringify({ error: `User exists but magic link failed: ${magicError.message}` }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
+
         return new Response(
-          JSON.stringify({ ok: true, message: "User already registered. Magic link sent." }),
+          JSON.stringify({
+            ok: true,
+            message: existingUser
+              ? "Existing user moved to new firm. They will be prompted to set password on next login."
+              : "User record updated. Magic link could not be sent.",
+          }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
