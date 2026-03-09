@@ -200,6 +200,18 @@ export default function Dashboard() {
             {xeroConnection ? (
               <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
+                  {xeroConnection.xero_org_name && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Building2 className="h-3.5 w-3.5 shrink-0" />
+                      <span>Organisation: <span className="font-medium text-foreground">{xeroConnection.xero_org_name}</span></span>
+                    </div>
+                  )}
+                  {xeroConnection.connected_by_email && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Mail className="h-3.5 w-3.5 shrink-0" />
+                      <span>Connected by: {xeroConnection.connected_by_email}</span>
+                    </div>
+                  )}
                   {xeroConnection.connected_at && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Calendar className="h-3.5 w-3.5 shrink-0" />
@@ -210,12 +222,6 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Clock className="h-3.5 w-3.5 shrink-0" />
                       <span>Token expires: {new Date(xeroConnection.expires_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                  )}
-                  {xeroConnection.xero_tenant_id && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Network className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">Xero Org ID: {xeroConnection.xero_tenant_id}</span>
                     </div>
                   )}
                 </div>
