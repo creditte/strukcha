@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Network, Users, Upload, ExternalLink, CheckCircle2, Loader2 } from "lucide-react";
+import { Network, Users, Upload, ExternalLink, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
