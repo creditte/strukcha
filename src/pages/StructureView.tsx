@@ -176,6 +176,69 @@ export default function StructureView() {
     setFitViewTrigger((c) => c + 1);
   }, []);
 
+  // Fetch tenant_id from structure for entity creation
+  useMemo(() => {
+    if (!id) return;
+    supabase.from("structures").select("tenant_id").eq("id", id).single().then(({ data }) => {
+      if (data) setTenantId(data.tenant_id);
+    });
+  }, [id]);
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((menu: ContextMenuState) => {
+    if (isViewingSnapshot) return;
+    setContextMenu(menu);
+  }, [isViewingSnapshot]);
+
+  const handleAddEntityFromMenu = useCallback(() => {
+    setContextMenu(null);
+    setShowAddEntityDialog(true);
+  }, []);
+
+  const handleAddRelationshipFromMenu = useCallback((nodeId: string) => {
+    setContextMenu(null);
+    setSelectedEntityId(nodeId);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const handleRemoveEntity = useCallback(async (entityId: string) => {
+    setContextMenu(null);
+    const entity = entities.find((e) => e.id === entityId);
+    if (!entity) return;
+
+    // Soft-delete the entity
+    const { error } = await supabase
+      .from("entities")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", entityId);
+
+    if (error) {
+      toast({ title: "Failed to remove entity", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Entity removed", description: entity.name });
+      setSelectedEntityId(null);
+      reload();
+    }
+  }, [entities, toast, reload]);
+
+  const handleRemoveRelationship = useCallback(async (relId: string) => {
+    setContextMenu(null);
+    const rel = relationships.find((r) => r.id === relId);
+
+    const { error } = await supabase
+      .from("relationships")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", relId);
+
+    if (error) {
+      toast({ title: "Failed to remove relationship", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Relationship removed", description: rel?.relationship_type ?? "" });
+      setSelectedEdgeId(null);
+      reload();
+    }
+  }, [relationships, toast, reload]);
+
   if (loading || snapshotLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
