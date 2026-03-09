@@ -19,6 +19,7 @@ interface TenantRow {
 }
 
 export default function AdminDashboard() {
+  const { signOut } = useAuth();
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
