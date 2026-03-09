@@ -58,10 +58,11 @@ export default function Dashboard() {
       });
       setRecentStructures((recent.data as any) ?? []);
 
-      // Check Xero connection status with details
+      // Check Xero connection status with details (tenant-based RLS handles filtering)
       const { data: xeroData } = await supabase
         .from("xero_connections")
         .select("id, connected_at, expires_at, xero_tenant_id")
+        .order("connected_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       setXeroConnection(xeroData as any);
