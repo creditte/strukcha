@@ -8,12 +8,12 @@ serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
-    // Determine the frontend URL for redirects
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    // Default frontend URL (will be overridden by state param if available)
+    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
 
     if (error) {
       console.error("Xero OAuth error:", error);
-      return Response.redirect(`${frontendUrl}/?xero=error&reason=${encodeURIComponent(error)}`, 302);
+      return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=${encodeURIComponent(error)}`, 302);
     }
 
     if (!code || !stateParam) {
