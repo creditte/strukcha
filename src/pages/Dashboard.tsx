@@ -139,6 +139,24 @@ export default function Dashboard() {
     }
   };
 
+  const handleDisconnectXero = async () => {
+    if (!xeroConnection) return;
+    setDisconnecting(true);
+    try {
+      const { error } = await supabase
+        .from("xero_connections")
+        .delete()
+        .eq("id", xeroConnection.id);
+      if (error) throw error;
+      setXeroConnection(null);
+      toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   const statCards = [
     { label: "Structures", value: stats.structures, icon: Network },
     { label: "Entities", value: stats.entities, icon: Users },
