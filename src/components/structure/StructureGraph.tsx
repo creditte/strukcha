@@ -20,6 +20,7 @@ import Dagre from "@dagrejs/dagre";
 
 import EntityNodeComponent from "./EntityNode";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
+import type { ContextMenuState } from "./StructureContextMenu";
 
 const nodeTypes = { entity: EntityNodeComponent };
 
