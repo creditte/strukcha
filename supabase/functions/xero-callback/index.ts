@@ -64,8 +64,11 @@ serve(async (req) => {
 
     let xeroTenantId = null;
     let xeroOrgName = null;
+    const connectionsBody = await connectionsRes.text();
+    console.log("[xero-callback] GET /connections status:", connectionsRes.status);
+    console.log("[xero-callback] GET /connections response:", connectionsBody);
     if (connectionsRes.ok) {
-      const connections = await connectionsRes.json();
+      const connections = JSON.parse(connectionsBody);
       if (connections.length > 0) {
         xeroTenantId = connections[0].tenantId;
         xeroOrgName = connections[0].tenantName || null;
