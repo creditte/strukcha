@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Users, Loader2, ShieldPlus } from "lucide-react";
+import { Building2, Plus, Users, Loader2, ShieldPlus, LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 interface TenantRow {
   id: string;
@@ -18,6 +19,7 @@ interface TenantRow {
 }
 
 export default function AdminDashboard() {
+  const { signOut } = useAuth();
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -168,6 +170,9 @@ export default function AdminDashboard() {
               </div>
             </DialogContent>
           </Dialog>
+          <Button size="sm" variant="ghost" className="gap-1.5" onClick={signOut}>
+            <LogOut className="h-4 w-4" /> Sign Out
+          </Button>
         </div>
       </header>
 
