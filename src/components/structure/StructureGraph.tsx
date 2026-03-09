@@ -155,6 +155,7 @@ interface Props {
   dbPositions: Map<string, { x: number; y: number }>;
   onPositionsChanged: (positions: Map<string, { x: number; y: number }>) => void;
   nodesDraggable?: boolean;
+  onContextMenu?: (menu: ContextMenuState) => void;
 }
 
 function StructureGraphInner({
