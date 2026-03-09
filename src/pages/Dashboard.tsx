@@ -12,9 +12,15 @@ import { useTenantSettings } from "@/hooks/useTenantSettings";
 export default function Dashboard() {
   const [stats, setStats] = useState({ structures: 0, entities: 0, imports: 0 });
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
-  const [xeroConnected, setXeroConnected] = useState(false);
+  const [xeroConnection, setXeroConnection] = useState<{
+    id: string;
+    connected_at: string | null;
+    expires_at: string;
+    xero_tenant_id: string | null;
+  } | null>(null);
   const [xeroLoading, setXeroLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { currentUser, loading: usersLoading } = useTenantUsers();
