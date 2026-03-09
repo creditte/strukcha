@@ -80,15 +80,27 @@ export default function Dashboard() {
         },
       });
 
-      const data = await res.json();
-      console.log("[Xero OAuth] Response:", data);
+      const responseText = await res.text();
+      console.log("[Xero OAuth] Raw response status:", res.status);
+      console.log("[Xero OAuth] Raw response body:", responseText);
+      
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error("[Xero OAuth] Failed to parse response as JSON:", responseText);
+        throw new Error(`Non-JSON response (${res.status}): ${responseText.substring(0, 200)}`);
+      }
+      
+      console.log("[Xero OAuth] Parsed response:", data);
       
       const oauthUrl = data.auth_url || data.url;
       if (!res.ok || !oauthUrl) {
-        throw new Error(data.error || "Failed to start Xero auth");
+        console.error("[Xero OAuth] Error details:", { status: res.status, data });
+        throw new Error(data.error || `Failed to start Xero auth (status ${res.status})`);
       }
 
-      console.log("[Xero OAuth] Full authorization URL:", oauthUrl);
+      console.log("[Xero OAuth] Redirecting to:", oauthUrl);
       window.location.href = oauthUrl;
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
