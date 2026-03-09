@@ -103,6 +103,8 @@ serve(async (req) => {
           user_id: userId,
           tenant_id: profile.tenant_id,
           xero_tenant_id: xeroTenantId,
+          xero_org_name: xeroOrgName,
+          connected_by_email: connectedByEmail,
           access_token: tokens.access_token,
           refresh_token: tokens.refresh_token,
           expires_at: expiresAt,
