@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Users, Loader2, ShieldPlus } from "lucide-react";
+import { Building2, Plus, Users, Loader2, ShieldPlus, LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 interface TenantRow {
   id: string;
