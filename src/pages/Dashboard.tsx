@@ -60,14 +60,9 @@ export default function Dashboard() {
       });
       setRecentStructures((recent.data as any) ?? []);
 
-      // Check Xero connection status with details (tenant-based RLS handles filtering)
-      const { data: xeroData } = await supabase
-        .from("xero_connections")
-        .select("id, connected_at, expires_at, xero_tenant_id, xero_org_name, connected_by_email")
-        .order("connected_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      setXeroConnection(xeroData as any);
+      // Check Xero connection status via secure RPC (no token exposure)
+      const { data: xeroData } = await supabase.rpc("get_xero_connection_info");
+      setXeroConnection(xeroData && xeroData !== 'null' ? xeroData as any : null);
     }
     load();
   }, []);
