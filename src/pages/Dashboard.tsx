@@ -25,7 +25,6 @@ export default function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { currentUser, loading: usersLoading } = useTenantUsers();
   const { tenant, loading: tenantLoading } = useTenantSettings();
