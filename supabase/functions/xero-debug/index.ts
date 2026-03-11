@@ -6,6 +6,56 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ── Token refresh (same logic as sync-xpm) ──────────────────────────────
+async function refreshAccessToken(
+  supabase: any,
+  connection: any,
+): Promise<string> {
+  const now = new Date();
+  const expiresAt = new Date(connection.expires_at);
+
+  // If token is still valid (with 2min buffer), return it
+  if (expiresAt.getTime() - now.getTime() > 120_000) {
+    return connection.access_token;
+  }
+
+  console.log("[xero-debug] Token expired, refreshing...");
+  const clientId = Deno.env.get("XERO_CLIENT_ID")!;
+  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
+
+  const res = await fetch("https://identity.xero.com/connect/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: connection.refresh_token,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Token refresh failed: ${body}`);
+  }
+
+  const tokens = await res.json();
+  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+  await supabase
+    .from("xero_connections")
+    .update({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: newExpiresAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", connection.id);
+
+  return tokens.access_token;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -56,7 +106,9 @@ Deno.serve(async (req) => {
     }
 
     const connection = connections[0];
-    const accessToken = connection.access_token;
+
+    // Auto-refresh token if expired
+    const accessToken = await refreshAccessToken(supabase, connection);
 
     // 1. GET /connections
     const connectionsRes = await fetch("https://api.xero.com/connections", {
@@ -80,9 +132,18 @@ Deno.serve(async (req) => {
       try { contactsParsed = JSON.parse(contactsData); } catch { contactsParsed = contactsData; }
     }
 
+    // Return new expires_at so frontend can update
+    const { data: updatedConn } = await supabase
+      .from("xero_connections")
+      .select("expires_at")
+      .eq("id", connection.id)
+      .single();
+
     return new Response(JSON.stringify({
       connections: connectionsParsed,
       contacts: contactsParsed,
+      tokenRefreshed: accessToken !== connection.access_token,
+      newExpiresAt: updatedConn?.expires_at ?? null,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

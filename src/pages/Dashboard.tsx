@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Network, Users, Upload, ExternalLink, CheckCircle2, Loader2, RefreshCw, Unplug, Calendar, Clock, Building2, Mail } from "lucide-react";
+import { Network, Users, Upload, ExternalLink, CheckCircle2, Loader2, RefreshCw, Unplug, Calendar, Clock, Building2, Mail, AlertTriangle, ShieldCheck } from "lucide-react";
 import XeroDebugPanel from "@/components/dashboard/XeroDebugPanel";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
@@ -214,13 +214,32 @@ export default function Dashboard() {
                       <span>Connected: {new Date(xeroConnection.connected_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                   )}
-                  {xeroConnection.expires_at && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5 shrink-0" />
-                      <span>Token expires: {new Date(xeroConnection.expires_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                  )}
+                  {xeroConnection.expires_at && (() => {
+                    const isExpired = new Date(xeroConnection.expires_at) < new Date();
+                    return (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        {isExpired ? (
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                        ) : (
+                          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                        )}
+                        <span>
+                          Token {isExpired ? "expired" : "active until"}: {new Date(xeroConnection.expires_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {isExpired && (
+                          <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 ml-1">
+                            Auto-refreshes on use
+                          </Badge>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
+                {xeroConnection.expires_at && new Date(xeroConnection.expires_at) < new Date() && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                    Your access token has expired, but this is normal. Clicking <strong>Sync Now</strong> or <strong>Fetch Data</strong> will automatically refresh it using your stored refresh token — no need to reconnect.
+                  </div>
+                )}
                 <div className="flex items-center gap-3">
                   <Button onClick={handleSyncXpm} disabled={syncing} variant="outline" className="gap-2">
                     {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
