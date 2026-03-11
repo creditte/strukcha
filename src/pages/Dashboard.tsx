@@ -23,6 +23,8 @@ export default function Dashboard() {
   const [xeroLoading, setXeroLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [debugData, setDebugData] = useState<{ connections: any; contacts: any } | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { currentUser, loading: usersLoading } = useTenantUsers();
@@ -155,6 +157,20 @@ export default function Dashboard() {
     }
   };
 
+  const handleFetchDebug = async () => {
+    setDebugLoading(true);
+    setDebugData(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("xero-debug");
+      if (error) throw error;
+      setDebugData(data);
+    } catch (err: any) {
+      toast({ title: "Debug Fetch Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setDebugLoading(false);
+    }
+  };
+
   const statCards = [
     { label: "Structures", value: stats.structures, icon: Network },
     { label: "Entities", value: stats.entities, icon: Users },
@@ -228,6 +244,31 @@ export default function Dashboard() {
                     {disconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
                     Disconnect
                   </Button>
+                </div>
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Debug: Raw Xero API Responses (Temporary)</h3>
+                    <Button onClick={handleFetchDebug} disabled={debugLoading} variant="outline" size="sm" className="gap-2">
+                      {debugLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Fetch Contacts
+                    </Button>
+                  </div>
+                  {debugData && (
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-semibold mb-1">GET /connections</p>
+                        <pre className="bg-muted p-3 rounded text-xs overflow-auto max-h-60">
+                          {JSON.stringify(debugData.connections, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold mb-1">GET /api.xro/2.0/Contacts</p>
+                        <pre className="bg-muted p-3 rounded text-xs overflow-auto max-h-96">
+                          {JSON.stringify(debugData.contacts, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
