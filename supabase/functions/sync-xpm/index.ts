@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decryptToken, encryptToken } from "../_shared/crypto.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,7 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ── Entity type mapping from Xero ContactGroups / heuristics ────────────
+// ── Entity type mapping ─────────────────────────────────────────────────
 const ENTITY_TYPE_MAP: Record<string, string> = {
   individual: "Individual",
   company: "Company",
@@ -24,13 +25,19 @@ async function refreshAccessToken(
   const now = new Date();
   const expiresAt = new Date(connection.expires_at);
 
+  // Decrypt the stored access token
+  const currentAccessToken = await decryptToken(connection.access_token);
+
   if (expiresAt.getTime() - now.getTime() > 120_000) {
-    return connection.access_token;
+    return currentAccessToken;
   }
 
   console.log("[sync-xpm] Token expired, refreshing...");
   const clientId = Deno.env.get("XERO_CLIENT_ID")!;
   const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
+
+  // Decrypt refresh token for the refresh request
+  const currentRefreshToken = await decryptToken(connection.refresh_token);
 
   const res = await fetch("https://identity.xero.com/connect/token", {
     method: "POST",
@@ -40,7 +47,7 @@ async function refreshAccessToken(
     },
     body: new URLSearchParams({
       grant_type: "refresh_token",
-      refresh_token: connection.refresh_token,
+      refresh_token: currentRefreshToken,
     }),
   });
 
@@ -52,11 +59,15 @@ async function refreshAccessToken(
   const tokens = await res.json();
   const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
+  // Encrypt new tokens before storing
+  const encryptedAccessToken = await encryptToken(tokens.access_token);
+  const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
+
   await supabase
     .from("xero_connections")
     .update({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      access_token: encryptedAccessToken,
+      refresh_token: encryptedRefreshToken,
       expires_at: newExpiresAt,
       updated_at: new Date().toISOString(),
     })
@@ -90,7 +101,6 @@ async function fetchAllContacts(accessToken: string, xeroTenantId: string): Prom
     const contacts = data.Contacts || [];
     allContacts.push(...contacts);
 
-    // Xero returns up to 100 contacts per page
     if (contacts.length < 100) break;
     page++;
   }
@@ -103,7 +113,6 @@ function guessEntityType(contact: any): string {
   const name = (contact.Name || "").toLowerCase();
   const isOrg = contact.IsCustomer || contact.IsSupplier;
 
-  // Trust indicators
   if (name.includes("trust") || name.includes("as trustee for") || name.includes("atf")) {
     if (name.includes("smsf") || name.includes("superannuation") || name.includes("super fund")) return "smsf";
     if (name.includes("discretionary")) return "trust_discretionary";
@@ -112,17 +121,14 @@ function guessEntityType(contact: any): string {
     return "Trust";
   }
 
-  // Company indicators
   if (name.includes("pty") || name.includes("ltd") || name.includes("limited") || name.includes("inc")) {
     return "Company";
   }
 
-  // Partnership indicators
   if (name.includes("partnership") || name.includes(" & ") && !name.includes("pty")) {
     return "Partnership";
   }
 
-  // If it has a first + last name and no company markers, likely Individual
   if (contact.FirstName && contact.LastName && !isOrg) {
     return "Individual";
   }
@@ -189,7 +195,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Refresh token if needed
+    // Refresh token if needed (handles decryption internally)
     const accessToken = await refreshAccessToken(supabase, connection);
 
     // ── Fetch Contacts via Accounting API ────────────────────────────────
@@ -201,7 +207,6 @@ Deno.serve(async (req) => {
     let entitiesCreated = 0;
     let entitiesUpdated = 0;
 
-    // Map Xero ContactID → our entity id
     const xeroIdToEntityId = new Map<string, string>();
 
     for (const contact of contacts) {
@@ -211,7 +216,6 @@ Deno.serve(async (req) => {
 
       const entityType = guessEntityType(contact);
 
-      // Try to find existing entity by xpm_uuid (we store ContactID there)
       let existingEntity: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
 
       if (contactId) {

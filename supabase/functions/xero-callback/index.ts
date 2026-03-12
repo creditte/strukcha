@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encryptToken } from "../_shared/crypto.ts";
 
 serve(async (req) => {
   try {
@@ -126,7 +127,11 @@ serve(async (req) => {
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    // Upsert connection
+    // Encrypt tokens before storing
+    const encryptedAccessToken = await encryptToken(tokens.access_token);
+    const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
+
+    // Upsert connection with encrypted tokens
     const { error: dbError } = await supabase
       .from("xero_connections")
       .upsert(
@@ -136,8 +141,8 @@ serve(async (req) => {
           xero_tenant_id: xeroTenantId,
           xero_org_name: xeroOrgName,
           connected_by_email: connectedByEmail,
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
+          access_token: encryptedAccessToken,
+          refresh_token: encryptedRefreshToken,
           expires_at: expiresAt,
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
