@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decryptToken, encryptToken } from "../_shared/crypto.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,7 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ── Token refresh (same logic as sync-xpm) ──────────────────────────────
+// ── Token refresh ────────────────────────────────────────────────────────
 async function refreshAccessToken(
   supabase: any,
   connection: any,
@@ -14,14 +15,17 @@ async function refreshAccessToken(
   const now = new Date();
   const expiresAt = new Date(connection.expires_at);
 
-  // If token is still valid (with 2min buffer), return it
+  const currentAccessToken = await decryptToken(connection.access_token);
+
   if (expiresAt.getTime() - now.getTime() > 120_000) {
-    return connection.access_token;
+    return currentAccessToken;
   }
 
   console.log("[xero-debug] Token expired, refreshing...");
   const clientId = Deno.env.get("XERO_CLIENT_ID")!;
   const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
+
+  const currentRefreshToken = await decryptToken(connection.refresh_token);
 
   const res = await fetch("https://identity.xero.com/connect/token", {
     method: "POST",
@@ -31,7 +35,7 @@ async function refreshAccessToken(
     },
     body: new URLSearchParams({
       grant_type: "refresh_token",
-      refresh_token: connection.refresh_token,
+      refresh_token: currentRefreshToken,
     }),
   });
 
@@ -43,11 +47,14 @@ async function refreshAccessToken(
   const tokens = await res.json();
   const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
+  const encryptedAccessToken = await encryptToken(tokens.access_token);
+  const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
+
   await supabase
     .from("xero_connections")
     .update({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      access_token: encryptedAccessToken,
+      refresh_token: encryptedRefreshToken,
       expires_at: newExpiresAt,
       updated_at: new Date().toISOString(),
     })
@@ -107,7 +114,7 @@ Deno.serve(async (req) => {
 
     const connection = connections[0];
 
-    // Auto-refresh token if expired
+    // Auto-refresh token if expired (handles decryption internally)
     const accessToken = await refreshAccessToken(supabase, connection);
 
     // 1. GET /connections
@@ -142,7 +149,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       connections: connectionsParsed,
       contacts: contactsParsed,
-      tokenRefreshed: accessToken !== connection.access_token,
+      tokenRefreshed: accessToken !== (await decryptToken(connection.access_token)),
       newExpiresAt: updatedConn?.expires_at ?? null,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
