@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, MailCheck } from "lucide-react";
 
 const TRUST_POINTS = [
   "Built for accounting firms and advisors",
@@ -15,13 +15,13 @@ const TRUST_POINTS = [
 ];
 
 export default function Signup() {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firmName, setFirmName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,23 +31,48 @@ export default function Signup() {
     }
     setSubmitting(true);
     try {
-      // Call edge function to create tenant + user
       const { data, error } = await supabase.functions.invoke("self-signup", {
         body: { fullName, email, password, firmName },
       });
       if (error || data?.error) throw new Error(data?.error || error?.message || "Signup failed");
 
-      // Sign in immediately
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) throw signInError;
-
-      navigate("/onboarding", { replace: true });
+      setSubmitted(true);
     } catch (err: any) {
       toast({ title: "Signup failed", description: err.message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
   };
+
+  // ── Check-your-email confirmation screen ──
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="w-full max-w-md text-center">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <MailCheck className="h-8 w-8 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Check your email</h1>
+          <p className="mt-3 text-muted-foreground">
+            We've sent a verification link to{" "}
+            <span className="font-medium text-foreground">{email}</span>.
+            <br />
+            Click the link to verify your account, then log in.
+          </p>
+          <Link to="/login">
+            <Button className="mt-8 w-full h-11 font-semibold">Go to Login</Button>
+          </Link>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Didn't receive it? Check your spam folder or{" "}
+            <a href="mailto:hello@strukcha.app" className="text-primary hover:underline">
+              contact support
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
