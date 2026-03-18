@@ -41,6 +41,8 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/mfa-setup" element={<MfaSetup />} />
+              <Route path="/mfa-verify" element={<MfaVerify />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/setup-password" element={<SetupPassword />} />
               {/* Super Admin routes */}
