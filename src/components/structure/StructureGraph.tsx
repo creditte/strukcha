@@ -138,6 +138,12 @@ export interface NodePosition {
   position_y: number | null;
 }
 
+export interface IssueOverlay {
+  entityId: string;
+  severity: "critical" | "warning";
+  tooltip: string;
+}
+
 interface Props {
   entities: EntityNode[];
   relationships: RelationshipEdge[];
@@ -156,6 +162,7 @@ interface Props {
   onPositionsChanged: (positions: Map<string, { x: number; y: number }>) => void;
   nodesDraggable?: boolean;
   onContextMenu?: (menu: ContextMenuState) => void;
+  issueOverlays?: IssueOverlay[];
 }
 
 function StructureGraphInner({
