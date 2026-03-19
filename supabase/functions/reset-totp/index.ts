@@ -30,16 +30,32 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: factors, error: listErr } = await adminClient.auth.admin.mfa.listFactors({ userId: user.id });
+    const { data: factorsData, error: listErr } = await adminClient.auth.admin.mfa.listFactors({ userId: user.id });
     if (listErr) throw listErr;
 
-    const totp = factors?.factors?.filter((f: any) => f.factor_type === "totp") ?? [];
+    console.log("[reset-totp] Raw factors response:", JSON.stringify(factorsData));
+
+    // Handle both possible response shapes
+    const allFactors = factorsData?.factors ?? factorsData?.totp ?? [];
+    const totp = allFactors.filter((f: any) => f.factor_type === "totp" || f.type === "totp");
+    
+    console.log("[reset-totp] TOTP factors to delete:", JSON.stringify(totp.map((f: any) => ({ id: f.id, type: f.factor_type || f.type }))));
+
     for (const f of totp) {
+      const fid = f.id;
+      if (!fid || typeof fid !== "string") {
+        console.log("[reset-totp] Skipping factor with invalid id:", JSON.stringify(f));
+        continue;
+      }
+      console.log("[reset-totp] Deleting factor:", fid);
       const { error: delErr } = await adminClient.auth.admin.mfa.deleteFactor({
         userId: user.id,
-        factorId: f.id,
+        factorId: fid,
       });
-      if (delErr) throw delErr;
+      if (delErr) {
+        console.log("[reset-totp] Delete error for", fid, ":", delErr.message);
+        throw delErr;
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, removed: totp.length }), {
