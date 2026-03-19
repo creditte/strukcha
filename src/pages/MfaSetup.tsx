@@ -21,6 +21,22 @@ export default function MfaSetup() {
   const [totpSecret, setTotpSecret] = useState("");
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const autoSubmitTriggered = useRef(false);
+
+  // Auto-submit when 6 digits entered
+  useEffect(() => {
+    if (code.length === 6 && !submitting && !autoSubmitTriggered.current) {
+      autoSubmitTriggered.current = true;
+      if (step === "totp-scan") {
+        verifyTotp();
+      } else if (step === "email-verify") {
+        verifyEmail();
+      }
+    }
+    if (code.length < 6) {
+      autoSubmitTriggered.current = false;
+    }
+  }, [code, submitting, step]);
 
   if (bootStatus === "booting") {
     return (
