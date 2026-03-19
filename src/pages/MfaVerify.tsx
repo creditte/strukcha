@@ -152,7 +152,17 @@ export default function MfaVerify() {
     );
   }
 
-  const handleVerify = activeMethod === "totp" ? verifyTotp : verifyEmail;
+  // Auto-submit when 6 digits entered
+  const autoSubmitTriggered = useRef(false);
+  useEffect(() => {
+    if (code.length === 6 && !submitting && !autoSubmitTriggered.current) {
+      autoSubmitTriggered.current = true;
+      handleVerify();
+    }
+    if (code.length < 6) {
+      autoSubmitTriggered.current = false;
+    }
+  }, [code, submitting]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
@@ -175,19 +185,6 @@ export default function MfaVerify() {
             maxLength={6}
             autoFocus
           />
-          <Button
-            onClick={handleVerify}
-            className="w-full h-11 font-semibold"
-            disabled={code.length !== 6 || submitting}
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying…
-              </>
-            ) : (
-              "Verify"
-            )}
-          </Button>
 
           {/* Method-specific actions */}
           {activeMethod === "email" && (
