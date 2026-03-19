@@ -19,33 +19,40 @@ export function useMfa() {
 
     setLoading(true);
     try {
-      // 1. Check TOTP via Supabase native MFA
-      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-
-      if (aalData?.currentLevel === "aal2") {
-        setStatus("verified");
-        setMethod("totp");
-        setLoading(false);
-        return;
-      }
-
-      if (aalData?.nextLevel === "aal2") {
-        // TOTP enrolled but not verified this session
-        setStatus("needs-verification");
-        setMethod("totp");
-        setLoading(false);
-        return;
-      }
-
-      // 2. Check email MFA via mfa_settings table
+      // 1. Check user's explicit MFA preference first
       const { data: settings } = await (supabase as any)
         .from("mfa_settings")
         .select("method")
         .eq("user_id", user.id)
         .maybeSingle();
 
+      if (settings?.method === "totp") {
+        // Verify TOTP status via Supabase native MFA
+        const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+        if (aalData?.currentLevel === "aal2") {
+          setStatus("verified");
+          setMethod("totp");
+          setLoading(false);
+          return;
+        }
+
+        if (aalData?.nextLevel === "aal2") {
+          setStatus("needs-verification");
+          setMethod("totp");
+          setLoading(false);
+          return;
+        }
+
+        // TOTP preference set but no active factor — treat as needs setup
+        setStatus("needs-verification");
+        setMethod("totp");
+        setLoading(false);
+        return;
+      }
+
       if (settings?.method === "email") {
-        // Check if verified AFTER current session started (not a stale pre-logout record)
+        // Check if verified AFTER current session started
         const sessionStart = session.expires_at
           ? new Date((session.expires_at - 3600) * 1000).toISOString()
           : new Date(0).toISOString();
@@ -62,6 +69,15 @@ export function useMfa() {
 
         setMethod("email");
         setStatus(verif ? "verified" : "needs-verification");
+        setLoading(false);
+        return;
+      }
+
+      // 2. No explicit preference — check if TOTP is enrolled natively
+      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aalData?.currentLevel === "aal2" || aalData?.nextLevel === "aal2") {
+        setStatus(aalData.currentLevel === "aal2" ? "verified" : "needs-verification");
+        setMethod("totp");
         setLoading(false);
         return;
       }
