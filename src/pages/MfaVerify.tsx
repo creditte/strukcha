@@ -170,6 +170,11 @@ export default function MfaVerify() {
             maxLength={6}
             autoFocus
           />
+          {submitting && (
+            <div className="flex justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
 
           {/* Method-specific actions */}
           {activeMethod === "email" && (
