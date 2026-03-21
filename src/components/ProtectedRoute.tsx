@@ -3,6 +3,7 @@ import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth, BootStatus } from "@/hooks/useAuth";
 import { useTenantSettings, TenantLoadStatus } from "@/hooks/useTenantSettings";
 import { useMfa } from "@/hooks/useMfa";
+import { useBilling } from "@/hooks/useBilling";
 import { supabase } from "@/integrations/supabase/client";
 import { Shield } from "lucide-react";
 import RecoveryScreen from "@/components/RecoveryScreen";
