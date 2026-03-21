@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,8 @@ export default function Signup() {
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [verified, setVerified] = useState(false);
+  const [startingCheckout, setStartingCheckout] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,8 +104,28 @@ export default function Signup() {
     }
   };
 
-  // ── Verified success screen ──
+  // ── Verified success → redirect to Stripe checkout ──
   if (verified) {
+    const handleStartTrial = async () => {
+      setStartingCheckout(true);
+      try {
+        // Sign in the user first
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
+
+        // Create checkout session
+        const { data, error } = await supabase.functions.invoke("create-checkout");
+        if (error || data?.error) throw new Error(data?.error || error?.message);
+        if (data.url) window.location.href = data.url;
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+        // Fallback to login
+        navigate("/login");
+      } finally {
+        setStartingCheckout(false);
+      }
+    };
+
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="w-full max-w-md text-center">
@@ -112,11 +134,22 @@ export default function Signup() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
           <p className="mt-3 text-muted-foreground">
-            Your account is ready. You can now log in.
+            Start your 7-day free trial. No credit card required upfront.
           </p>
-          <Link to="/login">
-            <Button className="mt-8 w-full h-11 font-semibold">Go to Login</Button>
-          </Link>
+          <Button
+            className="mt-8 w-full h-11 font-semibold"
+            onClick={handleStartTrial}
+            disabled={startingCheckout}
+          >
+            {startingCheckout ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting up trial…</>
+            ) : (
+              "Start Free Trial"
+            )}
+          </Button>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Then A$149/month after your trial ends
+          </p>
         </div>
       </div>
     );
@@ -279,7 +312,7 @@ export default function Signup() {
                 </Button>
 
                 <p className="text-center text-xs text-muted-foreground">
-                  7-day free trial · No credit card required
+                  7-day free trial · Then A$149/month · No credit card required
                 </p>
               </form>
             </CardContent>

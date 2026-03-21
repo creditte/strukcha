@@ -3,6 +3,7 @@ import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth, BootStatus } from "@/hooks/useAuth";
 import { useTenantSettings, TenantLoadStatus } from "@/hooks/useTenantSettings";
 import { useMfa } from "@/hooks/useMfa";
+import { useBilling } from "@/hooks/useBilling";
 import { supabase } from "@/integrations/supabase/client";
 import { Shield } from "lucide-react";
 import RecoveryScreen from "@/components/RecoveryScreen";
@@ -314,6 +315,26 @@ function MfaGate({ children }: { children: React.ReactNode }) {
 
   if (mfaStatus === "needs-verification") {
     return <Navigate to="/mfa-verify" replace />;
+  }
+
+  return <BillingGate>{children}</BillingGate>;
+}
+
+/** Check billing access after MFA is resolved */
+function BillingGate({ children }: { children: React.ReactNode }) {
+  const { billing, loading } = useBilling();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Checking subscription… <ElapsedTimer /></p>
+      </div>
+    );
+  }
+
+  // If billing data loaded and access is disabled, redirect
+  if (billing && billing.access_enabled === false) {
+    return <Navigate to="/subscription-locked" replace />;
   }
 
   return <>{children}</>;

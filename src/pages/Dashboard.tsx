@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { formatDistanceToNow } from "date-fns";
+import BillingBanner from "@/components/BillingBanner";
 
 export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<
@@ -180,7 +181,8 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
-      {/* ── Hero ── */}
+      {/* ── Billing Banner ── */}
+      <BillingBanner />
       <section className="space-y-6">
         <div className="space-y-2">
           <h1 className="text-4xl font-semibold tracking-tight text-foreground">
