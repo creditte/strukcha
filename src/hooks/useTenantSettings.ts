@@ -18,6 +18,10 @@ export interface TenantSettings {
   export_block_on_critical_health: boolean;
   export_default_view_mode: string;
   allow_admin_integrations: boolean;
+  subscription_status: string;
+  access_enabled: boolean;
+  diagram_limit: number;
+  diagram_count: number;
 }
 
 export type TenantLoadStatus = "idle" | "loading" | "loaded" | "no-profile" | "no-tenant" | "error" | "timeout";
