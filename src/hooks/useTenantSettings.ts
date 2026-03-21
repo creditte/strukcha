@@ -115,6 +115,10 @@ export function useTenantSettings() {
         export_block_on_critical_health: data.export_block_on_critical_health ?? false,
         export_default_view_mode: data.export_default_view_mode ?? "full",
         allow_admin_integrations: (data as any).allow_admin_integrations ?? false,
+        subscription_status: (data as any).subscription_status ?? "trialing",
+        access_enabled: (data as any).access_enabled ?? true,
+        diagram_limit: (data as any).diagram_limit ?? 3,
+        diagram_count: (data as any).diagram_count ?? 0,
       });
       setStatus("loaded");
     } catch (err) {
