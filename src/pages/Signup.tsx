@@ -104,8 +104,28 @@ export default function Signup() {
     }
   };
 
-  // ── Verified success screen ──
+  // ── Verified success → redirect to Stripe checkout ──
   if (verified) {
+    const handleStartTrial = async () => {
+      setStartingCheckout(true);
+      try {
+        // Sign in the user first
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
+
+        // Create checkout session
+        const { data, error } = await supabase.functions.invoke("create-checkout");
+        if (error || data?.error) throw new Error(data?.error || error?.message);
+        if (data.url) window.location.href = data.url;
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+        // Fallback to login
+        navigate("/login");
+      } finally {
+        setStartingCheckout(false);
+      }
+    };
+
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="w-full max-w-md text-center">
@@ -114,11 +134,22 @@ export default function Signup() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
           <p className="mt-3 text-muted-foreground">
-            Your account is ready. You can now log in.
+            Start your 7-day free trial. No credit card required upfront.
           </p>
-          <Link to="/login">
-            <Button className="mt-8 w-full h-11 font-semibold">Go to Login</Button>
-          </Link>
+          <Button
+            className="mt-8 w-full h-11 font-semibold"
+            onClick={handleStartTrial}
+            disabled={startingCheckout}
+          >
+            {startingCheckout ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting up trial…</>
+            ) : (
+              "Start Free Trial"
+            )}
+          </Button>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Then A$149/month after your trial ends
+          </p>
         </div>
       </div>
     );
