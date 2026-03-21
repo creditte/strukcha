@@ -317,5 +317,48 @@ function MfaGate({ children }: { children: React.ReactNode }) {
     return <Navigate to="/mfa-verify" replace />;
   }
 
+  return <BillingGate>{children}</BillingGate>;
+}
+
+/** Check billing access after MFA is resolved */
+function BillingGate({ children }: { children: React.ReactNode }) {
+  const { billing, loading } = useBilling();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Checking subscription… <ElapsedTimer /></p>
+      </div>
+    );
+  }
+
+  // If billing data loaded and access is disabled, redirect
+  if (billing && billing.access_enabled === false) {
+    return <Navigate to="/subscription-locked" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+/** Inner component so useMfa only runs after auth + tenant are resolved */
+function MfaGate({ children }: { children: React.ReactNode }) {
+  const { status: mfaStatus, loading: mfaLoading } = useMfa();
+
+  if (mfaLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Checking security settings… <ElapsedTimer /></p>
+      </div>
+    );
+  }
+
+  if (mfaStatus === "not-enrolled") {
+    return <Navigate to="/mfa-setup" replace />;
+  }
+
+  if (mfaStatus === "needs-verification") {
+    return <Navigate to="/mfa-verify" replace />;
+  }
+
   return <>{children}</>;
 }
