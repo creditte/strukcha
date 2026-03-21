@@ -21,8 +21,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
+import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<
