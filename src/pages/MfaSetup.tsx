@@ -8,6 +8,24 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Smartphone, Mail, Loader2, ArrowLeft } from "lucide-react";
 
+// After MFA setup, check if user needs to go through Stripe Checkout
+async function redirectAfterMfa(navigate: ReturnType<typeof useNavigate>) {
+  try {
+    const { data, error } = await supabase.functions.invoke("check-subscription");
+    if (!error && data && !data.stripe_customer_id && !data.trial_used_at) {
+      // User hasn't gone through Stripe Checkout yet — redirect to checkout
+      const { data: checkoutData, error: checkoutErr } = await supabase.functions.invoke("create-checkout");
+      if (!checkoutErr && checkoutData?.url) {
+        window.location.href = checkoutData.url;
+        return;
+      }
+    }
+  } catch (err) {
+    console.error("[MfaSetup] post-MFA billing check failed:", err);
+  }
+  navigate("/", { replace: true });
+}
+
 type Step = "choose" | "totp-scan" | "totp-verify" | "email-verify";
 
 export default function MfaSetup() {
@@ -91,7 +109,7 @@ export default function MfaSetup() {
         .upsert({ user_id: user.id, method: "totp" }, { onConflict: "user_id" });
 
       toast({ title: "MFA Enabled", description: "Authenticator app is now set up." });
-      navigate("/", { replace: true });
+      await redirectAfterMfa(navigate);
     } catch (err: any) {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
       setCode("");
@@ -134,7 +152,7 @@ export default function MfaSetup() {
         .upsert({ user_id: user.id, method: "email" }, { onConflict: "user_id" });
 
       toast({ title: "MFA Enabled", description: "Email verification is now set up." });
-      navigate("/", { replace: true });
+      await redirectAfterMfa(navigate);
     } catch (err: any) {
       toast({ title: "Verification failed", description: err.message, variant: "destructive" });
       setCode("");
