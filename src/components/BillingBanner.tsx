@@ -75,11 +75,24 @@ export default function BillingBanner() {
   // Diagram limit
   if (billing.diagram_count >= billing.diagram_limit) {
     return (
-      <div className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-3 flex items-center gap-3">
-        <AlertTriangle className="h-4 w-4 text-primary shrink-0" />
-        <p className="text-sm text-foreground">
-          You've reached your {billing.diagram_limit}-structure limit for this workspace.
-        </p>
+      <div className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <AlertTriangle className="h-4.5 w-4.5 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              Structure limit reached
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              You've used all {billing.diagram_limit} structures in your workspace. Upgrade or archive existing structures to continue.
+            </p>
+          </div>
+        </div>
+        <Button variant="default" size="sm" onClick={handleManage} className="gap-1.5 text-xs shrink-0">
+          <CreditCard className="h-3.5 w-3.5" />
+          Manage Plan
+        </Button>
       </div>
     );
   }

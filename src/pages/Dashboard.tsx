@@ -21,8 +21,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
+import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<
@@ -45,7 +47,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { currentUser, loading: usersLoading } = useTenantUsers();
   const { tenant, loading: tenantLoading } = useTenantSettings();
+  const { billing } = useBilling();
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
 
+  const atDiagramLimit = billing ? billing.diagram_count >= billing.diagram_limit : false;
   const permissionsLoaded = !usersLoading && !tenantLoading;
   const userRole = currentUser?.role ?? null;
   const canManageIntegrations =
@@ -196,7 +201,7 @@ export default function Dashboard() {
           <Button
             size="lg"
             className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
-            onClick={() => navigate("/structures")}
+            onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
           >
             <Plus className="h-4 w-4" />
             Create New Structure
@@ -287,7 +292,7 @@ export default function Dashboard() {
             </ul>
             <Button
               className="mt-8 gap-2 rounded-xl px-6"
-              onClick={() => navigate("/structures")}
+              onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
             >
               <Plus className="h-4 w-4" />
               Create New Structure
@@ -388,6 +393,7 @@ export default function Dashboard() {
           </div>
         </section>
       )}
+      <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
     </div>
   );
 }
