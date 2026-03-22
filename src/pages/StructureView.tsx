@@ -1,21 +1,10 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy, GitCompareArrows, MoreHorizontal, Camera, Download, Filter, Search, PenTool } from "lucide-react";
+import { ArrowLeft, Copy, PenTool } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useStructureData, useFilteredGraph } from "@/hooks/useStructureData";
 import { useOnboarding } from "@/hooks/useOnboarding";
@@ -32,7 +21,6 @@ import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
 import StructureHealthPanel from "@/components/structure/StructureHealthPanel";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
-import CanvasHealthBar from "@/components/structure/CanvasHealthBar";
 import CanvasFixMode from "@/components/structure/CanvasFixMode";
 import ReviewDiagramPanel from "@/components/structure/ReviewDiagramPanel";
 import CreateSnapshotDialog from "@/components/structure/CreateSnapshotDialog";
@@ -40,22 +28,15 @@ import SnapshotSelector from "@/components/structure/SnapshotSelector";
 import CreateScenarioDialog from "@/components/structure/CreateScenarioDialog";
 import StructureContextMenu, { type ContextMenuState } from "@/components/structure/StructureContextMenu";
 import AddEntityDialog from "@/components/structure/AddEntityDialog";
-import CanvasHealthIndicator from "@/components/structure/CanvasHealthIndicator";
 import RelationshipTypePicker from "@/components/structure/RelationshipTypePicker";
+import CanvasHealthBadge from "@/components/structure/CanvasHealthBadge";
+import FloatingActions from "@/components/structure/FloatingActions";
+import SecondaryActionsMenu from "@/components/structure/SecondaryActionsMenu";
+import CanvasCommandBar from "@/components/structure/CanvasCommandBar";
 import { formatDistanceToNow } from "date-fns";
 import type { Connection } from "@xyflow/react";
 
 export type ViewMode = "ownership" | "control" | "full";
-
-const RELATIONSHIP_TYPES = [
-  "director", "shareholder", "beneficiary", "trustee",
-  "appointer", "settlor", "partner", "spouse", "parent", "child",
-];
-
-/* Toolbar divider */
-function ToolbarDivider() {
-  return <div className="h-6 w-px bg-border mx-0.5 shrink-0 hidden sm:block" />;
-}
 
 export default function StructureView() {
   const { id } = useParams();
@@ -71,7 +52,6 @@ export default function StructureView() {
   const { tenant } = useTenantSettings();
 
   const tenantDefaultView = (tenant?.export_default_view_mode as ViewMode) || "ownership";
-  const [search, setSearch] = useState("");
   const [filterRelType, setFilterRelType] = useState("all");
   const [showFamily, setShowFamily] = useState(false);
   const [depth, setDepth] = useState(2);
@@ -89,6 +69,7 @@ export default function StructureView() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddEntityDialog, setShowAddEntityDialog] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [showCommandBar, setShowCommandBar] = useState(false);
 
   // Manual drawing state
   const [searchParams, setSearchParams] = useSearchParams();
@@ -98,12 +79,10 @@ export default function StructureView() {
   const [hasBeenNamed, setHasBeenNamed] = useState(false);
   const [pendingConnection, setPendingConnection] = useState<{ source: string; target: string } | null>(null);
 
-  // Detect if this is a manual (non-XPM) structure
   const isManualStructure = useMemo(() => {
     return entities.length === 0 || entities.every(e => e.xpm_uuid === null);
   }, [entities]);
 
-  // Show naming dialog when first entity is about to be added on a new manual structure
   useEffect(() => {
     if (isNewManual && !hasBeenNamed && structureName === "Untitled Structure") {
       setShowNamingDialog(true);
@@ -119,7 +98,6 @@ export default function StructureView() {
     reload();
   }, [newStructureName, id, reload, setSearchParams]);
 
-  // Create entity with a specific type directly (from context menu submenu)
   const handleAddEntityWithType = useCallback(async (entityType: string, flowPosition?: { x: number; y: number }) => {
     if (!tenantId || !id) return;
     const { data: entity, error } = await supabase
@@ -138,7 +116,6 @@ export default function StructureView() {
     reload();
   }, [tenantId, id, toast, reload]);
 
-  // Handle drag-to-connect
   const handleConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
     setPendingConnection({ source: connection.source, target: connection.target });
@@ -163,13 +140,11 @@ export default function StructureView() {
     setPendingConnection(null);
   }, [pendingConnection, tenantId, id, toast, reload]);
 
-  // Edit entity = select it to open detail panel
   const handleEditEntity = useCallback((nodeId: string) => {
     setSelectedEntityId(nodeId);
     setSelectedEdgeId(null);
   }, []);
 
-  // Duplicate entity
   const handleDuplicateEntity = useCallback(async (nodeId: string) => {
     const entity = entities.find(e => e.id === nodeId);
     if (!entity || !tenantId || !id) return;
@@ -220,17 +195,11 @@ export default function StructureView() {
     { search: "", showFamily, filterRelType: filterRelType === "all" ? "" : filterRelType, depth, selectedEntityId, viewMode }
   );
 
-  const searchHighlightId = useMemo(() => {
-    if (!search) return null;
-    const q = search.toLowerCase();
-    const match = visibleEntities.find((e) => e.name.toLowerCase().includes(q));
-    return match?.id ?? null;
-  }, [search, visibleEntities]);
+  const searchHighlightId = useMemo(() => null, []);
 
   const selectedEntity = selectedEntityId ? displayEntities.find((e) => e.id === selectedEntityId) ?? null : null;
   const selectedRelationship = selectedEdgeId ? displayRelationships.find((r) => r.id === selectedEdgeId) ?? null : null;
 
-  // Last updated date from entities
   const lastUpdated = useMemo(() => {
     if (displayEntities.length === 0) return null;
     let latest = "";
@@ -259,7 +228,6 @@ export default function StructureView() {
   }, [toast, isViewingSnapshot]);
 
   const handleResetFilters = useCallback(() => {
-    setSearch("");
     setFilterRelType("all");
     setShowFamily(false);
     setDepth(2);
@@ -384,145 +352,62 @@ export default function StructureView() {
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
       {/* Snapshot banner */}
       {isViewingSnapshot && activeSnapshot && (
-        <div className="flex items-center gap-3 px-3 py-2 bg-accent/50 border-b rounded-t-lg">
+        <div className="flex items-center gap-3 px-3 py-2 bg-accent/50 border-b">
           <Badge variant="secondary" className="gap-1.5">
             Viewing snapshot: {activeSnapshot.name}
           </Badge>
           <span className="text-xs text-muted-foreground">
             Created {new Date(activeSnapshot.created_at).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
           </span>
-          <span className="text-xs text-muted-foreground">•</span>
-          <span className="text-xs text-muted-foreground">
-            {snapshotData.entities.length} entities · {snapshotData.relationships.length} relationships
-          </span>
           <Button variant="outline" size="sm" className="ml-auto gap-1.5" onClick={handleReturnToLive}>
-            ← Return to Live Structure
+            ← Return to Live
           </Button>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center gap-3 px-1 pb-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+      {/* Minimal identity bar */}
+      <div className="flex items-center gap-3 px-3 py-2 border-b bg-background">
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
           <Link to="/structures"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <div className="flex flex-col gap-0.5">
+
+        <div className="flex flex-col gap-0 min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold tracking-tight">{structureName}</h1>
+            <h1 className="text-sm font-semibold tracking-tight truncate">{structureName}</h1>
             {isScenario && (
-              <Badge variant="secondary" className="gap-1 text-xs">
-                <Copy className="h-3 w-3" /> Scenario
+              <Badge variant="secondary" className="gap-1 text-[10px] shrink-0">
+                <Copy className="h-2.5 w-2.5" /> Scenario
               </Badge>
             )}
             {isManualStructure && !isScenario && (
-              <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
-                <PenTool className="h-2.5 w-2.5" /> Manual entry
+              <Badge variant="outline" className="gap-1 text-[10px] text-muted-foreground shrink-0">
+                <PenTool className="h-2.5 w-2.5" /> Manual
               </Badge>
             )}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{displayEntities.length} entities · {displayRelationships.length} relationships</span>
-            {lastUpdated && (
-              <>
-                <span>·</span>
-                <span>Last updated {lastUpdated}</span>
-              </>
-            )}
-          </div>
+          <span className="text-[11px] text-muted-foreground">
+            {displayEntities.length} entities · {displayRelationships.length} relationships
+            {lastUpdated && <> · Updated {lastUpdated}</>}
+          </span>
         </div>
+
         {isScenario && parentStructureId && parentStructureName && (
-          <Link to={`/structures/${parentStructureId}`} className="text-xs text-muted-foreground hover:underline">
+          <Link to={`/structures/${parentStructureId}`} className="text-[11px] text-muted-foreground hover:underline shrink-0">
             Based on: {parentStructureName}
           </Link>
         )}
+
         {!isViewingSnapshot && dbLayoutMode === "manual" && (
-          <span className="inline-flex items-center rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
+          <span className="inline-flex items-center rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-accent-foreground shrink-0">
             Manual layout
           </span>
         )}
 
-        {/* Toolbar — grouped with dividers */}
-        <div className="ml-auto flex items-center gap-1 flex-wrap">
-          {/* GROUP 1: View controls */}
-          <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-            <SelectTrigger className="h-8 w-[120px] text-xs">
-              <Eye className="h-3.5 w-3.5 mr-1" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ownership">Ownership</SelectItem>
-              <SelectItem value="control">Control</SelectItem>
-              <SelectItem value="full">Full</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {!isViewingSnapshot && (
-            <>
-              <Select value={layoutAlgo} onValueChange={(v) => { setLayoutAlgo(v as LayoutMode); setAutoLayoutTrigger((c) => c + 1); }}>
-                <SelectTrigger className="h-8 w-[120px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="balanced">Balanced</SelectItem>
-                  <SelectItem value="ownership">Ownership</SelectItem>
-                  <SelectItem value="control">Control</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setFitViewTrigger((c) => c + 1)}>
-                <Maximize className="h-3.5 w-3.5" /> Fit View
-              </Button>
-
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleResetToAuto}>
-                <LayoutGrid className="h-3.5 w-3.5" /> Reset to Auto
-              </Button>
-
-              <Button
-                variant={dbLayoutMode === "manual" ? "secondary" : "outline"}
-                size="sm"
-                className="h-8 gap-1.5 text-xs"
-                onClick={() => dbLayoutMode === "auto" ? handleSwitchToManual() : handleResetToAuto()}
-              >
-                {dbLayoutMode === "manual" ? (
-                  <><MousePointer className="h-3.5 w-3.5" /> Manual</>
-                ) : (
-                  <><Grid3x3 className="h-3.5 w-3.5" /> Auto</>
-                )}
-              </Button>
-
-              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-muted-foreground" onClick={handleResetFilters}>
-                <RotateCcw className="h-3.5 w-3.5" /> Reset
-              </Button>
-
-              {pinnedNodeIds.size > 0 && (
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => { setPinnedNodeIds(new Set()); toast({ title: "All pins cleared" }); }}>
-                  <Pin className="h-3.5 w-3.5" /> Clear pins ({pinnedNodeIds.size})
-                </Button>
-              )}
-            </>
-          )}
-
-          {isViewingSnapshot && (
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setFitViewTrigger((c) => c + 1)}>
-              <Maximize className="h-3.5 w-3.5" /> Fit View
-            </Button>
-          )}
-
-          <ToolbarDivider />
-
-          {/* GROUP 2: Output actions */}
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handleCopyLink}>
-            <LinkIcon className="h-3.5 w-3.5" /> Copy link
-          </Button>
-
+        <div className="ml-auto flex items-center gap-1 shrink-0">
+          {/* Snapshot selector + create */}
           {!isViewingSnapshot && id && (
-            <CreateSnapshotDialog
-              structureId={id}
-              structureName={structureName}
-              onCreated={reloadSnapshots}
-            />
+            <CreateSnapshotDialog structureId={id} structureName={structureName} onCreated={reloadSnapshots} />
           )}
-
           <SnapshotSelector
             snapshots={snapshots}
             activeSnapshotId={activeSnapshotId}
@@ -530,6 +415,7 @@ export default function StructureView() {
             onReturnToLive={handleReturnToLive}
           />
 
+          {/* Export */}
           <ExportMenu
             graphRef={graphRef}
             entities={visibleEntities}
@@ -544,148 +430,51 @@ export default function StructureView() {
             healthV2={healthV2}
           />
 
-          <ToolbarDivider />
+          {/* Scenario create */}
+          {!isViewingSnapshot && id && (
+            <CreateScenarioDialog sourceStructureId={id} structureName={structureName} />
+          )}
+          {isViewingSnapshot && activeSnapshotId && (
+            <CreateScenarioDialog snapshotId={activeSnapshotId} structureName={activeSnapshot?.name ?? structureName} triggerLabel="Scenario from Snapshot" />
+          )}
 
-          {/* GROUP 3: Advanced tools — visible on wide screens */}
-          <div className="hidden xl:flex items-center gap-1">
-            {!isViewingSnapshot && (
-              <Button variant={showAiPanel ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setShowAiPanel(!showAiPanel)}>
-                <Sparkles className="h-3.5 w-3.5" /> AI Assist
-              </Button>
-            )}
-
-            {id && (isScenario || isViewingSnapshot) && (
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" asChild>
-                <Link to={`/structures/${isScenario ? parentStructureId ?? id : id}/compare?right=${isViewingSnapshot ? `snapshot:${activeSnapshotId}` : `scenario:${id}`}`}>
-                  <GitCompareArrows className="h-3.5 w-3.5" /> Compare
-                </Link>
-              </Button>
-            )}
-            {id && !isScenario && !isViewingSnapshot && (
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" asChild>
-                <Link to={`/structures/${id}/compare`}>
-                  <GitCompareArrows className="h-3.5 w-3.5" /> Compare
-                </Link>
-              </Button>
-            )}
-
-            {!isViewingSnapshot && id && (
-              <CreateScenarioDialog
-                sourceStructureId={id}
-                structureName={structureName}
-              />
-            )}
-
-            {isViewingSnapshot && activeSnapshotId && (
-              <CreateScenarioDialog
-                snapshotId={activeSnapshotId}
-                structureName={activeSnapshot?.name ?? structureName}
-                triggerLabel="Scenario from Snapshot"
-              />
-            )}
-
-            <Button variant={showLegend ? "secondary" : "outline"} size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setShowLegend(!showLegend)}>
-              <Palette className="h-3.5 w-3.5" /> Legend
-            </Button>
-          </div>
-
-          {/* GROUP 3: More dropdown — visible on narrow screens */}
-          <div className="xl:hidden">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-                  <MoreHorizontal className="h-3.5 w-3.5" /> More
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {!isViewingSnapshot && (
-                  <DropdownMenuItem onClick={() => setShowAiPanel(!showAiPanel)}>
-                    <Sparkles className="h-3.5 w-3.5 mr-2" /> AI Assist
-                  </DropdownMenuItem>
-                )}
-                {id && !isScenario && !isViewingSnapshot && (
-                  <DropdownMenuItem asChild>
-                    <Link to={`/structures/${id}/compare`} className="flex items-center">
-                      <GitCompareArrows className="h-3.5 w-3.5 mr-2" /> Compare
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {id && (isScenario || isViewingSnapshot) && (
-                  <DropdownMenuItem asChild>
-                    <Link
-                      to={`/structures/${isScenario ? parentStructureId ?? id : id}/compare?right=${isViewingSnapshot ? `snapshot:${activeSnapshotId}` : `scenario:${id}`}`}
-                      className="flex items-center"
-                    >
-                      <GitCompareArrows className="h-3.5 w-3.5 mr-2" /> Compare
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => setShowLegend(!showLegend)}>
-                  <Palette className="h-3.5 w-3.5 mr-2" /> Legend
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </div>
-
-      {/* Search & Filters bar */}
-      <div className="flex items-center gap-2 px-1 pb-2">
-        <div className="relative w-56">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search entities..."
-            className="pl-9 h-8 text-xs"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+          {/* Secondary actions ••• */}
+          <SecondaryActionsMenu
+            structureId={id!}
+            structureName={structureName}
+            viewMode={viewMode}
+            onViewModeChange={(v) => setViewMode(v)}
+            layoutAlgo={layoutAlgo}
+            onLayoutAlgoChange={(v) => { setLayoutAlgo(v); setAutoLayoutTrigger((c) => c + 1); }}
+            dbLayoutMode={dbLayoutMode}
+            onSwitchToManual={handleSwitchToManual}
+            onResetToAuto={handleResetToAuto}
+            onFitView={() => setFitViewTrigger((c) => c + 1)}
+            onResetFilters={handleResetFilters}
+            onCopyLink={handleCopyLink}
+            onToggleLegend={() => setShowLegend(!showLegend)}
+            showLegend={showLegend}
+            onOpenSearch={() => setShowCommandBar(true)}
+            isScenario={isScenario}
+            parentStructureId={parentStructureId}
+            isViewingSnapshot={isViewingSnapshot}
+            activeSnapshotId={activeSnapshotId}
+            snapshots={snapshots}
+            onViewSnapshot={handleViewSnapshot}
+            onReturnToLive={handleReturnToLive}
+            reloadSnapshots={reloadSnapshots}
+            pinnedCount={pinnedNodeIds.size}
+            onClearPins={() => { setPinnedNodeIds(new Set()); toast({ title: "All pins cleared" }); }}
+            graphRef={graphRef}
+            entities={visibleEntities}
+            relationships={visibleRelationships}
+            tenant={tenant}
+            healthV2={healthV2}
+            structureHealth={structureHealth}
+            scenarioLabel={scenarioLabel ?? undefined}
+            activeSnapshot={activeSnapshot}
           />
         </div>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-              <Filter className="h-3.5 w-3.5" />
-              Filters
-              {(filterRelType !== "all" || showFamily || depth !== 2) && (
-                <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  {(filterRelType !== "all" ? 1 : 0) + (showFamily ? 1 : 0) + (depth !== 2 ? 1 : 0)}
-                </span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Relationship type</Label>
-              <Select value={filterRelType} onValueChange={setFilterRelType}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="All relationships" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All relationships</SelectItem>
-                  {RELATIONSHIP_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="filter-family" className="text-xs">Show family</Label>
-              <Switch id="filter-family" checked={showFamily} onCheckedChange={setShowFamily} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Depth: {selectedEntityId ? depth : "–"}</Label>
-              <Slider
-                min={1} max={3} step={1}
-                value={[depth]}
-                onValueChange={([v]) => setDepth(v)}
-                disabled={!selectedEntityId}
-                className="w-full"
-              />
-            </div>
-          </PopoverContent>
-        </Popover>
       </div>
 
       {/* Export blocked banner */}
@@ -697,26 +486,13 @@ export default function StructureView() {
         />
       )}
 
-      {!isViewingSnapshot && (
-        <StructureHealthPanel health={structureHealth} onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); }} />
-      )}
-
-      {/* Graph + Panel */}
-      <div className="relative mt-1 flex-1 rounded-lg border bg-card overflow-hidden">
+      {/* Canvas — maximum space */}
+      <div className="relative flex-1 overflow-hidden">
         {showOnboarding && !isViewingSnapshot && <OnboardingTooltips onDismiss={dismissOnboarding} />}
 
-        {/* Canvas Health Bar */}
+        {/* Health badge (small, top-right) */}
         {!isViewingSnapshot && healthV2 && (
-          <CanvasHealthBar
-            health={healthV2}
-            onFixIssues={() => { setShowFixMode(true); setShowReviewPanel(false); setShowAiPanel(false); }}
-            onViewDetails={() => { setShowReviewPanel(true); setShowFixMode(false); setShowAiPanel(false); }}
-          />
-        )}
-
-        {/* Health indicators */}
-        {!isViewingSnapshot && healthV2 && (
-          <CanvasHealthIndicator
+          <CanvasHealthBadge
             health={healthV2}
             onClick={() => { setShowReviewPanel(true); setShowFixMode(false); setShowAiPanel(false); }}
           />
@@ -768,7 +544,7 @@ export default function StructureView() {
         )}
 
         {visibleEntities.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex h-full items-center justify-center bg-muted/20">
             <div className="rounded-xl border-2 border-dashed border-border/60 px-10 py-12 text-center max-w-sm">
               <p className="text-sm text-muted-foreground">Right-click anywhere on the canvas to add your first entity.</p>
             </div>
@@ -799,6 +575,15 @@ export default function StructureView() {
         )}
 
         <RelationshipLegend visible={showLegend} onToggle={() => setShowLegend(!showLegend)} />
+
+        {/* Floating actions — bottom right */}
+        {!isViewingSnapshot && (
+          <FloatingActions
+            onAddEntity={() => setShowAddEntityDialog(true)}
+            onAiAssist={() => setShowAiPanel(!showAiPanel)}
+            showAiPanel={showAiPanel}
+          />
+        )}
 
         {selectedEntity && !selectedEdgeId && !isViewingSnapshot && (
           <EntityDetailPanel
@@ -836,6 +621,14 @@ export default function StructureView() {
           />
         )}
       </div>
+
+      {/* Command bar (⌘K search) */}
+      <CanvasCommandBar
+        open={showCommandBar}
+        onOpenChange={setShowCommandBar}
+        entities={displayEntities}
+        onSelectEntity={(eid) => { setSelectedEntityId(eid); setSelectedEdgeId(null); setFitViewTrigger((c) => c + 1); }}
+      />
 
       {/* Naming dialog for new manual structures */}
       <Dialog open={showNamingDialog} onOpenChange={setShowNamingDialog}>
