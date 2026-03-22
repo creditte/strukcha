@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy, GitCompareArrows, MoreHorizontal, Camera, Download, Filter, Search } from "lucide-react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy, GitCompareArrows, MoreHorizontal, Camera, Download, Filter, Search, PenTool } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +41,9 @@ import CreateScenarioDialog from "@/components/structure/CreateScenarioDialog";
 import StructureContextMenu, { type ContextMenuState } from "@/components/structure/StructureContextMenu";
 import AddEntityDialog from "@/components/structure/AddEntityDialog";
 import CanvasHealthIndicator from "@/components/structure/CanvasHealthIndicator";
+import RelationshipTypePicker from "@/components/structure/RelationshipTypePicker";
 import { formatDistanceToNow } from "date-fns";
+import type { Connection } from "@xyflow/react";
 
 export type ViewMode = "ownership" | "control" | "full";
 
@@ -86,6 +89,99 @@ export default function StructureView() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddEntityDialog, setShowAddEntityDialog] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
+
+  // Manual drawing state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isNewManual = searchParams.get("new") === "manual";
+  const [showNamingDialog, setShowNamingDialog] = useState(false);
+  const [newStructureName, setNewStructureName] = useState("");
+  const [hasBeenNamed, setHasBeenNamed] = useState(false);
+  const [pendingConnection, setPendingConnection] = useState<{ source: string; target: string } | null>(null);
+
+  // Detect if this is a manual (non-XPM) structure
+  const isManualStructure = useMemo(() => {
+    return entities.length === 0 || entities.every(e => e.xpm_uuid === null);
+  }, [entities]);
+
+  // Show naming dialog when first entity is about to be added on a new manual structure
+  useEffect(() => {
+    if (isNewManual && !hasBeenNamed && structureName === "Untitled Structure") {
+      setShowNamingDialog(true);
+    }
+  }, [isNewManual, hasBeenNamed, structureName]);
+
+  const handleSaveStructureName = useCallback(async () => {
+    if (!newStructureName.trim() || !id) return;
+    await supabase.from("structures").update({ name: newStructureName.trim() }).eq("id", id);
+    setHasBeenNamed(true);
+    setShowNamingDialog(false);
+    setSearchParams({}, { replace: true });
+    reload();
+  }, [newStructureName, id, reload, setSearchParams]);
+
+  // Create entity with a specific type directly (from context menu submenu)
+  const handleAddEntityWithType = useCallback(async (entityType: string, flowPosition?: { x: number; y: number }) => {
+    if (!tenantId || !id) return;
+    const { data: entity, error } = await supabase
+      .from("entities")
+      .insert({ name: `New ${entityType === "smsf" ? "SMSF" : entityType.replace("trust_", "").replace(/^\w/, c => c.toUpperCase())}`, entity_type: entityType as any, tenant_id: tenantId, source: "manual" as any })
+      .select("id")
+      .single();
+    if (error || !entity) {
+      toast({ title: "Failed to create entity", description: error?.message, variant: "destructive" });
+      return;
+    }
+    await supabase.from("structure_entities").insert({ structure_id: id, entity_id: entity.id, position_x: flowPosition?.x ?? null, position_y: flowPosition?.y ?? null });
+    toast({ title: "Entity added" });
+    setSelectedEntityId(entity.id);
+    setSelectedEdgeId(null);
+    reload();
+  }, [tenantId, id, toast, reload]);
+
+  // Handle drag-to-connect
+  const handleConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target || connection.source === connection.target) return;
+    setPendingConnection({ source: connection.source, target: connection.target });
+  }, []);
+
+  const handleConfirmRelationship = useCallback(async (relationshipType: string) => {
+    if (!pendingConnection || !tenantId || !id) return;
+    const { data: rel, error } = await supabase.from("relationships").insert({
+      from_entity_id: pendingConnection.source,
+      to_entity_id: pendingConnection.target,
+      relationship_type: relationshipType as any,
+      tenant_id: tenantId,
+      source: "manual" as any,
+    }).select("id").single();
+    if (error || !rel) {
+      toast({ title: "Failed to create relationship", description: error?.message, variant: "destructive" });
+    } else {
+      await supabase.from("structure_relationships").insert({ structure_id: id, relationship_id: rel.id });
+      toast({ title: "Relationship created" });
+      reload();
+    }
+    setPendingConnection(null);
+  }, [pendingConnection, tenantId, id, toast, reload]);
+
+  // Edit entity = select it to open detail panel
+  const handleEditEntity = useCallback((nodeId: string) => {
+    setSelectedEntityId(nodeId);
+    setSelectedEdgeId(null);
+  }, []);
+
+  // Duplicate entity
+  const handleDuplicateEntity = useCallback(async (nodeId: string) => {
+    const entity = entities.find(e => e.id === nodeId);
+    if (!entity || !tenantId || !id) return;
+    const { data, error } = await supabase.from("entities")
+      .insert({ name: `${entity.name} (copy)`, entity_type: entity.entity_type as any, tenant_id: tenantId, source: "manual" as any })
+      .select("id").single();
+    if (data) {
+      await supabase.from("structure_entities").insert({ structure_id: id, entity_id: data.id });
+      toast({ title: "Entity duplicated" });
+      reload();
+    }
+  }, [entities, tenantId, id, toast, reload]);
 
   const healthV2 = useMemo(
     () => computeHealthScoreV2(entities, relationships),
@@ -316,6 +412,11 @@ export default function StructureView() {
             {isScenario && (
               <Badge variant="secondary" className="gap-1 text-xs">
                 <Copy className="h-3 w-3" /> Scenario
+              </Badge>
+            )}
+            {isManualStructure && !isScenario && (
+              <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
+                <PenTool className="h-2.5 w-2.5" /> Manual entry
               </Badge>
             )}
           </div>
@@ -655,9 +756,22 @@ export default function StructureView() {
           />
         )}
 
+        {/* Relationship type picker for drag-to-connect */}
+        {pendingConnection && (
+          <RelationshipTypePicker
+            open={true}
+            fromEntityName={entities.find(e => e.id === pendingConnection.source)?.name ?? "Entity"}
+            toEntityName={entities.find(e => e.id === pendingConnection.target)?.name ?? "Entity"}
+            onConfirm={handleConfirmRelationship}
+            onCancel={() => setPendingConnection(null)}
+          />
+        )}
+
         {visibleEntities.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted-foreground">No entities to display.</p>
+            <div className="rounded-xl border-2 border-dashed border-border/60 px-10 py-12 text-center max-w-sm">
+              <p className="text-sm text-muted-foreground">Right-click anywhere on the canvas to add your first entity.</p>
+            </div>
           </div>
         ) : (
           <StructureGraph
@@ -680,6 +794,7 @@ export default function StructureView() {
             nodesDraggable={!isViewingSnapshot && dbLayoutMode === "manual"}
             onContextMenu={handleContextMenu}
             issueOverlays={issueOverlays}
+            onConnect={handleConnect}
           />
         )}
 
@@ -712,12 +827,35 @@ export default function StructureView() {
             menu={contextMenu}
             onClose={() => setContextMenu(null)}
             onAddEntity={handleAddEntityFromMenu}
+            onAddEntityWithType={handleAddEntityWithType}
             onAddRelationship={handleAddRelationshipFromMenu}
             onRemoveEntity={handleRemoveEntity}
             onRemoveRelationship={handleRemoveRelationship}
+            onEditEntity={handleEditEntity}
+            onDuplicateEntity={handleDuplicateEntity}
           />
         )}
       </div>
+
+      {/* Naming dialog for new manual structures */}
+      <Dialog open={showNamingDialog} onOpenChange={setShowNamingDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Name your structure</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={newStructureName}
+            onChange={(e) => setNewStructureName(e.target.value)}
+            placeholder="e.g. Smith Family Group"
+            autoFocus
+            onKeyDown={(e) => e.key === "Enter" && newStructureName.trim() && handleSaveStructureName()}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowNamingDialog(false); setSearchParams({}, { replace: true }); }}>Skip</Button>
+            <Button onClick={handleSaveStructureName} disabled={!newStructureName.trim()}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {tenantId && id && (
         <AddEntityDialog

@@ -13,6 +13,7 @@ import {
   type OnSelectionChangeParams,
   type EdgeMouseHandler,
   type NodeMouseHandler,
+  type Connection,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -163,13 +164,14 @@ interface Props {
   nodesDraggable?: boolean;
   onContextMenu?: (menu: ContextMenuState) => void;
   issueOverlays?: IssueOverlay[];
+  onConnect?: (connection: Connection) => void;
 }
 
 function StructureGraphInner({
   entities, relationships, selectedEntityId, onSelectEntity, onSelectEdge,
   autoLayoutTrigger, layoutMode, layoutStrategy, pinnedNodeIds, onTogglePin, viewMode,
   searchHighlightId, fitViewTrigger, dbPositions, onPositionsChanged, nodesDraggable: nodesDraggableProp,
-  onContextMenu, issueOverlays = [],
+  onContextMenu, issueOverlays = [], onConnect: onConnectProp,
 }: Props) {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
@@ -377,6 +379,13 @@ function StructureGraphInner({
     [onContextMenu, screenToFlowPosition]
   );
 
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      onConnectProp?.(connection);
+    },
+    [onConnectProp]
+  );
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -390,8 +399,10 @@ function StructureGraphInner({
       onNodeContextMenu={onNodeContextMenu}
       onEdgeContextMenu={onEdgeContextMenu}
       onPaneContextMenu={onPaneContextMenu}
+      onConnect={handleConnect}
       nodeTypes={nodeTypes}
       nodesDraggable={nodesDraggableProp ?? layoutStrategy === "manual"}
+      connectOnClick={false}
       fitView
       fitViewOptions={{ padding: 0.2 }}
       minZoom={0.2}

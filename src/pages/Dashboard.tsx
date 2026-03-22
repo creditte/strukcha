@@ -25,6 +25,7 @@ import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
+import CreateStructureModal from "@/components/structure/CreateStructureModal";
 
 export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<
@@ -49,6 +50,15 @@ export default function Dashboard() {
   const { tenant, loading: tenantLoading } = useTenantSettings();
   const { billing } = useBilling();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const handleCreateNew = () => {
+    if (atDiagramLimit) {
+      setShowLimitDialog(true);
+    } else {
+      setShowCreateModal(true);
+    }
+  };
 
   const atDiagramLimit = billing ? billing.diagram_count >= billing.diagram_limit : false;
   const permissionsLoaded = !usersLoading && !tenantLoading;
@@ -219,7 +229,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-3">
               <Button
                 className="gap-2 rounded-xl px-5 text-sm font-medium"
-                onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+                onClick={handleCreateNew}
               >
                 <Plus className="h-4 w-4" />
                 Create New Structure
@@ -255,7 +265,7 @@ export default function Dashboard() {
               <Button
                 size="lg"
                 className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
-                onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+                onClick={handleCreateNew}
               >
                 <Plus className="h-4 w-4" />
                 Create New Structure
@@ -408,7 +418,7 @@ export default function Dashboard() {
             </ul>
             <Button
               className="mt-8 gap-2 rounded-xl px-6"
-              onClick={() => atDiagramLimit ? setShowLimitDialog(true) : navigate("/structures")}
+              onClick={handleCreateNew}
             >
               <Plus className="h-4 w-4" />
               Create New Structure
@@ -462,6 +472,17 @@ export default function Dashboard() {
         </section>
       )}
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
+      <CreateStructureModal
+        open={showCreateModal}
+        onOpenChange={setShowCreateModal}
+        onImportXpm={() => {
+          if (xeroConnection) {
+            handleSyncXpm();
+          } else {
+            handleConnectXero();
+          }
+        }}
+      />
     </div>
   );
 }
