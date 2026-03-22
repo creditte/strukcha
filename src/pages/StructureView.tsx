@@ -90,6 +90,99 @@ export default function StructureView() {
   const [showAddEntityDialog, setShowAddEntityDialog] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
 
+  // Manual drawing state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isNewManual = searchParams.get("new") === "manual";
+  const [showNamingDialog, setShowNamingDialog] = useState(false);
+  const [newStructureName, setNewStructureName] = useState("");
+  const [hasBeenNamed, setHasBeenNamed] = useState(false);
+  const [pendingConnection, setPendingConnection] = useState<{ source: string; target: string } | null>(null);
+
+  // Detect if this is a manual (non-XPM) structure
+  const isManualStructure = useMemo(() => {
+    return entities.length === 0 || entities.every(e => e.xpm_uuid === null);
+  }, [entities]);
+
+  // Show naming dialog when first entity is about to be added on a new manual structure
+  useEffect(() => {
+    if (isNewManual && !hasBeenNamed && structureName === "Untitled Structure") {
+      setShowNamingDialog(true);
+    }
+  }, [isNewManual, hasBeenNamed, structureName]);
+
+  const handleSaveStructureName = useCallback(async () => {
+    if (!newStructureName.trim() || !id) return;
+    await supabase.from("structures").update({ name: newStructureName.trim() }).eq("id", id);
+    setHasBeenNamed(true);
+    setShowNamingDialog(false);
+    setSearchParams({}, { replace: true });
+    reload();
+  }, [newStructureName, id, reload, setSearchParams]);
+
+  // Create entity with a specific type directly (from context menu submenu)
+  const handleAddEntityWithType = useCallback(async (entityType: string, flowPosition?: { x: number; y: number }) => {
+    if (!tenantId || !id) return;
+    const { data: entity, error } = await supabase
+      .from("entities")
+      .insert({ name: `New ${entityType === "smsf" ? "SMSF" : entityType.replace("trust_", "").replace(/^\w/, c => c.toUpperCase())}`, entity_type: entityType as any, tenant_id: tenantId, source: "manual" as any })
+      .select("id")
+      .single();
+    if (error || !entity) {
+      toast({ title: "Failed to create entity", description: error?.message, variant: "destructive" });
+      return;
+    }
+    await supabase.from("structure_entities").insert({ structure_id: id, entity_id: entity.id, position_x: flowPosition?.x ?? null, position_y: flowPosition?.y ?? null });
+    toast({ title: "Entity added" });
+    setSelectedEntityId(entity.id);
+    setSelectedEdgeId(null);
+    reload();
+  }, [tenantId, id, toast, reload]);
+
+  // Handle drag-to-connect
+  const handleConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target || connection.source === connection.target) return;
+    setPendingConnection({ source: connection.source, target: connection.target });
+  }, []);
+
+  const handleConfirmRelationship = useCallback(async (relationshipType: string) => {
+    if (!pendingConnection || !tenantId || !id) return;
+    const { error } = await supabase.from("relationships").insert({
+      from_entity_id: pendingConnection.source,
+      to_entity_id: pendingConnection.target,
+      relationship_type: relationshipType as any,
+      tenant_id: tenantId,
+      source: "manual" as any,
+    });
+    if (error) {
+      toast({ title: "Failed to create relationship", description: error.message, variant: "destructive" });
+    } else {
+      await supabase.from("structure_relationships").insert({ structure_id: id, relationship_id: (await supabase.from("relationships").select("id").eq("from_entity_id", pendingConnection.source).eq("to_entity_id", pendingConnection.target).eq("relationship_type", relationshipType).order("created_at", { ascending: false }).limit(1).single()).data?.id! });
+      toast({ title: "Relationship created" });
+      reload();
+    }
+    setPendingConnection(null);
+  }, [pendingConnection, tenantId, id, toast, reload]);
+
+  // Edit entity = select it to open detail panel
+  const handleEditEntity = useCallback((nodeId: string) => {
+    setSelectedEntityId(nodeId);
+    setSelectedEdgeId(null);
+  }, []);
+
+  // Duplicate entity
+  const handleDuplicateEntity = useCallback(async (nodeId: string) => {
+    const entity = entities.find(e => e.id === nodeId);
+    if (!entity || !tenantId || !id) return;
+    const { data, error } = await supabase.from("entities")
+      .insert({ name: `${entity.name} (copy)`, entity_type: entity.entity_type as any, tenant_id: tenantId, source: "manual" as any })
+      .select("id").single();
+    if (data) {
+      await supabase.from("structure_entities").insert({ structure_id: id, entity_id: data.id });
+      toast({ title: "Entity duplicated" });
+      reload();
+    }
+  }, [entities, tenantId, id, toast, reload]);
+
   const healthV2 = useMemo(
     () => computeHealthScoreV2(entities, relationships),
     [entities, relationships]
