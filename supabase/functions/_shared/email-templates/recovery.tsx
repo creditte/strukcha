@@ -27,7 +27,7 @@ export const RecoveryEmail = ({
     <Preview>Reset your password for strukcha</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Text style={brand}>Strukcha</Text>
+        <Text style={brand}>strukcha</Text>
         <Heading style={h1}>Reset your password</Heading>
         <Text style={text}>
           We received a request to reset your password for Strukcha. Click
