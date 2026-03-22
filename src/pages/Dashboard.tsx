@@ -50,6 +50,15 @@ export default function Dashboard() {
   const { tenant, loading: tenantLoading } = useTenantSettings();
   const { billing } = useBilling();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const handleCreateNew = () => {
+    if (atDiagramLimit) {
+      setShowLimitDialog(true);
+    } else {
+      setShowCreateModal(true);
+    }
+  };
 
   const atDiagramLimit = billing ? billing.diagram_count >= billing.diagram_limit : false;
   const permissionsLoaded = !usersLoading && !tenantLoading;
