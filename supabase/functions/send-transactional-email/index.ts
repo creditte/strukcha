@@ -4,7 +4,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
 
 // Configuration baked in at scaffold time
-const SITE_NAME = "link-map-insight"
+const SITE_NAME = "strukcha"
 const SENDER_DOMAIN = "notify.strukcha.app"
 const FROM_DOMAIN = "strukcha.app"
 
