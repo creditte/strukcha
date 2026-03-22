@@ -158,7 +158,7 @@ async function sendSmtpEmail(to: string, code: string) {
     `<p style="font-size:36px;letter-spacing:10px;font-weight:bold;text-align:center;`,
     `background:#f4f4f5;padding:16px;border-radius:8px;margin:24px 0;color:#18181b">`,
     `${code}</p>`,
-    `<p style="color:#71717a;font-size:14px">This code expires in 10 minutes. If you didn't sign up for Strukcha, ignore this email.</p>`,
+    `<p style="color:#71717a;font-size:14px">This code expires in 10 minutes. If you didn't sign up for strukcha, ignore this email.</p>`,
     `</div>`,
     `.`,
   ].join("\r\n");
