@@ -13,6 +13,7 @@ import {
   type OnSelectionChangeParams,
   type EdgeMouseHandler,
   type NodeMouseHandler,
+  type Connection,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
