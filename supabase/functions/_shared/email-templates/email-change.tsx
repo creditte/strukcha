@@ -32,7 +32,7 @@ export const EmailChangeEmail = ({
     <Preview>Confirm your email change for strukcha</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Text style={brand}>Strukcha</Text>
+        <Text style={brand}>strukcha</Text>
         <Heading style={h1}>Confirm your email change</Heading>
         <Text style={text}>
           You requested to change your email address for Strukcha from{' '}
