@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy, GitCompareArrows, MoreHorizontal, Camera, Download, Filter, Search } from "lucide-react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
+import { ArrowLeft, LayoutGrid, Palette, Pin, Eye, Maximize, RotateCcw, LinkIcon, Sparkles, MousePointer, Grid3x3, Copy, GitCompareArrows, MoreHorizontal, Camera, Download, Filter, Search, PenTool } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +41,9 @@ import CreateScenarioDialog from "@/components/structure/CreateScenarioDialog";
 import StructureContextMenu, { type ContextMenuState } from "@/components/structure/StructureContextMenu";
 import AddEntityDialog from "@/components/structure/AddEntityDialog";
 import CanvasHealthIndicator from "@/components/structure/CanvasHealthIndicator";
+import RelationshipTypePicker from "@/components/structure/RelationshipTypePicker";
 import { formatDistanceToNow } from "date-fns";
+import type { Connection } from "@xyflow/react";
 
 export type ViewMode = "ownership" | "control" | "full";
 
