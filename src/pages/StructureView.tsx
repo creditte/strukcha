@@ -146,17 +146,17 @@ export default function StructureView() {
 
   const handleConfirmRelationship = useCallback(async (relationshipType: string) => {
     if (!pendingConnection || !tenantId || !id) return;
-    const { error } = await supabase.from("relationships").insert({
+    const { data: rel, error } = await supabase.from("relationships").insert({
       from_entity_id: pendingConnection.source,
       to_entity_id: pendingConnection.target,
       relationship_type: relationshipType as any,
       tenant_id: tenantId,
       source: "manual" as any,
-    });
-    if (error) {
-      toast({ title: "Failed to create relationship", description: error.message, variant: "destructive" });
+    }).select("id").single();
+    if (error || !rel) {
+      toast({ title: "Failed to create relationship", description: error?.message, variant: "destructive" });
     } else {
-      await supabase.from("structure_relationships").insert({ structure_id: id, relationship_id: (await supabase.from("relationships").select("id").eq("from_entity_id", pendingConnection.source).eq("to_entity_id", pendingConnection.target).eq("relationship_type", relationshipType).order("created_at", { ascending: false }).limit(1).single()).data?.id! });
+      await supabase.from("structure_relationships").insert({ structure_id: id, relationship_id: rel.id });
       toast({ title: "Relationship created" });
       reload();
     }
