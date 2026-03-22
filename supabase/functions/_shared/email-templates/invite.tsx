@@ -27,7 +27,7 @@ export const InviteEmail = ({
 }: InviteEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>You've been invited to join Strukcha</Preview>
+    <Preview>You've been invited to join strukcha</Preview>
     <Body style={main}>
       <Container style={container}>
         <Text style={brand}>Strukcha</Text>
