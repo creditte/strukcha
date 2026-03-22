@@ -24,7 +24,7 @@ export const MagicLinkEmail = ({
 }: MagicLinkEmailProps) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Your login link for Strukcha</Preview>
+    <Preview>Your login link for strukcha</Preview>
     <Body style={main}>
       <Container style={container}>
         <Text style={brand}>Strukcha</Text>
