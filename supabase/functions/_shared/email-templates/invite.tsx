@@ -35,7 +35,7 @@ export const InviteEmail = ({
         <Text style={text}>
           You've been invited to join{' '}
           <Link href={siteUrl} style={link}>
-            <strong>Strukcha</strong>
+            <strong>strukcha</strong>
           </Link>
           . Click the button below to accept the invitation and create your
           account.

@@ -35,7 +35,7 @@ export const EmailChangeEmail = ({
         <Text style={brand}>strukcha</Text>
         <Heading style={h1}>Confirm your email change</Heading>
         <Text style={text}>
-          You requested to change your email address for Strukcha from{' '}
+          You requested to change your email address for strukcha from{' '}
           <Link href={`mailto:${email}`} style={link}>
             {email}
           </Link>{' '}

@@ -37,7 +37,7 @@ export const SignupEmail = ({
         <Text style={text}>
           Thanks for signing up for{' '}
           <Link href={siteUrl} style={link}>
-            <strong>Strukcha</strong>
+            <strong>strukcha</strong>
           </Link>
           !
         </Text>

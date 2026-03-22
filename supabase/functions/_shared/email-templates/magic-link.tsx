@@ -30,7 +30,7 @@ export const MagicLinkEmail = ({
         <Text style={brand}>strukcha</Text>
         <Heading style={h1}>Your login link</Heading>
         <Text style={text}>
-          Click the button below to log in to Strukcha. This link will expire
+          Click the button below to log in to strukcha. This link will expire
           shortly.
         </Text>
         <Button style={button} href={confirmationUrl}>
