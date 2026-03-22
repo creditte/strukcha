@@ -47,8 +47,8 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
   const { toast } = useToast();
   const [exporting, setExporting] = useState(false);
   const [showPdfDialog, setShowPdfDialog] = useState(false);
-  const [includeHealth, setIncludeHealth] = useState(false);
-  const [includeChecklist, setIncludeChecklist] = useState(false);
+  const [includeHealth, setIncludeHealth] = useState(true);
+  const [includeChecklist, setIncludeChecklist] = useState(true);
   const prefix = structureName.replace(/\s+/g, "_");
 
   const userName = "";
