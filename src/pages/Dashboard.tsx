@@ -472,6 +472,17 @@ export default function Dashboard() {
         </section>
       )}
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
+      <CreateStructureModal
+        open={showCreateModal}
+        onOpenChange={setShowCreateModal}
+        onImportXpm={() => {
+          if (xeroConnection) {
+            handleSyncXpm();
+          } else {
+            handleConnectXero();
+          }
+        }}
+      />
     </div>
   );
 }
