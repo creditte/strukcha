@@ -1,46 +1,35 @@
 project_id = "kdwmetjwxfzovdmarijl"
 
-[functions.import-xpm]
-verify_jwt = false
-
-[functions.invite-user]
-verify_jwt = false
-
-[functions.manage-users]
-verify_jwt = false
-
-[functions.analyse-structure]
-verify_jwt = false
-
-[functions.merge-entities]
-verify_jwt = false
-
-[functions.create-snapshot]
-verify_jwt = false
-
-[functions.duplicate-structure]
-verify_jwt = false
-
-[functions.xero-auth]
-verify_jwt = false
-
-[functions.xero-callback]
-verify_jwt = false
-
-[functions.sync-xpm]
-verify_jwt = false
-
-[functions.create-checkout]
-verify_jwt = false
-
-[functions.stripe-webhooks]
-verify_jwt = false
-
-[functions.check-subscription]
-verify_jwt = false
-
-[functions.customer-portal]
-verify_jwt = false
-
-[functions.process-email-queue]
-verify_jwt = true
+[functions]
+  [functions.analyse-structure]
+    verify_jwt = false
+  [functions.auth-email-hook]
+    verify_jwt = false
+  [functions.check-subscription]
+    verify_jwt = false
+  [functions.create-checkout]
+    verify_jwt = false
+  [functions.create-snapshot]
+    verify_jwt = false
+  [functions.customer-portal]
+    verify_jwt = false
+  [functions.duplicate-structure]
+    verify_jwt = false
+  [functions.import-xpm]
+    verify_jwt = false
+  [functions.invite-user]
+    verify_jwt = false
+  [functions.manage-users]
+    verify_jwt = false
+  [functions.merge-entities]
+    verify_jwt = false
+  [functions.process-email-queue]
+    verify_jwt = true
+  [functions.stripe-webhooks]
+    verify_jwt = false
+  [functions.sync-xpm]
+    verify_jwt = false
+  [functions.xero-auth]
+    verify_jwt = false
+  [functions.xero-callback]
+    verify_jwt = false
