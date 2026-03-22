@@ -130,9 +130,9 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
       <Dialog open={showPdfDialog} onOpenChange={setShowPdfDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>PDF Export Options</DialogTitle>
+            <DialogTitle>Premium PDF Report</DialogTitle>
             <DialogDescription>
-              Choose which sections to include in the PDF pack.
+              Generate a comprehensive advisor-grade structure report with health insights and governance analysis.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
