@@ -210,8 +210,7 @@ export async function exportImage(
 const LEGEND_GROUPS: { title: string; types: string[] }[] = [
   { title: "Ownership", types: ["shareholder", "beneficiary"] },
   { title: "Control", types: ["director", "trustee", "appointer", "settlor"] },
-  { title: "Membership", types: ["partner", "member"] },
-  { title: "Family", types: ["spouse", "parent", "child"] },
+  { title: "Family / Membership", types: ["partner", "member", "spouse", "parent", "child"] },
 ];
 
 const TYPE_ORDER = ["shareholder", "beneficiary", "partner", "member", "director", "trustee", "appointer", "settlor", "spouse", "parent", "child"];
@@ -227,42 +226,206 @@ function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
-function addFooter(
+/* ── Premium colour palette ── */
+const C = {
+  green: [22, 163, 74] as [number, number, number],     // #16A34A — primary accent
+  greenLight: [220, 252, 231] as [number, number, number], // #DCFCE7
+  greenMuted: [187, 247, 208] as [number, number, number], // #BBF7D0
+  dark: [15, 23, 42] as [number, number, number],         // #0F172A — headings
+  body: [51, 65, 85] as [number, number, number],         // #334155
+  muted: [148, 163, 184] as [number, number, number],     // #94A3B8
+  light: [241, 245, 249] as [number, number, number],     // #F1F5F9 — zebra rows
+  white: [255, 255, 255] as [number, number, number],
+  border: [226, 232, 240] as [number, number, number],    // #E2E8F0
+  red: [220, 38, 38] as [number, number, number],
+  amber: [217, 119, 6] as [number, number, number],
+  amberLight: [254, 243, 199] as [number, number, number],
+  redLight: [254, 226, 226] as [number, number, number],
+};
+
+/* ── Shared page layout helpers ── */
+
+const PAGE_MARGIN = 24; // ~8.5mm at 72 DPI — maps to 24px conceptually
+const MM_MARGIN = 14; // jsPDF mm margin
+
+function addPremiumFooter(
   pdf: jsPDF,
-  structureName: string,
+  groupName: string,
   pageNum: number,
   totalPages: number,
-  opts?: { logoDataUrl?: string | null; footerText?: string; disclaimerText?: string; brandColor?: string }
+  opts?: { logoDataUrl?: string | null; brandColor?: string }
 ) {
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const lineColor = opts?.brandColor ? hexToRgb(opts.brandColor) : [200, 200, 200] as [number, number, number];
-  pdf.setDrawColor(...lineColor);
-  pdf.line(14, pageH - 18, pageW - 14, pageH - 18);
+
+  // Thin rule
+  pdf.setDrawColor(...C.border);
+  pdf.setLineWidth(0.3);
+  pdf.line(MM_MARGIN, pageH - 14, pageW - MM_MARGIN, pageH - 14);
+
   pdf.setFontSize(7);
-  pdf.setTextColor(140);
+  pdf.setTextColor(...C.muted);
+  pdf.text(groupName, MM_MARGIN, pageH - 9);
+  pdf.text(`Page ${pageNum} of ${totalPages}`, pageW - MM_MARGIN, pageH - 9, { align: "right" });
 
-  const footerLabel = opts?.footerText || structureName;
-  pdf.text(footerLabel, 14, pageH - 12);
-  pdf.text(`Page ${pageNum} of ${totalPages}`, pageW - 14, pageH - 12, { align: "right" });
-
+  // Centre logo if available
   if (opts?.logoDataUrl && pageNum > 1) {
     try {
-      pdf.addImage(opts.logoDataUrl, "PNG", pageW / 2 - 10, pageH - 17, 20, 8);
+      pdf.addImage(opts.logoDataUrl, "PNG", pageW / 2 - 8, pageH - 13, 16, 6);
     } catch { /* skip */ }
   }
 
-  // Short disclaimer on pages 2+
-  if (opts?.disclaimerText && pageNum > 1) {
-    pdf.setFontSize(6);
-    pdf.setTextColor(160);
-    const shortDisclaimer = opts.disclaimerText.length > 120 ? opts.disclaimerText.slice(0, 117) + "…" : opts.disclaimerText;
-    pdf.text(shortDisclaimer, 14, pageH - 6, { maxWidth: pageW - 28 });
+  pdf.setTextColor(0);
+}
+
+function sectionTitle(pdf: jsPDF, text: string, y: number, brandRgb?: [number, number, number]): number {
+  const accent = brandRgb ?? C.green;
+  pdf.setFontSize(16);
+  pdf.setFont("helvetica", "bold");
+  pdf.setTextColor(...C.dark);
+  pdf.text(text, MM_MARGIN, y);
+
+  // Accent underline
+  const tw = pdf.getTextWidth(text);
+  pdf.setDrawColor(...accent);
+  pdf.setLineWidth(0.8);
+  pdf.line(MM_MARGIN, y + 1.5, MM_MARGIN + tw + 2, y + 1.5);
+  pdf.setLineWidth(0.2);
+  pdf.setDrawColor(...C.border);
+  pdf.setFont("helvetica", "normal");
+
+  return y + 8;
+}
+
+function drawMetricBar(
+  pdf: jsPDF,
+  x: number, y: number, w: number,
+  label: string, value: number, max: number,
+  accent: [number, number, number]
+) {
+  const pct = Math.min(1, value / max);
+  const barH = 4;
+
+  pdf.setFontSize(8);
+  pdf.setFont("helvetica", "normal");
+  pdf.setTextColor(...C.body);
+  pdf.text(label, x, y);
+  pdf.text(`${value}/${max}`, x + w, y, { align: "right" });
+
+  // Track
+  pdf.setFillColor(...C.light);
+  pdf.roundedRect(x, y + 1.5, w, barH, 1.5, 1.5, "F");
+
+  // Fill
+  if (pct > 0) {
+    const fillColor: [number, number, number] = pct >= 0.9 ? C.green : pct >= 0.5 ? C.amber : C.red;
+    pdf.setFillColor(...fillColor);
+    pdf.roundedRect(x, y + 1.5, Math.max(3, w * pct), barH, 1.5, 1.5, "F");
   }
 
-  pdf.setTextColor(0);
-  pdf.setDrawColor(200);
+  return y + barH + 8;
 }
+
+function getScoreColor(score: number): [number, number, number] {
+  if (score >= 90) return C.green;
+  if (score >= 50) return C.amber;
+  return C.red;
+}
+
+function getScoreLabel(score: number): string {
+  if (score >= 90) return "Healthy";
+  if (score >= 70) return "Minor Gaps";
+  if (score >= 50) return "Control Incomplete";
+  if (score >= 30) return "Governance Gaps";
+  return "Critical Issues";
+}
+
+/* ── Advisory text generators ── */
+
+function generateAdvisory(issues: import("@/lib/structureScoring").ScoringIssue[], score: number): string {
+  if (score >= 90) {
+    return "This structure demonstrates strong governance and control arrangements. All key relationships are recorded and no critical gaps have been identified. Ongoing monitoring is recommended to maintain compliance as the structure evolves.";
+  }
+  if (score >= 70) {
+    return "The structure is fundamentally sound with minor documentation gaps. Addressing the items above will bring the structure to full compliance and strengthen governance clarity for all stakeholders.";
+  }
+  if (score >= 50) {
+    return "Material governance gaps exist that require attention. The issues identified relate to control clarity and may have implications for asset protection and succession planning. Remediation of priority items is recommended before the next review cycle.";
+  }
+  return "Critical structural and governance deficiencies have been identified. These gaps represent material risk to the integrity of the arrangement and should be addressed as a matter of urgency. Professional advisory review is strongly recommended.";
+}
+
+function generateRecommendations(issues: import("@/lib/structureScoring").ScoringIssue[]): { priority: number; action: string; impact: string }[] {
+  const recs: { priority: number; action: string; impact: string }[] = [];
+
+  const criticals = issues.filter((i) => i.severity === "critical");
+  const gaps = issues.filter((i) => i.severity === "gap");
+  const minors = issues.filter((i) => i.severity === "minor" || i.severity === "info");
+
+  for (const issue of criticals.slice(0, 4)) {
+    recs.push({
+      priority: 1,
+      action: issueToAction(issue),
+      impact: issueToImpact(issue),
+    });
+  }
+  for (const issue of gaps.slice(0, 4)) {
+    recs.push({
+      priority: 2,
+      action: issueToAction(issue),
+      impact: issueToImpact(issue),
+    });
+  }
+  for (const issue of minors.slice(0, 3)) {
+    recs.push({
+      priority: 3,
+      action: issueToAction(issue),
+      impact: issueToImpact(issue),
+    });
+  }
+  return recs;
+}
+
+function issueToAction(issue: import("@/lib/structureScoring").ScoringIssue): string {
+  const name = issue.entity_name ?? "the entity";
+  switch (issue.code) {
+    case "missing_trustee": return `Assign a trustee to "${name}"`;
+    case "missing_appointer": return `Record an appointer for "${name}"`;
+    case "missing_member": return `Add members to SMSF "${name}"`;
+    case "missing_directors": return `Record directors for company "${name}"`;
+    case "missing_shareholders": return `Add shareholders to company "${name}"`;
+    case "missing_ownership_percent": return `Record ownership percentages for "${name}"`;
+    case "ownership_exceeds": return `Correct ownership percentages for "${name}" (currently exceeds 100%)`;
+    case "circular_ownership": return `Resolve circular ownership chain involving "${name}"`;
+    case "orphan_entity": return `Connect "${name}" to the structure or remove if redundant`;
+    case "duplicate_relationship": return `Remove duplicate relationship for "${name}"`;
+    case "unclassified": return `Classify entity "${name}" with the correct type`;
+    case "missing_identifiers": return `Add ABN or ACN for "${name}"`;
+    case "no_corporate_trustee": return `Consider appointing a corporate trustee for "${name}"`;
+    default: return issue.message;
+  }
+}
+
+function issueToImpact(issue: import("@/lib/structureScoring").ScoringIssue): string {
+  switch (issue.code) {
+    case "missing_trustee": return "Without a trustee, the trust cannot legally administer assets or make distributions.";
+    case "missing_appointer": return "An appointer controls who serves as trustee — this is a critical governance safeguard.";
+    case "missing_member": return "SMSF members must be recorded to satisfy regulatory obligations.";
+    case "missing_directors": return "Directors are legally required for company governance and ASIC compliance.";
+    case "missing_shareholders": return "Shareholder records establish beneficial ownership and are required for compliance.";
+    case "missing_ownership_percent": return "Ownership percentages are needed for tax reporting and distribution calculations.";
+    case "ownership_exceeds": return "Ownership exceeding 100% indicates a data error that will affect reporting accuracy.";
+    case "circular_ownership": return "Circular ownership creates legal ambiguity and may have adverse tax consequences.";
+    case "orphan_entity": return "Disconnected entities reduce structural clarity and may indicate missing relationships.";
+    case "duplicate_relationship": return "Duplicate entries can cause errors in reporting and governance assessments.";
+    case "unclassified": return "Unclassified entities prevent accurate governance scoring and compliance checks.";
+    case "missing_identifiers": return "ABN/ACN records are needed for regulatory correspondence and ATO compliance.";
+    case "no_corporate_trustee": return "Corporate trustees provide limited liability protection and succession continuity.";
+    default: return "Addressing this gap improves structural completeness and governance clarity.";
+  }
+}
+
+/* ── Main premium PDF export ── */
 
 export interface PdfHealthOptions {
   includeHealthSummary?: boolean;
@@ -279,153 +442,146 @@ export async function exportPdf(
   healthOptions?: PdfHealthOptions
 ) {
   const exportDate = new Date().toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const extraPages = (healthOptions?.includeHealthSummary ? 1 : 0) + (healthOptions?.includeChecklist ? 1 : 0);
-  const totalPages = (meta?.disclaimerText ? 4 : 3) + extraPages;
+  const brandRgb = meta?.brandColor ? hexToRgb(meta.brandColor) : C.green;
 
-  const brandRgb = meta?.brandColor ? hexToRgb(meta.brandColor) : [59, 130, 246] as [number, number, number];
+  const hasHealth = healthOptions?.includeHealthSummary && healthOptions.healthScore;
+  const hasChecklist = healthOptions?.includeChecklist && healthOptions.healthScore;
+  const hasRecommendations = hasHealth && healthOptions.healthScore!.issues.length > 0;
+
+  let totalPages = 3; // Overview + Relationships + Entities
+  if (hasHealth) totalPages++;
+  if (hasChecklist) totalPages++;
+  if (hasRecommendations) totalPages++;
 
   // Pre-load logo
   let logoDataUrl: string | null = null;
   if (meta?.logoUrl) {
     logoDataUrl = await loadImageAsDataUrl(meta.logoUrl);
   }
+  const footerOpts = { logoDataUrl, brandColor: meta?.brandColor };
+  const entityMap = new Map(entities.map((e) => [e.id, e]));
 
-  const footerOpts = { logoDataUrl, footerText: meta?.footerText, disclaimerText: meta?.disclaimerText, brandColor: meta?.brandColor };
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 1 — STRUCTURE OVERVIEW
+  // ════════════════════════════════════════════════════════════════
 
-  // ─── Page 1: Diagram + title block + legend ───
-  pdf.setFontSize(20);
-  pdf.text(structureName, 14, 16);
-  pdf.setFontSize(9);
-  pdf.setTextColor(100);
-  const subtitleParts = [];
-  if (meta?.isScenario) {
-    subtitleParts.push(`Scenario${meta.scenarioLabel ? `: ${meta.scenarioLabel}` : ""}`);
-  }
-  if (meta?.snapshotName) {
-    subtitleParts.push(`Snapshot: ${meta.snapshotName}`);
-    if (meta.snapshotCreatedAt) {
-      subtitleParts.push(`as at ${new Date(meta.snapshotCreatedAt).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}`);
-    }
-  }
-  subtitleParts.push(`${entities.length} entities · ${relationships.length} relationships`);
-  subtitleParts.push(`Exported ${exportDate}`);
-  if (meta?.userName) subtitleParts.push(`by ${meta.userName}`);
-  if (meta?.tenantName) subtitleParts.push(meta.tenantName);
-  pdf.text(subtitleParts.join("  |  "), 14, 23);
-  pdf.setTextColor(0);
+  // Header band
+  pdf.setFillColor(...C.dark);
+  pdf.rect(0, 0, pageW, 28, "F");
 
-  // Brand accent line under title
-  if (meta?.brandColor) {
-    pdf.setDrawColor(...brandRgb);
-    pdf.setLineWidth(0.5);
-    pdf.line(14, 26, pageW - 14, 26);
-    pdf.setLineWidth(0.2);
-    pdf.setDrawColor(200);
-  }
+  // Group name
+  pdf.setFontSize(18);
+  pdf.setFont("helvetica", "bold");
+  pdf.setTextColor(...C.white);
+  pdf.text(structureName, MM_MARGIN, 14);
 
-  // Logo top-right on page 1
+  // Logo top-right
   if (logoDataUrl) {
     try {
       const dims = await getImageDims(logoDataUrl);
-      const maxH = 14;
-      const scale = Math.min(1, maxH / dims.h, 50 / dims.w);
+      const maxH = 12;
+      const scale = Math.min(1, maxH / dims.h, 40 / dims.w);
       const drawW = dims.w * scale;
       const drawH = dims.h * scale;
-      pdf.addImage(logoDataUrl, "PNG", pageW - 14 - drawW, 8, drawW, drawH);
-    } catch { /* skip gracefully */ }
+      pdf.addImage(logoDataUrl, "PNG", pageW - MM_MARGIN - drawW, 8, drawW, drawH);
+    } catch { /* skip */ }
   }
 
-  // Diagram image
+  // Sub-line
+  pdf.setFontSize(8);
+  pdf.setFont("helvetica", "normal");
+  pdf.setTextColor(200, 210, 220);
+  const subParts = [
+    `${entities.length} entities`,
+    `${relationships.length} relationships`,
+    `Exported ${exportDate}`,
+  ];
+  if (meta?.tenantName) subParts.push(meta.tenantName);
+  pdf.text(subParts.join("  ·  "), MM_MARGIN, 22);
+
+  // Accent bar
+  pdf.setFillColor(...brandRgb);
+  pdf.rect(0, 28, pageW, 1.2, "F");
+
+  // Diagram image (primary visual focus)
+  const diagramTop = 34;
+  const legendBandH = 22;
+  const diagramH = pageH - diagramTop - legendBandH - 20; // leave room for legend + footer
+
   try {
     const imgData = await toPng(graphElement, { backgroundColor: "#ffffff", pixelRatio: 2 });
-    const imgW = pageW - 28;
-    const imgH = pageH - 76;
-    pdf.addImage(imgData, "PNG", 14, 28, imgW, imgH);
+    const imgW = pageW - MM_MARGIN * 2;
+    // Add subtle border around diagram
+    pdf.setDrawColor(...C.border);
+    pdf.setLineWidth(0.3);
+    pdf.rect(MM_MARGIN, diagramTop, imgW, diagramH, "S");
+    pdf.addImage(imgData, "PNG", MM_MARGIN + 0.5, diagramTop + 0.5, imgW - 1, diagramH - 1);
   } catch {
     pdf.setFontSize(10);
-    pdf.text("(Could not render diagram image)", 14, 40);
+    pdf.setTextColor(...C.muted);
+    pdf.text("(Could not render diagram image)", MM_MARGIN, diagramTop + 20);
   }
 
-  // Disclaimer box on page 1 if enabled
-  if (meta?.disclaimerText) {
-    const disclaimerY = pageH - 44;
-    pdf.setDrawColor(...brandRgb);
-    pdf.setFillColor(248, 248, 252);
-    pdf.roundedRect(14, disclaimerY - 8, pageW - 28, 16, 1, 1, "FD");
-    pdf.setFontSize(6.5);
-    pdf.setTextColor(100);
+  // Legend band at bottom
+  const legendY = pageH - legendBandH - 16;
+  pdf.setFillColor(...C.light);
+  pdf.setDrawColor(...C.border);
+  pdf.roundedRect(MM_MARGIN, legendY, pageW - MM_MARGIN * 2, legendBandH, 1.5, 1.5, "FD");
+
+  const colW = (pageW - MM_MARGIN * 2 - 8) / 3;
+  for (let gi = 0; gi < LEGEND_GROUPS.length; gi++) {
+    const group = LEGEND_GROUPS[gi];
+    const colX = MM_MARGIN + 4 + gi * colW;
+    let ly = legendY + 5;
+
+    pdf.setFontSize(7);
     pdf.setFont("helvetica", "bold");
-    pdf.text("DISCLAIMER", 16, disclaimerY - 4);
+    pdf.setTextColor(...C.dark);
+    pdf.text(group.title, colX, ly);
+    ly += 4;
+
     pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(6);
-    const wrappedDisclaimer = pdf.splitTextToSize(meta.disclaimerText, pageW - 34);
-    pdf.text(wrappedDisclaimer.slice(0, 3), 16, disclaimerY);
-    pdf.setTextColor(0);
-    pdf.setDrawColor(200);
-  }
-
-  // Legend
-  const legendStartY = meta?.disclaimerText ? pageH - 52 : pageH - 44;
-  const leftItems: { title?: string; type: string; color: string }[] = [];
-  const rightItems: { title?: string; type: string; color: string }[] = [];
-
-  for (const group of LEGEND_GROUPS.slice(0, 2)) {
-    leftItems.push({ title: group.title, type: "", color: "" });
-    for (const t of group.types) leftItems.push({ type: t, color: EDGE_COLORS[t] ?? "#94a3b8" });
-  }
-  for (const group of LEGEND_GROUPS.slice(2)) {
-    rightItems.push({ title: group.title, type: "", color: "" });
-    for (const t of group.types) rightItems.push({ type: t, color: EDGE_COLORS[t] ?? "#94a3b8" });
-  }
-
-  const maxLen = Math.max(leftItems.length, rightItems.length);
-  while (leftItems.length < maxLen) leftItems.push({ type: "", color: "" });
-  while (rightItems.length < maxLen) rightItems.push({ type: "", color: "" });
-
-  const panelH = maxLen * 4 + 4;
-  pdf.setDrawColor(210);
-  pdf.setFillColor(248, 248, 250);
-  pdf.roundedRect(14, legendStartY - 2, pageW - 28, panelH, 2, 2, "FD");
-
-  const col1X = 18;
-  const col2X = 18 + (pageW - 36) / 2;
-  let y = legendStartY + 2;
-
-  for (let i = 0; i < maxLen; i++) {
-    const left = leftItems[i];
-    const right = rightItems[i];
-    for (const [item, x] of [[left, col1X], [right, col2X]] as const) {
-      if (!item || (!item.type && !item.title)) continue;
-      if (item.title) {
-        pdf.setFontSize(7);
-        pdf.setFont("helvetica", "bold");
-        pdf.setTextColor(100);
-        pdf.text(item.title, x, y);
-        pdf.setFont("helvetica", "normal");
-      } else if (item.type && item.color) {
-        const [r, g, b] = hexToRgb(item.color);
-        pdf.setFillColor(r, g, b);
-        pdf.rect(x + 2, y - 2, 5, 2.5, "F");
-        pdf.setFontSize(7);
-        pdf.setTextColor(60);
-        pdf.text(capitalize(item.type), x + 9, y);
-      }
+    pdf.setFontSize(6.5);
+    for (const t of group.types) {
+      const color = EDGE_COLORS[t] ?? "#94a3b8";
+      const [r, g, b] = hexToRgb(color);
+      pdf.setFillColor(r, g, b);
+      pdf.roundedRect(colX, ly - 2, 4, 2, 0.5, 0.5, "F");
+      pdf.setTextColor(...C.body);
+      pdf.text(capitalize(t), colX + 6, ly);
+      ly += 3.2;
     }
-    y += 4;
+  }
+
+  // Disclaimer on page 1 if enabled
+  if (meta?.disclaimerText) {
+    const discY = legendY - 12;
+    pdf.setDrawColor(...C.border);
+    pdf.setFillColor(250, 250, 252);
+    pdf.roundedRect(MM_MARGIN, discY - 2, pageW - MM_MARGIN * 2, 10, 1, 1, "FD");
+    pdf.setFontSize(6);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...C.muted);
+    pdf.text("DISCLAIMER", MM_MARGIN + 3, discY + 1);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(5.5);
+    const wdisc = pdf.splitTextToSize(meta.disclaimerText, pageW - MM_MARGIN * 2 - 8);
+    pdf.text(wdisc.slice(0, 2), MM_MARGIN + 3, discY + 4.5);
   }
 
   pdf.setTextColor(0);
-  addFooter(pdf, structureName, 1, totalPages, footerOpts);
+  addPremiumFooter(pdf, structureName, 1, totalPages, footerOpts);
 
-  // ─── Page 2: Relationships table ───
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 2 — RELATIONSHIPS
+  // ════════════════════════════════════════════════════════════════
+
   pdf.addPage();
-  pdf.setFontSize(14);
-  pdf.text("Relationships", 14, 16);
+  let curY = sectionTitle(pdf, "Relationships", 18, brandRgb);
 
-  const entityMap = new Map(entities.map((e) => [e.id, e]));
   const relRows = relationships.map((r) => {
     const from = entityMap.get(r.from_entity_id);
     const to = entityMap.get(r.to_entity_id);
@@ -441,42 +597,60 @@ export async function exportPdf(
   relRows.sort((a, b) => relSortKey(a).localeCompare(relSortKey(b)));
 
   const hasPct = relRows.some((r) => r.pct != null);
-  const hasUnits = relRows.some((r) => r.units != null);
-  const hasCls = relRows.some((r) => r.cls != null);
 
   const relHead = ["From", "Relationship", "To"];
   if (hasPct) relHead.push("Ownership %");
-  if (hasUnits) relHead.push("Units");
-  if (hasCls) relHead.push("Class");
 
   const relBody = relRows.map((r) => {
     const row = [r.fromName, capitalize(r.relType), r.toName];
     if (hasPct) row.push(r.pct != null ? fmtPercent(r.pct) : "–");
-    if (hasUnits) row.push(r.units != null ? String(r.units) : "–");
-    if (hasCls) row.push(r.cls ?? "–");
     return row;
   });
 
-  const relColStyles: Record<number, { halign: "right" | "left" | "center" }> = {};
-  let colIdx = 3;
-  if (hasPct) { relColStyles[colIdx] = { halign: "right" }; colIdx++; }
-  if (hasUnits) { relColStyles[colIdx] = { halign: "right" }; colIdx++; }
+  const relColStyles: Record<number, { halign: "right" | "left" | "center"; cellWidth?: number }> = {};
+  if (hasPct) relColStyles[3] = { halign: "right" };
 
   autoTable(pdf, {
-    startY: 22,
+    startY: curY,
     head: [relHead],
     body: relBody,
-    styles: { fontSize: 8.5, cellPadding: 2 },
-    headStyles: { fillColor: brandRgb, fontSize: 9 },
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+      textColor: C.body,
+      lineColor: C.border,
+      lineWidth: 0.15,
+    },
+    headStyles: {
+      fillColor: C.dark,
+      textColor: C.white,
+      fontSize: 8,
+      fontStyle: "bold",
+      cellPadding: { top: 3, bottom: 3, left: 3, right: 3 },
+    },
     columnStyles: relColStyles,
-    alternateRowStyles: { fillColor: [248, 248, 252] },
+    alternateRowStyles: { fillColor: C.light },
+    margin: { left: MM_MARGIN, right: MM_MARGIN },
+    tableLineColor: C.border,
   });
-  addFooter(pdf, structureName, 2, totalPages, footerOpts);
+  addPremiumFooter(pdf, structureName, 2, totalPages, footerOpts);
 
-  // ─── Page 3: Entities table ───
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 3 — ENTITIES
+  // ════════════════════════════════════════════════════════════════
+
   pdf.addPage();
-  pdf.setFontSize(14);
-  pdf.text("Entities", 14, 16);
+  curY = sectionTitle(pdf, "Entities", 18, brandRgb);
+
+  // Sub-header labels for grouping
+  pdf.setFontSize(7);
+  pdf.setFont("helvetica", "bold");
+  pdf.setTextColor(...C.muted);
+  const detailsX = MM_MARGIN;
+  const statusX = MM_MARGIN + 90;
+  pdf.text("ENTITY DETAILS", detailsX, curY);
+  pdf.text("STATUS", statusX, curY);
+  curY += 3;
 
   const hasAbn = entities.some((e) => e.abn);
   const hasAcn = entities.some((e) => e.acn);
@@ -489,8 +663,8 @@ export async function exportPdf(
     const row = [
       e.name,
       getEntityLabel(e.entity_type),
-      e.is_operating_entity ? "Yes" : "No",
-      e.is_trustee_company ? "Yes" : "",
+      e.is_operating_entity ? "●" : "○",
+      e.is_trustee_company ? "●" : "○",
     ];
     if (hasAbn) row.push(e.abn ?? "");
     if (hasAcn) row.push(e.acn ?? "");
@@ -498,43 +672,88 @@ export async function exportPdf(
   });
 
   autoTable(pdf, {
-    startY: 22,
+    startY: curY,
     head: [entHead],
     body: entBody,
-    styles: { fontSize: 8.5, cellPadding: 2 },
-    headStyles: { fillColor: brandRgb, fontSize: 9 },
-    alternateRowStyles: { fillColor: [248, 248, 252] },
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+      textColor: C.body,
+      lineColor: C.border,
+      lineWidth: 0.15,
+    },
+    headStyles: {
+      fillColor: C.dark,
+      textColor: C.white,
+      fontSize: 8,
+      fontStyle: "bold",
+      cellPadding: { top: 3, bottom: 3, left: 3, right: 3 },
+    },
+    alternateRowStyles: { fillColor: C.light },
+    margin: { left: MM_MARGIN, right: MM_MARGIN },
+    didParseCell: (data) => {
+      // Style status dots
+      if (data.section === "body" && (data.column.index === 2 || data.column.index === 3)) {
+        const val = data.cell.raw as string;
+        if (val === "●") {
+          data.cell.styles.textColor = C.green;
+          data.cell.styles.fontStyle = "bold";
+        } else if (val === "○") {
+          data.cell.styles.textColor = [200, 200, 200];
+        }
+        data.cell.styles.halign = "center";
+      }
+    },
   });
-  addFooter(pdf, structureName, 3, totalPages, footerOpts);
-  let currentPage = meta?.disclaimerText ? 4 : 3;
+  addPremiumFooter(pdf, structureName, 3, totalPages, footerOpts);
 
-  // ─── Optional: Structure Health Summary page ───
-  if (healthOptions?.includeHealthSummary && healthOptions.healthScore) {
-    const hs = healthOptions.healthScore;
+  let currentPage = 3;
+
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 4 — STRUCTURE HEALTH SUMMARY
+  // ════════════════════════════════════════════════════════════════
+
+  if (hasHealth) {
+    const hs = healthOptions.healthScore!;
     currentPage++;
     pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.text("Structure Health Summary", 14, 16);
+    curY = sectionTitle(pdf, "Structure Health Summary", 18, brandRgb);
 
-    pdf.setFontSize(11);
-    pdf.text(`Health Score: ${hs.score} / 100 — ${hs.label}`, 14, 26);
+    // Score block — left side
+    const scoreBlockW = 55;
+    const scoreBlockH = 40;
+    const scoreColor = getScoreColor(hs.score);
 
+    pdf.setFillColor(...C.light);
+    pdf.setDrawColor(...scoreColor);
+    pdf.setLineWidth(0.6);
+    pdf.roundedRect(MM_MARGIN, curY, scoreBlockW, scoreBlockH, 3, 3, "FD");
+    pdf.setLineWidth(0.2);
+
+    // Big score number
+    pdf.setFontSize(36);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...scoreColor);
+    pdf.text(String(hs.score), MM_MARGIN + scoreBlockW / 2, curY + 18, { align: "center" });
+
+    // Score label
     pdf.setFontSize(8);
-    pdf.setTextColor(100);
-    pdf.text(`Last Reviewed: ${exportDate}`, 14, 33);
-    pdf.setFontSize(7);
-    pdf.setTextColor(140);
-    pdf.text(
-      "Reflects structural completeness and governance robustness based on recorded relationships. Does not assess tax outcomes.",
-      14,
-      39,
-      { maxWidth: pageW - 28 }
-    );
-    pdf.setTextColor(0);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(...C.muted);
+    pdf.text("Structure Health Score", MM_MARGIN + scoreBlockW / 2, curY + 24, { align: "center" });
 
-    // Category breakdown
+    // Status label
+    const statusLabel = getScoreLabel(hs.score);
     pdf.setFontSize(9);
-    let hy = 50;
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...scoreColor);
+    pdf.text(statusLabel, MM_MARGIN + scoreBlockW / 2, curY + 32, { align: "center" });
+
+    // Right side — 4 metric bars
+    const barX = MM_MARGIN + scoreBlockW + 12;
+    const barW = pageW - barX - MM_MARGIN;
+    let barY = curY + 4;
+
     const cats = [
       { label: "Control Integrity", val: hs.controlScore, max: 40 },
       { label: "Governance Completeness", val: hs.governanceScore, max: 30 },
@@ -542,66 +761,235 @@ export async function exportPdf(
       { label: "Data Completeness", val: hs.dataScore, max: 10 },
     ];
     for (const cat of cats) {
-      pdf.text(`${cat.label}: ${cat.val}/${cat.max}`, 14, hy);
-      hy += 6;
+      barY = drawMetricBar(pdf, barX, barY, barW, cat.label, cat.val, cat.max, brandRgb);
     }
 
-    // Key gaps
-    hy += 4;
-    pdf.setFontSize(10);
-    pdf.text("Key Gaps", 14, hy);
-    hy += 6;
-    pdf.setFontSize(8);
+    curY += scoreBlockH + 10;
 
-    const keyIssues = hs.issues.filter((i) => i.severity === "critical" || i.severity === "gap").slice(0, 6);
-    if (keyIssues.length === 0) {
-      pdf.text("No outstanding gaps.", 14, hy);
-    } else {
-      for (const issue of keyIssues) {
-        pdf.text(`• ${issue.message}`, 16, hy);
-        hy += 5;
+    // Critical Gaps Identified
+    const critAndGap = hs.issues.filter((i) => i.severity === "critical" || i.severity === "gap").slice(0, 8);
+    if (critAndGap.length > 0) {
+      pdf.setFontSize(11);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...C.dark);
+      pdf.text("Critical Gaps Identified", MM_MARGIN, curY);
+      curY += 6;
+
+      for (let i = 0; i < critAndGap.length; i++) {
+        const issue = critAndGap[i];
+        const isCrit = issue.severity === "critical";
+
+        // Issue number + title
+        pdf.setFontSize(9);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...(isCrit ? C.red : C.amber));
+        pdf.text(`${i + 1}.`, MM_MARGIN, curY);
+        pdf.setTextColor(...C.dark);
+        pdf.text(issue.message, MM_MARGIN + 6, curY);
+        curY += 4;
+
+        // Why it matters
+        const impact = issueToImpact(issue);
+        pdf.setFontSize(7.5);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...C.body);
+        const wrapped = pdf.splitTextToSize(impact, pageW - MM_MARGIN * 2 - 8);
+        pdf.text(wrapped, MM_MARGIN + 6, curY);
+        curY += wrapped.length * 3.5 + 3;
+
+        if (curY > pageH - 40) break;
       }
     }
 
-    if (hs.isCapped && hs.capReason) {
-      hy += 4;
-      pdf.setFontSize(7);
-      pdf.setTextColor(140);
-      pdf.text(hs.capReason, 14, hy, { maxWidth: pageW - 28 });
-      pdf.setTextColor(0);
-    }
+    // Advisory summary
+    curY = Math.max(curY, pageH - 38);
+    pdf.setDrawColor(...C.border);
+    pdf.setFillColor(250, 252, 250);
+    const advBoxH = 18;
+    pdf.roundedRect(MM_MARGIN, curY, pageW - MM_MARGIN * 2, advBoxH, 1.5, 1.5, "FD");
 
-    addFooter(pdf, structureName, currentPage, totalPages, footerOpts);
+    pdf.setFontSize(7);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(...C.green);
+    pdf.text("ADVISORY SUMMARY", MM_MARGIN + 4, curY + 4);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7);
+    pdf.setTextColor(...C.body);
+    const advisory = generateAdvisory(hs.issues, hs.score);
+    const advWrapped = pdf.splitTextToSize(advisory, pageW - MM_MARGIN * 2 - 10);
+    pdf.text(advWrapped.slice(0, 3), MM_MARGIN + 4, curY + 8);
+
+    addPremiumFooter(pdf, structureName, currentPage, totalPages, footerOpts);
   }
 
-  // ─── Optional: Governance Checklist page ───
-  if (healthOptions?.includeChecklist && healthOptions.healthScore) {
-    const hs = healthOptions.healthScore;
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 5 — GOVERNANCE CHECKLIST
+  // ════════════════════════════════════════════════════════════════
+
+  if (hasChecklist) {
+    const hs = healthOptions.healthScore!;
     currentPage++;
     pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.text("Governance Checklist", 14, 16);
+    curY = sectionTitle(pdf, "Governance Checklist", 18, brandRgb);
 
-    pdf.setFontSize(8);
-    let cy = 26;
-    const allItems = hs.issues.map((i) => ({
-      done: false,
-      text: i.message,
-    }));
+    // Group items by category
+    const categories: { label: string; key: string }[] = [
+      { label: "Control", key: "control" },
+      { label: "Ownership & Governance", key: "governance" },
+      { label: "Structural Compliance", key: "structural" },
+      { label: "Data Completeness", key: "data" },
+    ];
 
-    // Add "complete" items for things that passed
+    // Build pass items
+    const passItems: { category: string; text: string }[] = [];
     if (!hs.issues.some((i) => i.code === "circular_ownership")) {
-      allItems.unshift({ done: true, text: "No circular ownership detected" });
+      passItems.push({ category: "control", text: "No circular ownership detected" });
+    }
+    if (!hs.issues.some((i) => i.code === "missing_trustee")) {
+      passItems.push({ category: "control", text: "All trusts have trustees assigned" });
+    }
+    if (!hs.issues.some((i) => i.code === "missing_directors")) {
+      passItems.push({ category: "governance", text: "All companies have directors recorded" });
+    }
+    if (!hs.issues.some((i) => i.code === "orphan_entity")) {
+      passItems.push({ category: "structural", text: "No orphan entities in structure" });
     }
 
-    for (const item of allItems.slice(0, 20)) {
-      const checkbox = item.done ? "☑" : "☐";
-      pdf.text(`${checkbox}  ${item.text}`, 16, cy);
-      cy += 5;
-      if (cy > pageH - 30) break;
+    for (const cat of categories) {
+      const catIssues = hs.issues.filter((i) => i.category === cat.key);
+      const catPassed = passItems.filter((p) => p.category === cat.key);
+      if (catIssues.length === 0 && catPassed.length === 0) continue;
+
+      // Category header
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...C.dark);
+      pdf.text(cat.label, MM_MARGIN, curY);
+      curY += 5;
+
+      // Pass items
+      for (const item of catPassed) {
+        pdf.setFontSize(8);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...C.green);
+        pdf.text("✓", MM_MARGIN + 2, curY);
+        pdf.setTextColor(...C.body);
+        pdf.text(item.text, MM_MARGIN + 8, curY);
+
+        // Severity pill — COMPLETE
+        const pillX = pageW - MM_MARGIN - 20;
+        pdf.setFillColor(...C.greenLight);
+        pdf.roundedRect(pillX, curY - 2.5, 18, 4, 1, 1, "F");
+        pdf.setFontSize(5.5);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...C.green);
+        pdf.text("COMPLETE", pillX + 9, curY, { align: "center" });
+
+        curY += 5.5;
+      }
+
+      // Fail items
+      for (const issue of catIssues) {
+        if (curY > pageH - 25) break;
+
+        const isCrit = issue.severity === "critical";
+        const sevLabel = isCrit ? "HIGH" : issue.severity === "gap" ? "MEDIUM" : "LOW";
+        const sevColor = isCrit ? C.red : issue.severity === "gap" ? C.amber : C.muted;
+        const sevBg = isCrit ? C.redLight : issue.severity === "gap" ? C.amberLight : C.light;
+
+        pdf.setFontSize(8);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...sevColor);
+        pdf.text("⚠", MM_MARGIN + 2, curY);
+        pdf.setTextColor(...C.body);
+        pdf.text(issue.message, MM_MARGIN + 8, curY, { maxWidth: pageW - MM_MARGIN * 2 - 35 });
+
+        // Severity pill
+        const pillX = pageW - MM_MARGIN - 20;
+        pdf.setFillColor(...sevBg);
+        pdf.roundedRect(pillX, curY - 2.5, 18, 4, 1, 1, "F");
+        pdf.setFontSize(5.5);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...sevColor);
+        pdf.text(sevLabel, pillX + 9, curY, { align: "center" });
+
+        curY += 5.5;
+      }
+
+      curY += 3; // gap between sections
     }
 
-    addFooter(pdf, structureName, currentPage, totalPages, footerOpts);
+    addPremiumFooter(pdf, structureName, currentPage, totalPages, footerOpts);
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // PAGE 6 — RECOMMENDED ACTIONS
+  // ════════════════════════════════════════════════════════════════
+
+  if (hasRecommendations) {
+    const hs = healthOptions.healthScore!;
+    currentPage++;
+    pdf.addPage();
+    curY = sectionTitle(pdf, "Recommended Actions", 18, brandRgb);
+
+    const recs = generateRecommendations(hs.issues);
+    const priorities = [1, 2, 3];
+    const priorityLabels = ["Priority 1 — Immediate", "Priority 2 — Short Term", "Priority 3 — Improvement"];
+    const priorityColors: [number, number, number][] = [C.red, C.amber, C.muted];
+
+    for (let pi = 0; pi < priorities.length; pi++) {
+      const items = recs.filter((r) => r.priority === priorities[pi]);
+      if (items.length === 0) continue;
+
+      // Priority header
+      const pc = priorityColors[pi];
+      pdf.setFillColor(...pc);
+      pdf.roundedRect(MM_MARGIN, curY - 2, 3, 5, 0.5, 0.5, "F");
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...C.dark);
+      pdf.text(priorityLabels[pi], MM_MARGIN + 6, curY + 1.5);
+      curY += 8;
+
+      for (const rec of items) {
+        if (curY > pageH - 30) break;
+
+        // Action statement
+        pdf.setFontSize(8.5);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...C.dark);
+        pdf.text("→", MM_MARGIN + 2, curY);
+        pdf.text(rec.action, MM_MARGIN + 8, curY);
+        curY += 4;
+
+        // Impact
+        pdf.setFontSize(7.5);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(...C.body);
+        const impactWrapped = pdf.splitTextToSize(rec.impact, pageW - MM_MARGIN * 2 - 10);
+        pdf.text(impactWrapped, MM_MARGIN + 8, curY);
+        curY += impactWrapped.length * 3.5 + 4;
+      }
+
+      curY += 4; // Gap between priority groups
+    }
+
+    // Advisory tone footer
+    const noteY = Math.max(curY + 4, pageH - 34);
+    pdf.setDrawColor(...C.border);
+    pdf.setFillColor(250, 250, 252);
+    pdf.roundedRect(MM_MARGIN, noteY, pageW - MM_MARGIN * 2, 12, 1.5, 1.5, "FD");
+    pdf.setFontSize(6.5);
+    pdf.setFont("helvetica", "italic");
+    pdf.setTextColor(...C.muted);
+    pdf.text(
+      "This report is generated based on recorded structural data and does not constitute legal, tax, or financial advice. Professional advisory review is recommended.",
+      MM_MARGIN + 4, noteY + 5,
+      { maxWidth: pageW - MM_MARGIN * 2 - 8 }
+    );
+
+    addPremiumFooter(pdf, structureName, currentPage, totalPages, footerOpts);
   }
 
   pdf.save(`${structureName.replace(/\s+/g, "_")}_pack.pdf`);

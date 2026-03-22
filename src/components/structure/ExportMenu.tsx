@@ -47,8 +47,8 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
   const { toast } = useToast();
   const [exporting, setExporting] = useState(false);
   const [showPdfDialog, setShowPdfDialog] = useState(false);
-  const [includeHealth, setIncludeHealth] = useState(false);
-  const [includeChecklist, setIncludeChecklist] = useState(false);
+  const [includeHealth, setIncludeHealth] = useState(true);
+  const [includeChecklist, setIncludeChecklist] = useState(true);
   const prefix = structureName.replace(/\s+/g, "_");
 
   const userName = "";
@@ -121,7 +121,7 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setShowPdfDialog(true)}>
-            <FileText className="h-4 w-4 mr-2" /> Full PDF Pack
+            <FileText className="h-4 w-4 mr-2" /> Premium PDF Report
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -130,9 +130,9 @@ export default function ExportMenu({ graphRef, entities, relationships, structur
       <Dialog open={showPdfDialog} onOpenChange={setShowPdfDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>PDF Export Options</DialogTitle>
+            <DialogTitle>Premium PDF Report</DialogTitle>
             <DialogDescription>
-              Choose which sections to include in the PDF pack.
+              Generate a comprehensive advisor-grade structure report with health insights and governance analysis.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
