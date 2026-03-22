@@ -146,7 +146,7 @@ async function sendSmtpEmail(to: string, code: string) {
   await send("DATA");
 
   const emailBody = [
-    `From: Strukcha <${smtpUser}>`,
+    `From: strukcha <${smtpUser}>`,
     `To: ${to}`,
     `Subject: Verify your Strukcha account — ${code}`,
     `MIME-Version: 1.0`,
