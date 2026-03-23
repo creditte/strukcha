@@ -57,7 +57,7 @@ async function loadLiveData(structureId: string): Promise<{ entities: RawEntity[
   const [entResult, relResult] = await Promise.all([
     supabase
       .from("entities")
-      .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
+      .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, is_investment_company, created_at")
       .in("id", entityIds)
       .is("deleted_at", null),
     relIds.length > 0

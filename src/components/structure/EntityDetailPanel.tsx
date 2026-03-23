@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Pencil, Plus, Star, Shield } from "lucide-react";
+import { X, Pencil, Plus, Star, Shield, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,7 @@ export default function EntityDetailPanel({
   const [saving, setSaving] = useState(false);
   const [editIsOperating, setEditIsOperating] = useState(entity.is_operating_entity);
   const [editIsTrustee, setEditIsTrustee] = useState(entity.is_trustee_company);
+  const [editIsInvestment, setEditIsInvestment] = useState(entity.is_investment_company);
 
   // Add relationship state
   const [showAddRel, setShowAddRel] = useState(false);
@@ -67,6 +68,7 @@ export default function EntityDetailPanel({
       entity_type: editType,
       is_operating_entity: editIsOperating,
       is_trustee_company: editIsTrustee,
+      is_investment_company: editIsInvestment,
     };
     const { error } = await supabase
       .from("entities")
@@ -171,7 +173,7 @@ export default function EntityDetailPanel({
         <h3 className="font-semibold text-sm">Entity Details</h3>
         <div className="flex items-center gap-1">
           {!editing && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); setEditIsOperating(entity.is_operating_entity); setEditIsTrustee(entity.is_trustee_company); }}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); setEditIsOperating(entity.is_operating_entity); setEditIsTrustee(entity.is_trustee_company); setEditIsInvestment(entity.is_investment_company); }}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -206,6 +208,10 @@ export default function EntityDetailPanel({
               <Switch id="is-trustee" checked={editIsTrustee} onCheckedChange={setEditIsTrustee} />
               <Label htmlFor="is-trustee" className="text-xs">Trustee Company</Label>
             </div>
+            <div className="flex items-center gap-2">
+              <Switch id="is-investment" checked={editIsInvestment} onCheckedChange={setEditIsInvestment} />
+              <Label htmlFor="is-investment" className="text-xs">Investment / Bucket Company</Label>
+            </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">
                 {saving ? "Saving..." : "Save"}
@@ -232,6 +238,11 @@ export default function EntityDetailPanel({
                 {entity.is_trustee_company && (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1 mt-0.5">
                     <Shield className="h-2.5 w-2.5" /> Trustee Company
+                  </Badge>
+                )}
+                {entity.is_investment_company && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1 mt-0.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                    <Coins className="h-2.5 w-2.5" /> Investment Company
                   </Badge>
                 )}
               </div>
