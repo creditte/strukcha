@@ -223,6 +223,11 @@ export default function EntityDetailPanel({
                     <Shield className="h-2.5 w-2.5" /> Trustee Company
                   </Badge>
                 )}
+                {entity.is_investment_company && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1 mt-0.5 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300">
+                    <Briefcase className="h-2.5 w-2.5" /> Investment Company
+                  </Badge>
+                )}
               </div>
             </div>
 
