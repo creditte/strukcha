@@ -40,6 +40,7 @@ export default function EntityDetailPanel({
   const [saving, setSaving] = useState(false);
   const [editIsOperating, setEditIsOperating] = useState(entity.is_operating_entity);
   const [editIsTrustee, setEditIsTrustee] = useState(entity.is_trustee_company);
+  const [editIsInvestment, setEditIsInvestment] = useState(entity.is_investment_company);
 
   // Add relationship state
   const [showAddRel, setShowAddRel] = useState(false);
