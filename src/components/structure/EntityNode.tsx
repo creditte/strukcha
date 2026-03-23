@@ -12,6 +12,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
   const pinned = data.pinned as boolean;
   const isOperating = data.is_operating_entity as boolean;
   const isTrusteeCompany = data.is_trustee_company as boolean;
+  const isInvestmentCompany = data.is_investment_company as boolean;
   const issueSeverity = data.issueSeverity as string | undefined;
   const issueTooltip = data.issueTooltip as string | undefined;
   const Icon = getEntityIcon(entityType);
