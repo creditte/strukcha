@@ -52,7 +52,7 @@ function dagreLayout(
   pinnedPositions: Map<string, { x: number; y: number }> = new Map()
 ): Node[] {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 100, edgesep: 40 });
+  g.setGraph({ rankdir: "TB", nodesep: 100, ranksep: 120, edgesep: 50 });
 
   entities.forEach((e) => {
     const nodeOpts: Record<string, unknown> = { width: 180, height: 70 };
