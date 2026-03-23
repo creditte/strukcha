@@ -291,7 +291,9 @@ function StructureGraphInner({
         }
       }
     }
-    setEdges(buildEdges(relationships, viewMode));
+    const posMap = new Map<string, { x: number; y: number }>();
+    setNodes((nds) => { for (const n of nds) posMap.set(n.id, n.position); return nds; });
+    setEdges(buildEdges(relationships, viewMode, posMap.size > 0 ? posMap : nodePositionsRef.current));
   }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions]);
 
   // Auto-layout button trigger
