@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Pin, Star, Shield, AlertCircle, AlertTriangle } from "lucide-react";
+import { Pin, Star, Shield, Briefcase, AlertCircle, AlertTriangle } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -12,6 +12,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
   const pinned = data.pinned as boolean;
   const isOperating = data.is_operating_entity as boolean;
   const isTrusteeCompany = data.is_trustee_company as boolean;
+  const isInvestmentCompany = data.is_investment_company as boolean;
   const issueSeverity = data.issueSeverity as string | undefined;
   const issueTooltip = data.issueTooltip as string | undefined;
   const Icon = getEntityIcon(entityType);
@@ -73,6 +74,35 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                   </Tooltip>
                 </TooltipProvider>
               )}
+              {/* Investment/Bucket Company badge */}
+              {isInvestmentCompany && !isTrusteeCompany && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-white shadow-sm">
+                        <Briefcase className="h-3 w-3" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Investment / Bucket Company
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {isInvestmentCompany && isTrusteeCompany && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="absolute -top-1.5 right-4 flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-white shadow-sm">
+                        <Briefcase className="h-3 w-3" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Investment / Bucket Company
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               <div className="flex items-start gap-2">
                 <Icon className="h-4 w-4 shrink-0 opacity-70 mt-0.5" />
                 <span
@@ -114,6 +144,7 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
             <p className="text-xs text-muted-foreground">
               {getEntityLabel(entityType)}
               {isTrusteeCompany && " · Trustee Company"}
+              {isInvestmentCompany && " · Investment Company"}
             </p>
             {issueTooltip && (
               <p className={`text-xs mt-1 ${issueSeverity === "critical" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
