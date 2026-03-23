@@ -272,7 +272,7 @@ function StructureGraphInner({
         }, 800);
       }
     },
-    [onNodesChange, layoutStrategy, onPositionsChanged]
+    [onNodesChange, layoutStrategy, onPositionsChanged, relationships, viewMode, setEdges]
   );
 
   useEffect(() => {
