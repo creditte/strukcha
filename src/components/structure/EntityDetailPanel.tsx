@@ -156,7 +156,7 @@ export default function EntityDetailPanel({
         <h3 className="font-semibold text-sm">Entity Details</h3>
         <div className="flex items-center gap-1">
           {!editing && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); setEditIsOperating(entity.is_operating_entity); setEditIsTrustee(entity.is_trustee_company); }}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setEditName(entity.name); setEditType(entity.entity_type); setEditIsOperating(entity.is_operating_entity); setEditIsTrustee(entity.is_trustee_company); setEditIsInvestment(entity.is_investment_company); }}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
