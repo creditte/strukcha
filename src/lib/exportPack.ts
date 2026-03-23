@@ -33,8 +33,9 @@ function fmtPercent(v: number | null | undefined): string {
   return `${Number(v).toFixed(2).replace(/\.?0+$/, "")}%`;
 }
 
+const REL_DISPLAY_LABELS: Record<string, string> = { appointer: "Appointor" };
 function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  return REL_DISPLAY_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Sanitise text: strip broken glyphs, control chars, replace fancy quotes/arrows */
@@ -384,7 +385,7 @@ function issueToAction(issue: import("@/lib/structureScoring").ScoringIssue): st
   const name = issue.entity_name ?? "the entity";
   switch (issue.code) {
     case "missing_trustee": return `Assign a trustee to "${name}"`;
-    case "missing_appointer": return `Record an appointer for "${name}"`;
+    case "missing_appointer": return `Record an appointor for "${name}"`;
     case "missing_member": return `Add members to SMSF "${name}"`;
     case "missing_directors": return `Record directors for company "${name}"`;
     case "missing_shareholders": return `Add shareholders to company "${name}"`;
@@ -403,7 +404,7 @@ function issueToAction(issue: import("@/lib/structureScoring").ScoringIssue): st
 function issueToImpact(issue: import("@/lib/structureScoring").ScoringIssue): string {
   switch (issue.code) {
     case "missing_trustee": return "Without a trustee, the trust cannot legally administer assets or make distributions.";
-    case "missing_appointer": return "An appointer controls who serves as trustee - this is a critical governance safeguard.";
+    case "missing_appointer": return "An appointor controls who serves as trustee — this is a critical governance safeguard.";
     case "missing_member": return "SMSF members must be recorded to satisfy regulatory obligations.";
     case "missing_directors": return "Directors are legally required for company governance and ASIC compliance.";
     case "missing_shareholders": return "Shareholder records establish beneficial ownership and are required for compliance.";

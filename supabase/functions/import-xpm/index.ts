@@ -23,6 +23,8 @@ const RELATIONSHIP_MAP: Record<string, CanonicalRule> = {
   "trustee":          { type: "trustee",       reverse: true  },
   "appointer of":     { type: "appointer",     reverse: false },
   "appointer":        { type: "appointer",     reverse: true  },
+  "appointor of":     { type: "appointer",     reverse: false },
+  "appointor":        { type: "appointer",     reverse: true  },
   "settlor of":       { type: "settlor",       reverse: false },
   "settlor":          { type: "settlor",       reverse: true  },
   "partner of":       { type: "partner",       reverse: false },

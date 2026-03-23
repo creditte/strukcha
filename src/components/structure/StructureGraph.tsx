@@ -93,8 +93,12 @@ function dagreLayout(
 
 const CONTROL_EDGE_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
 
+const REL_TYPE_LABELS: Record<string, string> = {
+  appointer: "appointor",
+};
+
 function buildEdgeLabel(r: RelationshipEdge): string {
-  let label = r.relationship_type;
+  let label = REL_TYPE_LABELS[r.relationship_type] ?? r.relationship_type;
   const parts: string[] = [];
   if (r.ownership_percent != null) parts.push(`${r.ownership_percent}%`);
   if (r.ownership_units != null) parts.push(`${r.ownership_units} units`);
