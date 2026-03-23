@@ -253,7 +253,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {RELATIONSHIP_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
+                  <SelectItem key={t} value={t}>{relLabel(t)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
