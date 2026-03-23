@@ -68,8 +68,8 @@ Deno.serve(async (req) => {
         .eq("id", tenant.id);
     }
 
-    // Determine if trial is allowed
-    const trialAllowed = !tenant.trial_used_at;
+    // Determine if trial is allowed (not if already expired or used)
+    const trialAllowed = !tenant.trial_used_at && tenant.subscription_status !== "trial_expired";
 
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
