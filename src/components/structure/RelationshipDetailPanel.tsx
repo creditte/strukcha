@@ -16,6 +16,9 @@ const RELATIONSHIP_TYPES = [
   "appointer", "settlor", "partner", "member", "spouse", "parent", "child",
 ] as const;
 
+const REL_LABELS: Record<string, string> = { appointer: "Appointor" };
+function relLabel(t: string) { return REL_LABELS[t] ?? t.charAt(0).toUpperCase() + t.slice(1); }
+
 const OWNERSHIP_REL_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
 
 interface Props {
