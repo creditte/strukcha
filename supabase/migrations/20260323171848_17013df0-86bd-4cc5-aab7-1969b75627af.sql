@@ -1,0 +1,1 @@
+UPDATE tenants SET trial_used_at = now() WHERE id = '3cc584bd-a2cf-4059-9825-546eab2874e1' AND trial_used_at IS NULL
