@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronUp, Star, AlertCircle, AlertTriangle, Shield, DollarSign } from "lucide-react";
+import { ChevronDown, ChevronUp, Star, AlertCircle, AlertTriangle, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -94,10 +94,6 @@ export default function RelationshipLegend({ visible, onToggle }: Props) {
                   <div className="flex items-center gap-2">
                     <Shield className="h-3 w-3 text-violet-500" />
                     <span className="text-[11px]">Trustee company</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="h-3 w-3 text-amber-500" />
-                    <span className="text-[11px]">Investment company</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-white">

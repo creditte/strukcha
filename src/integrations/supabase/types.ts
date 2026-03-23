@@ -153,7 +153,6 @@ export type Database = {
           deleted_at: string | null
           entity_type: Database["public"]["Enums"]["entity_type"]
           id: string
-          is_investment_company: boolean
           is_operating_entity: boolean
           is_trustee_company: boolean
           merged_into_entity_id: string | null
@@ -172,7 +171,6 @@ export type Database = {
           deleted_at?: string | null
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
-          is_investment_company?: boolean
           is_operating_entity?: boolean
           is_trustee_company?: boolean
           merged_into_entity_id?: string | null
@@ -191,7 +189,6 @@ export type Database = {
           deleted_at?: string | null
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
-          is_investment_company?: boolean
           is_operating_entity?: boolean
           is_trustee_company?: boolean
           merged_into_entity_id?: string | null

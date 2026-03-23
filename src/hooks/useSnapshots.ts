@@ -69,7 +69,6 @@ export async function loadSnapshotData(snapshotId: string): Promise<SnapshotData
       acn: se.acn,
       is_operating_entity: se.is_operating_entity,
       is_trustee_company: se.is_trustee_company,
-      is_investment_company: false,
       created_at: "",
     };
   });

@@ -13,7 +13,6 @@ export interface EntityNode {
   acn: string | null;
   is_operating_entity: boolean;
   is_trustee_company: boolean;
-  is_investment_company: boolean;
   created_at: string;
 }
 
@@ -125,7 +124,7 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: entitiesData } = await supabase
         .from("entities")
-        .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, is_investment_company, created_at")
+        .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
         .in("id", entityIds)
         .is("deleted_at", null);
       setEntities((entitiesData as EntityNode[]) ?? []);

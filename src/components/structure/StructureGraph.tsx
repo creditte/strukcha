@@ -52,7 +52,7 @@ function dagreLayout(
   pinnedPositions: Map<string, { x: number; y: number }> = new Map()
 ): Node[] {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "TB", nodesep: 100, ranksep: 120, edgesep: 50 });
+  g.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 100, edgesep: 40 });
 
   entities.forEach((e) => {
     const nodeOpts: Record<string, unknown> = { width: 180, height: 70 };
@@ -86,7 +86,7 @@ function dagreLayout(
       id: e.id,
       type: "entity",
       position: { x: (node?.x ?? 0) - 90, y: (node?.y ?? 0) - 35 },
-      data: { label: e.name, entity_type: e.entity_type, pinned: false, is_operating_entity: e.is_operating_entity, is_trustee_company: e.is_trustee_company, is_investment_company: e.is_investment_company },
+      data: { label: e.name, entity_type: e.entity_type, pinned: false, is_operating_entity: e.is_operating_entity, is_trustee_company: e.is_trustee_company },
     };
   });
 }
@@ -111,50 +111,17 @@ function buildEdgeLabel(r: RelationshipEdge): string {
 // (i.e., flip the DB direction so arrow flows toward the role holder)
 const REVERSE_ARROW_TYPES = new Set(["shareholder", "beneficiary"]);
 
-// Determine best source/target handles based on relative node positions
-function pickHandles(
-  sourcePos: { x: number; y: number } | undefined,
-  targetPos: { x: number; y: number } | undefined
-): { sourceHandle: string | undefined; targetHandle: string | undefined } {
-  if (!sourcePos || !targetPos) return { sourceHandle: "bottom", targetHandle: undefined };
-  const dx = targetPos.x - sourcePos.x;
-  const dy = targetPos.y - sourcePos.y;
-  const absDx = Math.abs(dx);
-  const absDy = Math.abs(dy);
-
-  // Mostly vertical
-  if (absDy > absDx * 0.5) {
-    if (dy > 0) return { sourceHandle: "bottom", targetHandle: undefined }; // top handle is default target
-    return { sourceHandle: undefined, targetHandle: "bottom" };
-  }
-  // Mostly horizontal
-  if (dx > 0) return { sourceHandle: "right", targetHandle: "left" };
-  return { sourceHandle: "left", targetHandle: "right" };
-}
-
-function buildEdges(
-  relationships: RelationshipEdge[],
-  viewMode: string = "full",
-  nodePositions?: Map<string, { x: number; y: number }>
-): Edge[] {
+function buildEdges(relationships: RelationshipEdge[], viewMode: string = "full"): Edge[] {
   return relationships.map((r) => {
     const isControl = CONTROL_EDGE_TYPES.has(r.relationship_type);
     const deEmphasize = viewMode !== "control" && isControl;
     const flip = REVERSE_ARROW_TYPES.has(r.relationship_type);
-    const sourceId = flip ? r.to_entity_id : r.from_entity_id;
-    const targetId = flip ? r.from_entity_id : r.to_entity_id;
-    const { sourceHandle, targetHandle } = pickHandles(
-      nodePositions?.get(sourceId),
-      nodePositions?.get(targetId)
-    );
     return {
       id: r.id,
-      source: sourceId,
-      target: targetId,
-      sourceHandle,
-      targetHandle,
+      source: flip ? r.to_entity_id : r.from_entity_id,
+      target: flip ? r.from_entity_id : r.to_entity_id,
       label: buildEdgeLabel(r),
-      type: "smoothstep",
+      type: "default",
       animated: false,
       style: {
         stroke: EDGE_COLORS[r.relationship_type] ?? "#94a3b8",
@@ -238,14 +205,7 @@ function StructureGraphInner({
     }
     return dagreLayout(entities, relationships, layoutMode, getPinnedPositions());
   }, [entities, relationships, layoutMode, getPinnedPositions, layoutStrategy, dbPositions]);
-
-  const nodePositionMap = useMemo(() => {
-    const map = new Map<string, { x: number; y: number }>();
-    for (const n of initialNodes) map.set(n.id, n.position);
-    return map;
-  }, [initialNodes]);
-
-  const initialEdges = useMemo(() => buildEdges(relationships, viewMode, nodePositionMap), [relationships, viewMode, nodePositionMap]);
+  const initialEdges = useMemo(() => buildEdges(relationships, viewMode), [relationships, viewMode]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -264,15 +224,13 @@ function StructureGraphInner({
         }
       }
       if (hasDrag && layoutStrategy === "manual") {
-        // Rebuild edges with updated positions for smart handle routing
-        setEdges(buildEdges(relationships, viewMode, nodePositionsRef.current));
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {
           onPositionsChanged(new Map(nodePositionsRef.current));
         }, 800);
       }
     },
-    [onNodesChange, layoutStrategy, onPositionsChanged, relationships, viewMode, setEdges]
+    [onNodesChange, layoutStrategy, onPositionsChanged]
   );
 
   useEffect(() => {
@@ -293,9 +251,7 @@ function StructureGraphInner({
         }
       }
     }
-    const posMap = new Map<string, { x: number; y: number }>();
-    setNodes((nds) => { for (const n of nds) posMap.set(n.id, n.position); return nds; });
-    setEdges(buildEdges(relationships, viewMode, posMap.size > 0 ? posMap : nodePositionsRef.current));
+    setEdges(buildEdges(relationships, viewMode));
   }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions]);
 
   // Auto-layout button trigger

@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Pin, Star, Shield, AlertCircle, AlertTriangle, DollarSign } from "lucide-react";
+import { Pin, Star, Shield, AlertCircle, AlertTriangle } from "lucide-react";
 import { getEntityIcon, getEntityColor, getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -12,7 +12,6 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
   const pinned = data.pinned as boolean;
   const isOperating = data.is_operating_entity as boolean;
   const isTrusteeCompany = data.is_trustee_company as boolean;
-  const isInvestmentCompany = data.is_investment_company as boolean;
   const issueSeverity = data.issueSeverity as string | undefined;
   const issueTooltip = data.issueTooltip as string | undefined;
   const Icon = getEntityIcon(entityType);
@@ -29,9 +28,6 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
   const handleClass = hovered || selected
     ? "!bg-primary !w-3 !h-3 !border-2 !border-background transition-all"
     : "!bg-muted-foreground !w-2 !h-2 !opacity-0 transition-all";
-
-  // Determine which top-right badge to show (only one)
-  const topRightBadge = isTrusteeCompany ? "trustee" : isInvestmentCompany ? "investment" : null;
 
   return (
     <>
@@ -62,8 +58,8 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                 </div>
               )}
 
-              {/* Top-right badge: Trustee or Investment Company */}
-              {topRightBadge === "trustee" && (
+              {/* Trustee Company badge */}
+              {isTrusteeCompany && (
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -73,20 +69,6 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">
                       Trustee Company
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              {topRightBadge === "investment" && (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm">
-                        <DollarSign className="h-3 w-3" />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      Investment / Bucket Company
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -132,7 +114,6 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
             <p className="text-xs text-muted-foreground">
               {getEntityLabel(entityType)}
               {isTrusteeCompany && " · Trustee Company"}
-              {isInvestmentCompany && " · Investment Company"}
             </p>
             {issueTooltip && (
               <p className={`text-xs mt-1 ${issueSeverity === "critical" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>

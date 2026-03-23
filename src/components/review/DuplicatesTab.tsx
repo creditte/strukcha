@@ -154,7 +154,7 @@ export default function DuplicatesTab() {
     if (allEntityIds.size > 0) {
       const { data: entities } = await supabase
         .from("entities")
-      .select("id, name, entity_type, abn, acn, xpm_uuid, is_trustee_company, is_investment_company, is_operating_entity, updated_at, created_at")
+      .select("id, name, entity_type, abn, acn, xpm_uuid, is_trustee_company, is_operating_entity, updated_at, created_at")
       .in("id", Array.from(allEntityIds))
       .is("deleted_at", null);
 
