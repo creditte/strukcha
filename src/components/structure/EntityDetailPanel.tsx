@@ -68,6 +68,7 @@ export default function EntityDetailPanel({
       entity_type: editType,
       is_operating_entity: editIsOperating,
       is_trustee_company: editIsTrustee,
+      is_investment_company: editIsInvestment,
     };
     const { error } = await supabase
       .from("entities")
