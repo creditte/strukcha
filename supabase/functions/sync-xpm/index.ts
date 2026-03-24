@@ -76,7 +76,69 @@ async function refreshAccessToken(
   return tokens.access_token;
 }
 
-// ── Fetch all contacts with pagination ──────────────────────────────────
+// ── XPM client type mapping ─────────────────────────────────────────────
+const XPM_CLIENT_TYPE_MAP: Record<string, string> = {
+  "Company": "Company",
+  "Individual": "Individual",
+  "Partnership": "Partnership",
+  "Sole Trader": "Sole Trader",
+  "Trust": "Trust",
+  "SuperFund": "smsf",
+  "Super Fund": "smsf",
+  "SMSF": "smsf",
+};
+
+// ── Fetch XPM clients via Practice Manager API ─────────────────────────
+async function fetchXpmClients(accessToken: string, xeroTenantId: string): Promise<any[] | null> {
+  try {
+    console.log("[sync-xpm] Attempting Practice Manager API...");
+    const res = await fetch("https://api.xero.com/practicemanager/3.0/client.api/list", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "xero-tenant-id": xeroTenantId,
+        Accept: "application/json",
+      },
+    });
+
+    if (res.status === 403 || res.status === 401) {
+      console.log("[sync-xpm] XPM API not authorized (App Partner scope may not be active), falling back to Accounting API");
+      return null;
+    }
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.warn(`[sync-xpm] XPM API returned ${res.status}: ${errText}`);
+      return null;
+    }
+
+    const data = await res.json();
+    // XPM returns clients in data.Clients or data.ClientList
+    const clients = data?.Clients || data?.ClientList || [];
+    console.log(`[sync-xpm] XPM returned ${clients.length} clients`);
+    return Array.isArray(clients) ? clients : null;
+  } catch (err) {
+    console.warn("[sync-xpm] XPM API call failed:", err);
+    return null;
+  }
+}
+
+// ── Normalize XPM client to a common contact shape ─────────────────────
+function xpmClientToContact(client: any): any {
+  return {
+    ContactID: client.ClientID || client.ID || client.ClientUUID || crypto.randomUUID(),
+    Name: client.Name || `${client.FirstName || ""} ${client.LastName || ""}`.trim(),
+    FirstName: client.FirstName || null,
+    LastName: client.LastName || null,
+    EmailAddress: client.Email || client.EmailAddress || null,
+    ContactStatus: "ACTIVE",
+    IsCustomer: true,
+    IsSupplier: false,
+    _xpmClientType: client.ClientType || client.Type || null,
+    _fromXpm: true,
+  };
+}
+
+// ── Fetch all contacts with pagination (Accounting API fallback) ───────
 async function fetchAllContacts(accessToken: string, xeroTenantId: string): Promise<any[]> {
   const allContacts: any[] = [];
   let page = 1;
@@ -110,6 +172,12 @@ async function fetchAllContacts(accessToken: string, xeroTenantId: string): Prom
 
 // ── Guess entity type from contact data ─────────────────────────────────
 function guessEntityType(contact: any): string {
+  // If from XPM, use the client type mapping first
+  if (contact._fromXpm && contact._xpmClientType) {
+    const mapped = XPM_CLIENT_TYPE_MAP[contact._xpmClientType];
+    if (mapped) return mapped;
+  }
+
   const name = (contact.Name || "").toLowerCase();
   const isOrg = contact.IsCustomer || contact.IsSupplier;
 
@@ -198,10 +266,20 @@ Deno.serve(async (req) => {
     // Refresh token if needed (handles decryption internally)
     const accessToken = await refreshAccessToken(supabase, connection);
 
-    // ── Fetch Contacts via Accounting API ────────────────────────────────
-    console.log("[sync-xpm] Fetching contacts via accounting API...");
-    const contacts = await fetchAllContacts(accessToken, xeroTenantId);
-    console.log(`[sync-xpm] Fetched ${contacts.length} contacts`);
+    // ── Try XPM Practice Manager API first, fall back to Accounting API ──
+    let contacts: any[];
+    let dataSource = "accounting";
+    const xpmClients = await fetchXpmClients(accessToken, xeroTenantId);
+
+    if (xpmClients && xpmClients.length > 0) {
+      contacts = xpmClients.map(xpmClientToContact);
+      dataSource = "practicemanager";
+      console.log(`[sync-xpm] Using Practice Manager data: ${contacts.length} clients`);
+    } else {
+      console.log("[sync-xpm] Falling back to Accounting API...");
+      contacts = await fetchAllContacts(accessToken, xeroTenantId);
+      console.log(`[sync-xpm] Fetched ${contacts.length} contacts via Accounting API`);
+    }
 
     const warnings: string[] = [];
     let entitiesCreated = 0;
@@ -312,6 +390,7 @@ Deno.serve(async (req) => {
 
     const result = {
       success: true,
+      dataSource,
       contactsFetched: contacts.length,
       entitiesCreated,
       entitiesUpdated,
