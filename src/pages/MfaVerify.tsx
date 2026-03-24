@@ -286,6 +286,16 @@ export default function MfaVerify() {
                 Use authenticator app instead
               </Button>
             )}
+            {activeMethod === "email" && !hasTotpFactor && (
+              <Button
+                variant="ghost"
+                onClick={() => { clearStoredMfaVerifyState(user?.id); navigate("/mfa-setup"); }}
+                className="w-full text-sm gap-2 text-muted-foreground hover:text-foreground"
+              >
+                <Smartphone className="h-4 w-4" />
+                Set up authenticator app
+              </Button>
+            )}
           </div>
 
           <Button
