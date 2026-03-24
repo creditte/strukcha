@@ -62,15 +62,21 @@ Deno.serve(async (req) => {
         const workspaceId = session.metadata?.workspace_id;
         if (!workspaceId) break;
 
-        // Mark trial as used
+        // Activate subscription immediately on checkout completion
         await supabaseAdmin
           .from("tenants")
           .update({
             stripe_subscription_id: session.subscription as string,
             stripe_customer_id: session.customer as string,
             trial_used_at: new Date().toISOString(),
+            subscription_status: "active",
+            subscription_plan: "pro",
+            access_enabled: true,
+            access_locked_reason: null,
+            diagram_limit: 50,
           })
           .eq("id", workspaceId);
+        console.log(`Tenant ${workspaceId} checkout completed, subscription activated`);
         break;
       }
 
@@ -108,6 +114,7 @@ Deno.serve(async (req) => {
             ? new Date(subscription.canceled_at * 1000).toISOString()
             : null,
           access_enabled: accessEnabled,
+          diagram_limit: accessEnabled ? 50 : 3,
         };
 
         if (!accessEnabled) {
