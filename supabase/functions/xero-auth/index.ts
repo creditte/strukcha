@@ -46,7 +46,6 @@ serve(async (req) => {
     }
 
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-callback`;
-    const scopes = "openid profile email offline_access accounting.contacts.read";
 
     // Parse request body to get the caller's origin and connection type
     let callerOrigin: string | undefined;
