@@ -172,6 +172,12 @@ async function fetchAllContacts(accessToken: string, xeroTenantId: string): Prom
 
 // ── Guess entity type from contact data ─────────────────────────────────
 function guessEntityType(contact: any): string {
+  // If from XPM, use the client type mapping first
+  if (contact._fromXpm && contact._xpmClientType) {
+    const mapped = XPM_CLIENT_TYPE_MAP[contact._xpmClientType];
+    if (mapped) return mapped;
+  }
+
   const name = (contact.Name || "").toLowerCase();
   const isOrg = contact.IsCustomer || contact.IsSupplier;
 
