@@ -4,6 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Plus,
   ArrowRight,
   Upload,
@@ -51,6 +58,7 @@ export default function Dashboard() {
   const { billing } = useBilling();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("accounting");
 
   const handleCreateNew = () => {
     if (atDiagramLimit) {
@@ -134,7 +142,7 @@ export default function Dashboard() {
             Authorization: `Bearer ${session.access_token}`,
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           },
-          body: JSON.stringify({ origin: window.location.origin }),
+          body: JSON.stringify({ origin: window.location.origin, connection_type: xeroConnectionType }),
         }
       );
       const responseText = await res.text();
@@ -235,19 +243,30 @@ export default function Dashboard() {
                 Create New Structure
               </Button>
               {canManageIntegrations && !xeroConnection && (
-                <Button
-                  variant="ghost"
-                  className="gap-2 rounded-xl px-5 text-sm font-medium text-muted-foreground"
-                  onClick={handleConnectXero}
-                  disabled={xeroLoading}
-                >
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4" />
-                  )}
-                  Import from Xero
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={xeroConnectionType} onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}>
+                    <SelectTrigger className="h-9 w-[180px] rounded-xl text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="accounting">Accounting API</SelectItem>
+                      <SelectItem value="practice_manager">Practice Manager</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    className="gap-2 rounded-xl px-5 text-sm font-medium text-muted-foreground"
+                    onClick={handleConnectXero}
+                    disabled={xeroLoading}
+                  >
+                    {xeroLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    Import from Xero
+                  </Button>
+                </div>
               )}
             </div>
           </>
@@ -271,20 +290,31 @@ export default function Dashboard() {
                 Create New Structure
               </Button>
               {canManageIntegrations && !xeroConnection && (
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="gap-2 rounded-xl px-6 text-sm font-medium"
-                  onClick={handleConnectXero}
-                  disabled={xeroLoading}
-                >
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4" />
-                  )}
-                  Import from Xero
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={xeroConnectionType} onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}>
+                    <SelectTrigger className="h-10 w-[180px] rounded-xl text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="accounting">Accounting API</SelectItem>
+                      <SelectItem value="practice_manager">Practice Manager</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="gap-2 rounded-xl px-6 text-sm font-medium"
+                    onClick={handleConnectXero}
+                    disabled={xeroLoading}
+                  >
+                    {xeroLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    Import from Xero
+                  </Button>
+                </div>
               )}
             </div>
           </>
