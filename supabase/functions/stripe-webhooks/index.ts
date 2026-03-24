@@ -114,6 +114,7 @@ Deno.serve(async (req) => {
             ? new Date(subscription.canceled_at * 1000).toISOString()
             : null,
           access_enabled: accessEnabled,
+          diagram_limit: accessEnabled ? 50 : 3,
         };
 
         if (!accessEnabled) {
