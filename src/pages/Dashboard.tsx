@@ -468,7 +468,7 @@ export default function Dashboard() {
               </li>
             </ul>
             <Button
-              className="mt-8 gap-2 rounded-xl px-6"
+              className="mt-10 gap-2 rounded-xl px-6"
               onClick={handleCreateNew}
             >
               <Plus className="h-4 w-4" />
