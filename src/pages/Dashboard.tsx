@@ -237,6 +237,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3">
               <Button
+                variant="outline"
                 className="gap-2 rounded-xl px-5 text-sm font-medium"
                 onClick={handleCreateNew}
               >
@@ -255,8 +256,7 @@ export default function Dashboard() {
                     </SelectContent>
                   </Select>
                   <Button
-                    variant="ghost"
-                    className="gap-2 rounded-xl px-5 text-sm font-medium text-muted-foreground"
+                    className="gap-2 rounded-xl px-5 text-sm font-medium"
                     onClick={handleConnectXero}
                     disabled={xeroLoading}
                   >
@@ -283,8 +283,9 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3">
               <Button
+                variant="outline"
                 size="lg"
-                className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
+                className="gap-2 rounded-xl px-6 text-sm font-medium"
                 onClick={handleCreateNew}
               >
                 <Plus className="h-4 w-4" />
@@ -302,9 +303,8 @@ export default function Dashboard() {
                     </SelectContent>
                   </Select>
                   <Button
-                    variant="outline"
                     size="lg"
-                    className="gap-2 rounded-xl px-6 text-sm font-medium"
+                    className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
                     onClick={handleConnectXero}
                     disabled={xeroLoading}
                   >
