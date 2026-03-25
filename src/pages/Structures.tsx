@@ -51,7 +51,9 @@ export default function Structures() {
   const [sortBy, setSortBy] = useState<SortOption>("updated");
   const [filterMode, setFilterMode] = useState<FilterOption>("all");
 
-  const [healthMap, setHealthMap] = useState<Map<string, { score: number; displayScore: number; label: string; status: "good" | "warning" | "critical" }>>(new Map());
+  const [healthMap, setHealthMap] = useState<
+    Map<string, { score: number; displayScore: number; label: string; status: "good" | "warning" | "critical" }>
+  >(new Map());
   const [snapshotCounts, setSnapshotCounts] = useState<Map<string, number>>(new Map());
 
   const load = useCallback(async () => {
@@ -105,14 +107,18 @@ export default function Structures() {
 
     const [entResult, relResult] = await Promise.all([
       allEntityIds.size > 0
-        ? supabase.from("entities")
+        ? supabase
+            .from("entities")
             .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
             .in("id", Array.from(allEntityIds))
             .is("deleted_at", null)
         : Promise.resolve({ data: [] }),
       allRelIds.size > 0
-        ? supabase.from("relationships")
-            .select("id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at")
+        ? supabase
+            .from("relationships")
+            .select(
+              "id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at",
+            )
             .in("id", Array.from(allRelIds))
             .is("deleted_at", null)
         : Promise.resolve({ data: [] }),
@@ -139,7 +145,10 @@ export default function Structures() {
     }
 
     // Compute health for each structure
-    const newHealthMap = new Map<string, { score: number; displayScore: number; label: string; status: "good" | "warning" | "critical" }>();
+    const newHealthMap = new Map<
+      string,
+      { score: number; displayScore: number; label: string; status: "good" | "warning" | "critical" }
+    >();
     for (const sid of activeIds) {
       const entIds = seByStruct.get(sid) ?? [];
       const relIds = srByStruct.get(sid) ?? [];
@@ -156,9 +165,7 @@ export default function Structures() {
 
   useEffect(() => {
     if (!user?.id) return;
-    supabase
-      .rpc("has_role", { _user_id: user.id, _role: "admin" })
-      .then(({ data }) => setIsAdmin(!!data));
+    supabase.rpc("has_role", { _user_id: user.id, _role: "admin" }).then(({ data }) => setIsAdmin(!!data));
   }, [user?.id]);
 
   const handleDelete = async () => {
@@ -194,9 +201,7 @@ export default function Structures() {
   };
 
   const sorted = useMemo(() => {
-    let filtered = structures.filter((s) =>
-      s.name.toLowerCase().includes(search.toLowerCase())
-    );
+    let filtered = structures.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()));
     // Apply scenario filter
     if (filterMode === "live") {
       filtered = filtered.filter((s) => !s.is_scenario);
@@ -278,14 +283,17 @@ export default function Structures() {
           ))}
         </div>
       ) : sorted.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No structures found.</p>
+        <p className="text-sm text-muted-foreground text-center">No structures found.</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((s) => {
             const isDeleted = !!s.deleted_at;
             const health = healthMap.get(s.id);
             return (
-              <Card key={s.id} className={`group relative transition-colors ${isDeleted ? "opacity-60" : "hover:bg-accent/50"}`}>
+              <Card
+                key={s.id}
+                className={`group relative transition-colors ${isDeleted ? "opacity-60" : "hover:bg-accent/50"}`}
+              >
                 <CardContent className="flex items-center gap-3 p-4">
                   {isDeleted ? (
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -293,19 +301,16 @@ export default function Structures() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <p className="font-medium truncate line-through">{s.name}</p>
-                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0 shrink-0">Deleted</Badge>
+                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0 shrink-0">
+                            Deleted
+                          </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
                           Deleted {new Date(s.deleted_at!).toLocaleDateString()}
                         </p>
                       </div>
                       {isAdmin && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1 shrink-0"
-                          onClick={() => handleRestore(s)}
-                        >
+                        <Button variant="outline" size="sm" className="gap-1 shrink-0" onClick={() => handleRestore(s)}>
                           <RotateCcw className="h-3.5 w-3.5" /> Restore
                         </Button>
                       )}
@@ -322,7 +327,13 @@ export default function Structures() {
                                 <Copy className="h-2.5 w-2.5" /> Scenario
                               </Badge>
                             )}
-                            {health && <HealthBadgeV2 displayScore={health.displayScore} label={health.label} status={health.status} />}
+                            {health && (
+                              <HealthBadgeV2
+                                displayScore={health.displayScore}
+                                label={health.label}
+                                status={health.status}
+                              />
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <p className="text-xs text-muted-foreground">
@@ -341,7 +352,10 @@ export default function Structures() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                        onClick={(e) => { e.preventDefault(); setDeleteTarget(s); }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setDeleteTarget(s);
+                        }}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -360,8 +374,8 @@ export default function Structures() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete structure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove <span className="font-medium">"{deleteTarget?.name}"</span> from your
-              structures list. The underlying entities and relationships will not be affected.
+              This will remove <span className="font-medium">"{deleteTarget?.name}"</span> from your structures list.
+              The underlying entities and relationships will not be affected.
               {isAdmin && " Admins can restore deleted structures later."}
             </AlertDialogDescription>
           </AlertDialogHeader>
