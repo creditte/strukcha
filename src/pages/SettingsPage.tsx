@@ -6,7 +6,7 @@ import FeedbackSettings from "@/components/settings/FeedbackSettings";
 import MfaSettings from "@/components/settings/MfaSettings";
 import BillingSettings from "@/components/settings/BillingSettings";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
-import { Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function SettingsPage() {
   const { currentUser, loading } = useTenantUsers();
@@ -17,9 +17,21 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading settings…
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-40" />
+        <div className="flex gap-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-24 rounded-md" />
+          ))}
+        </div>
+        <div className="space-y-4 mt-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <Skeleton className="h-4 w-4 rounded" />
+              <Skeleton className="h-4 flex-1" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
