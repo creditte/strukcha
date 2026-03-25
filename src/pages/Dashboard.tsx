@@ -100,6 +100,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function load() {
+      setDashboardLoading(true);
       const [sCount, recent, xeroData] = await Promise.all([
         supabase
           .from("structures")
@@ -121,6 +122,7 @@ export default function Dashboard() {
           ? (xeroData.data as any)
           : null
       );
+      setDashboardLoading(false);
     }
     load();
   }, []);
