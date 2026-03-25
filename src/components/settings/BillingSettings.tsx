@@ -1,13 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CreditCard, Network, Receipt } from "lucide-react";
+import { CreditCard, Network, Receipt } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BillingSettings() {
   const { billing, loading, openPortal } = useBilling();
@@ -23,9 +24,16 @@ export default function BillingSettings() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading billing…
+      <div className="space-y-4">
+        <Skeleton className="h-6 w-48" />
+        <Card>
+          <CardContent className="space-y-3 py-6">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 w-64" />
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-9 w-36 mt-2" />
+          </CardContent>
+        </Card>
       </div>
     );
   }
