@@ -342,8 +342,15 @@ export default function StructureView() {
 
   if (loading || snapshotLoading) {
     return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <p className="text-sm text-muted-foreground">{snapshotLoading ? "Loading snapshot..." : "Loading structure..."}</p>
+      <div className="flex h-[calc(100vh-3.5rem)] flex-col gap-4 p-6">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-7 w-48" />
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-24" />
+            <Skeleton className="h-9 w-24" />
+          </div>
+        </div>
+        <Skeleton className="flex-1 rounded-xl" />
       </div>
     );
   }

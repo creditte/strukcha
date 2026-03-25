@@ -180,8 +180,14 @@ export default function AdminDashboard() {
         <h2 className="text-lg font-semibold">All Tenants ({tenants.length})</h2>
 
         {loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading tenants…
+          <div className="space-y-3 py-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-5 w-5 rounded" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-6 w-16" />
+              </div>
+            ))}
           </div>
         ) : tenants.length === 0 ? (
           <p className="text-sm text-muted-foreground py-8">No tenants yet. Create one to get started.</p>

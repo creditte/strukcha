@@ -205,8 +205,10 @@ export default function MfaSettings() {
   if (mfaLoading) {
     return (
       <Card>
-        <CardContent className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading MFA settings…
+        <CardContent className="space-y-3 py-6">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-4 w-64" />
+          <Skeleton className="h-9 w-36 mt-2" />
         </CardContent>
       </Card>
     );

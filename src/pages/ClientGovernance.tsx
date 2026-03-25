@@ -267,9 +267,31 @@ export default function ClientGovernance() {
       )}
 
       {loading && (
-        <section className="text-center py-20 space-y-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-          <p className="text-sm text-muted-foreground">Analysing structures…</p>
+        <section className="space-y-6 py-8">
+          <div className="flex items-start justify-between">
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-5 w-72" />
+            </div>
+          </div>
+          <div className="flex items-center gap-8">
+            <Skeleton className="h-24 w-24 rounded-full" />
+            <div className="flex gap-0 rounded-xl border border-border/60">
+              <div className="px-6 py-4 space-y-2">
+                <Skeleton className="h-7 w-8" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <div className="px-6 py-4 space-y-2">
+                <Skeleton className="h-7 w-8" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+            ))}
+          </div>
         </section>
       )}
 
