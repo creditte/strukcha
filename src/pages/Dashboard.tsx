@@ -283,8 +283,9 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3">
               <Button
+                variant="outline"
                 size="lg"
-                className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
+                className="gap-2 rounded-xl px-6 text-sm font-medium"
                 onClick={handleCreateNew}
               >
                 <Plus className="h-4 w-4" />
