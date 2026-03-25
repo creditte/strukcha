@@ -453,7 +453,7 @@ export default function Dashboard() {
             <h3 className="text-lg font-semibold text-foreground">
               Create your first structure
             </h3>
-            <ul className="mt-4 inline-flex flex-col items-start gap-2.5 text-sm text-muted-foreground">
+            <ul className="mt-6 inline-flex flex-col items-start gap-3 text-sm text-muted-foreground">
               <li className="flex items-center gap-2.5">
                 <Eye className="h-4 w-4 text-primary/60" /> Visualise ownership
                 clearly
