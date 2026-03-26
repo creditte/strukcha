@@ -318,6 +318,7 @@ Deno.serve(async (req) => {
     let entitiesUpdated = 0;
     let trusteesDetected = 0;
     let relationshipsCreated = 0;
+    let staffFetched = 0;
 
     const xeroIdToEntityId = new Map<string, string>();
     // Track trustee→trust pairings for relationship creation
