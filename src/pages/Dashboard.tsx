@@ -191,13 +191,14 @@ export default function Dashboard() {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
       const parts = [
-        `${data.contactsFetched ?? 0} contacts fetched`,
+        `${data.clientsFetched ?? data.contactsFetched ?? 0} clients fetched`,
         `${data.entitiesCreated ?? 0} created`,
         `${data.entitiesUpdated ?? 0} updated`,
       ];
+      if (data.relationshipsCreated > 0) parts.push(`${data.relationshipsCreated} relationships created`);
+      if (data.groupsCreated > 0) parts.push(`${data.groupsCreated} groups created`);
       if (data.staffFetched > 0) parts.push(`${data.staffFetched} staff fetched`);
       if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
-      if (data.relationshipsCreated > 0) parts.push(`${data.relationshipsCreated} relationships created`);
       toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
       // Store staff list from response
       if (data.staffList && Array.isArray(data.staffList)) {
