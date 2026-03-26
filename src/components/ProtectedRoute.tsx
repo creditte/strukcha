@@ -253,11 +253,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // ── Still booting auth ────────────────────────────────────────
   if (bootStatus === "booting") {
     trace("ProtectedRoute", "decision: auth booting → loading spinner");
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Authenticating… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="auth" />;
   }
 
   // ── Unauthenticated ───────────────────────────────────────────
