@@ -318,11 +318,7 @@ function MfaGate({ children }: { children: React.ReactNode }) {
   const { status: mfaStatus, loading: mfaLoading } = useMfa();
 
   if (mfaLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Checking security settings… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="security" />;
   }
 
   if (mfaStatus === "not-enrolled") {
