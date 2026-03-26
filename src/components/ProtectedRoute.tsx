@@ -277,11 +277,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // ── Tenant still loading ──────────────────────────────────────
   if (tenantLoading) {
     trace("ProtectedRoute", "decision: tenant loading → spinner");
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading firm settings… <ElapsedTimer /></p>
-      </div>
-    );
+    return <BootLoadingScreen currentStep="firm" />;
   }
 
   // ── No profile or no tenant row → TERMINAL, not loading ───────
