@@ -99,7 +99,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       setDashboardLoading(true);
-      const [sCount, recent, xeroData] = await Promise.all([
+      const [sCount, recent, xeroData, entitiesData, recentEnts] = await Promise.all([
         supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
@@ -109,10 +109,35 @@ export default function Dashboard() {
           .order("updated_at", { ascending: false })
           .limit(5),
         supabase.rpc("get_xero_connection_info"),
+        supabase
+          .from("entities")
+          .select("entity_type")
+          .is("deleted_at", null),
+        supabase
+          .from("entities")
+          .select("id, name, entity_type, created_at")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(8),
       ]);
       setStructureCount(sCount.count ?? 0);
       setRecentStructures((recent.data as any) ?? []);
       setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
+
+      // Process entity stats
+      const entities = entitiesData.data ?? [];
+      setTotalEntities(entities.length);
+      const typeCounts: Record<string, number> = {};
+      entities.forEach((e: any) => {
+        const t = e.entity_type || "Unclassified";
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+      });
+      const stats = Object.entries(typeCounts)
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count);
+      setEntityStats(stats);
+      setRecentEntities((recentEnts.data as any) ?? []);
+
       setDashboardLoading(false);
     }
     load();
