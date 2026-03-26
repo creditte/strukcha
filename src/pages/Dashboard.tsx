@@ -128,6 +128,7 @@ export default function Dashboard() {
       // Process entity stats
       const entities = entitiesData.data ?? [];
       setTotalEntities(entities.length);
+      setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
       const typeCounts: Record<string, number> = {};
       entities.forEach((e: any) => {
         const t = e.entity_type || "Unclassified";
