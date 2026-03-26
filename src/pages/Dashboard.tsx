@@ -102,7 +102,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       setDashboardLoading(true);
-      const [sCount, recent, xeroData, entitiesData, recentEnts] = await Promise.all([
+      const [sCount, recent, xeroData, entitiesData, recentEnts, relCount] = await Promise.all([
         supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
@@ -122,10 +122,12 @@ export default function Dashboard() {
           .is("deleted_at", null)
           .order("created_at", { ascending: false })
           .limit(8),
+        supabase.from("relationships").select("id", { count: "exact", head: true }).is("deleted_at", null),
       ]);
       setStructureCount(sCount.count ?? 0);
       setRecentStructures((recent.data as any) ?? []);
       setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
+      setRelationshipCount(relCount.count ?? 0);
 
       // Process entity stats
       const entities = entitiesData.data ?? [];
