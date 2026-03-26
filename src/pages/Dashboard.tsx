@@ -188,6 +188,20 @@ export default function Dashboard() {
         title: "XPM Sync Complete",
         description: `${data.contactsFetched ?? 0} contacts fetched, ${data.entitiesCreated ?? 0} created, ${data.entitiesUpdated ?? 0} updated.`,
       });
+      // Refresh entity data
+      const [entitiesData, recentEnts] = await Promise.all([
+        supabase.from("entities").select("entity_type").is("deleted_at", null),
+        supabase.from("entities").select("id, name, entity_type, created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(8),
+      ]);
+      const entities = entitiesData.data ?? [];
+      setTotalEntities(entities.length);
+      const typeCounts: Record<string, number> = {};
+      entities.forEach((e: any) => {
+        const t = e.entity_type || "Unclassified";
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+      });
+      setEntityStats(Object.entries(typeCounts).map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count));
+      setRecentEntities((recentEnts.data as any) ?? []);
     } catch (err: any) {
       toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
     } finally {
