@@ -429,14 +429,14 @@ Deno.serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 3: Fetch /client.api/{uuid}/relationship — relationships
+    // STEP 3: Fetch /client.api/get/{uuid}/relationship — relationships
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 3: Fetching client relationships...");
 
     const relDedupeSet = new Set<string>();
 
     for (const cd of clientDetails) {
-      const relXml = await xpmGetXml(`/client.api/${cd.uuid}/relationship`, accessToken, xeroTenantId);
+      const relXml = await xpmGetXml(`/client.api/get/${cd.uuid}/relationship`, accessToken, xeroTenantId);
       if (!relXml) continue;
 
       const relContainer = relXml?.Response?.Relationships;
