@@ -747,6 +747,9 @@ export default function Dashboard() {
           </div>
         </section>
       )}
+      {/* XPM Diagnostic Panel - for debugging API endpoints */}
+      {xeroConnection && <XpmDiagnosticPanel />}
+
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
       <CreateStructureModal
         open={showCreateModal}
