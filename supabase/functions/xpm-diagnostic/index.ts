@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
     const results = [];
     for (const url of endpointsToTest) {
       console.log(`[xpm-diag] Testing: ${url}`);
-      const result = await tryEndpoint(url, accessToken, xeroTenantId);
+      const result = await tryEndpoint(url, accessToken, effectiveTenantId);
       results.push(result);
       console.log(`[xpm-diag]   → ${result.status} ${result.ok ? "✓" : "✗"}`);
     }
@@ -219,20 +219,11 @@ Deno.serve(async (req) => {
     const working = results.filter((r) => r.ok);
     const failed = results.filter((r) => !r.ok);
 
-    // Also check /connections to see what scopes are authorized
-    const connectionsRes = await fetch("https://api.xero.com/connections", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    let connectionsData: any;
-    try {
-      connectionsData = await connectionsRes.json();
-    } catch {
-      connectionsData = null;
-    }
-
     return new Response(
       JSON.stringify({
-        xeroTenantId,
+        xeroTenantId: effectiveTenantId,
+        storedTenantId: xeroTenantId,
+        pmTenantId,
         xeroOrgName: connection.xero_org_name,
         authorizedConnections: connectionsData,
         workingEndpoints: working,
