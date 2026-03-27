@@ -248,20 +248,12 @@ Deno.serve(async (req) => {
 
     const structureId = structure.id;
 
-    // Upsert entities (keyed by xpm_uuid to avoid duplicates)
+    // Create all entities fresh
     const xpmUuidToEntityId: Record<string, string> = {};
 
-    // Check for existing entities with these xpm_uuids
-    const { data: existingEntities } = await supabase.from("entities").select("id, xpm_uuid").eq("tenant_id", tenantId).in("xpm_uuid", clients.map(c => c.uuid));
-    for (const e of existingEntities ?? []) {
-      if (e.xpm_uuid) xpmUuidToEntityId[e.xpm_uuid] = e.id;
-    }
-
-    // Create missing entities
-    const newEntities = clients.filter(c => !xpmUuidToEntityId[c.uuid]);
-    if (newEntities.length > 0) {
+    if (clients.length > 0) {
       const { data: inserted, error: entErr } = await supabase.from("entities").insert(
-        newEntities.map(c => ({
+        clients.map(c => ({
           name: c.name,
           entity_type: c.entityType,
           tenant_id: tenantId,
