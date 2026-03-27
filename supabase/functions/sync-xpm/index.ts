@@ -110,19 +110,15 @@ function xmlText(node: any, key: string): string {
   return String(val);
 }
 
-// ── Entity type mapping from XPM Type/Structure fields ──────────────
-const XPM_TYPE_MAP: Record<string, string> = {
-  Company: "Company",
+// ── Entity type mapping from XPM BusinessStructure field ────────────
+// NOTE: XPM's "Type" field is billing/payment info (PaymentTerm, CostMarkup).
+// The actual entity classification comes from "BusinessStructure".
+const BUSINESS_STRUCTURE_MAP: Record<string, string> = {
   Individual: "Individual",
+  Company: "Company",
+  Trust: "Trust",
   Partnership: "Partnership",
   "Sole Trader": "Sole Trader",
-  Trust: "Trust",
-  SuperFund: "smsf",
-  "Super Fund": "smsf",
-  SMSF: "smsf",
-};
-
-const XPM_STRUCTURE_MAP: Record<string, string> = {
   "Trustee Company": "Company",
   "Discretionary Trust": "trust_discretionary",
   "Unit Trust": "trust_unit",
@@ -133,20 +129,19 @@ const XPM_STRUCTURE_MAP: Record<string, string> = {
   "Family Trust": "trust_family",
   "Self Managed Superannuation Fund": "smsf",
   SMSF: "smsf",
+  "Super Fund": "smsf",
+  SuperFund: "smsf",
 };
 
-function resolveEntityType(type?: string, structure?: string, businessStructure?: string): string {
-  if (structure) {
-    const mapped = XPM_STRUCTURE_MAP[structure];
-    if (mapped) return mapped;
-  }
+function resolveEntityType(businessStructure?: string): string {
   if (businessStructure) {
-    const mapped = XPM_STRUCTURE_MAP[businessStructure];
+    const mapped = BUSINESS_STRUCTURE_MAP[businessStructure];
     if (mapped) return mapped;
-  }
-  if (type) {
-    const mapped = XPM_TYPE_MAP[type];
-    if (mapped) return mapped;
+    // Try case-insensitive match
+    const lower = businessStructure.toLowerCase();
+    for (const [key, val] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
+      if (key.toLowerCase() === lower) return val;
+    }
   }
   return "Unclassified";
 }
@@ -274,10 +269,12 @@ Deno.serve(async (req) => {
     const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 1: Fetch /client.api/list — all clients (XML)
+    // STEP 1: Fetch /client.api/list?detailed=true — all clients with full details (XML)
+    // This avoids needing individual GET /client.api/get/{uuid} calls
+    // and includes BusinessStructure for entity type classification.
     // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 1: Fetching client list...");
-    const clientListXml = await xpmGetXml("/client.api/list", accessToken, xeroTenantId);
+    console.log("[sync-xpm] Step 1: Fetching detailed client list...");
+    const clientListXml = await xpmGetXml("/client.api/list?detailed=true", accessToken, xeroTenantId);
 
     if (!clientListXml) {
       return new Response(JSON.stringify({
@@ -296,15 +293,13 @@ Deno.serve(async (req) => {
     console.log(`[sync-xpm] Found ${clients.length} clients`);
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 2: Fetch /client.api/get/{uuid} — detail for each client
+    // STEP 2: Extract client details from the detailed list response
     // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 2: Fetching client details...");
+    console.log("[sync-xpm] Step 2: Extracting client details from list...");
 
     interface ClientDetail {
       uuid: string;
       name: string;
-      type: string;
-      structure: string;
       businessStructure: string;
       companyNumber: string | null;
       taxNumber: string | null;
@@ -312,49 +307,39 @@ Deno.serve(async (req) => {
 
     const clientDetails: ClientDetail[] = [];
 
-    // Fetch details in concurrent batches of 10 to avoid timeout
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < clients.length; i += BATCH_SIZE) {
-      const batch = clients.slice(i, i + BATCH_SIZE);
-      const batchPromises = batch.map(async (client: any) => {
-        const uuid = xmlText(client, "UUID");
-        if (!uuid) return null;
+    for (let i = 0; i < clients.length; i++) {
+      const c = clients[i];
+      const uuid = xmlText(c, "UUID");
+      if (!uuid) continue;
 
-        // XPM detail endpoint is /client.api/get/{uuid}
-        const detailXml = await xpmGetXml(`/client.api/get/${uuid}`, accessToken, xeroTenantId);
-        const c = detailXml?.Response?.Client || client;
-
-        // Log first client's keys for diagnostics
-        if (i === 0 && clientDetails.length === 0) {
-          console.log(`[sync-xpm] Sample client keys: ${Object.keys(c || {}).join(", ")}`);
-          console.log(`[sync-xpm] Sample Type=${xmlText(c, "Type")} Structure=${xmlText(c, "Structure")} BusinessStructure=${xmlText(c, "BusinessStructure")}`);
-        }
-
-        const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
-        if (!name) return null;
-
-        return {
-          uuid,
-          name,
-          type: xmlText(c, "Type") || xmlText(client, "Type"),
-          structure: xmlText(c, "Structure") || xmlText(client, "Structure"),
-          businessStructure: xmlText(c, "BusinessStructure") || xmlText(client, "BusinessStructure"),
-          companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
-          taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
-        } as ClientDetail;
-      });
-
-      const results = await Promise.all(batchPromises);
-      for (const r of results) {
-        if (r) clientDetails.push(r);
+      // Log first client's keys for diagnostics
+      if (i === 0) {
+        console.log(`[sync-xpm] Sample client keys: ${Object.keys(c || {}).join(", ")}`);
+        console.log(`[sync-xpm] Sample BusinessStructure=${xmlText(c, "BusinessStructure")}`);
+        // Type is billing info (Name, CostMarkup, PaymentTerm) — NOT entity type
+        const typeObj = c?.Type;
+        console.log(`[sync-xpm] Sample Type object keys: ${typeObj ? Object.keys(typeObj).join(", ") : "null"}`);
       }
+
+      const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
+      if (!name) continue;
+
+      // BusinessStructure is the actual entity type (Individual, Company, Trust, etc.)
+      // Type is billing/payment info — do NOT use for entity classification
+      clientDetails.push({
+        uuid,
+        name,
+        businessStructure: xmlText(c, "BusinessStructure"),
+        companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
+        taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
+      });
     }
 
-    console.log(`[sync-xpm] Fetched details for ${clientDetails.length} clients`);
+    console.log(`[sync-xpm] Extracted details for ${clientDetails.length} clients`);
 
     // Upsert entities from client details
     for (const cd of clientDetails) {
-      const entityType = resolveEntityType(cd.type, cd.structure, cd.businessStructure);
+      const entityType = resolveEntityType(cd.businessStructure);
       const isTrustee = isCorporateTrustee(cd.name, entityType);
 
       typeCounts[entityType] = (typeCounts[entityType] || 0) + 1;
@@ -429,30 +414,40 @@ Deno.serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 3: Fetch /client.api/get/{uuid}/relationship — relationships
+    // STEP 3: Extract relationships from detailed list data
+    // The ?detailed=true response includes Relationships per client.
     // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 3: Fetching client relationships...");
+    console.log("[sync-xpm] Step 3: Extracting client relationships from list data...");
 
     const relDedupeSet = new Set<string>();
 
-    for (const cd of clientDetails) {
-      const relXml = await xpmGetXml(`/client.api/get/${cd.uuid}/relationship`, accessToken, xeroTenantId);
-      if (!relXml) continue;
+    for (let ci = 0; ci < clients.length; ci++) {
+      const c = clients[ci];
+      const uuid = xmlText(c, "UUID");
+      if (!uuid) continue;
 
-      const relContainer = relXml?.Response?.Relationships;
+      const relContainer = c?.Relationships;
       const relList = xmlArray(relContainer, "Relationship");
       if (relList.length === 0) continue;
 
+      if (ci === 0) {
+        console.log(`[sync-xpm] First client with relationships: ${xmlText(c, "Name")}, ${relList.length} relationships`);
+        console.log(`[sync-xpm] Sample relationship keys: ${Object.keys(relList[0] || {}).join(", ")}`);
+      }
+
       for (const rel of relList) {
-        const relTypeRaw = xmlText(rel, "RelationshipType").trim().toLowerCase();
-        const relatedUuid = xmlText(rel, "RelatedClientUUID") || xmlText(rel, "RelatedClient");
-        const relatedName = xmlText(rel, "RelatedClientName");
+        // XPM detailed response uses <Type>Shareholder</Type> for relationship type
+        // and <RelatedClient><UUID>...</UUID><Name>...</Name></RelatedClient>
+        const relTypeRaw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim().toLowerCase();
+        const relatedClient = rel?.RelatedClient;
+        const relatedUuid = xmlText(relatedClient, "UUID") || xmlText(rel, "RelatedClientUUID") || xmlText(rel, "RelatedClient");
+        const relatedName = xmlText(relatedClient, "Name") || xmlText(rel, "RelatedClientName");
 
         if (!relTypeRaw || !relatedUuid) continue;
 
         const relType = REL_TYPE_MAP[relTypeRaw];
         if (!relType) {
-          warnings.push(`Unknown relationship type "${relTypeRaw}" on client ${cd.name}`);
+          warnings.push(`Unknown relationship type "${relTypeRaw}" on client ${xmlText(c, "Name")}`);
           relationshipsSkipped++;
           continue;
         }
@@ -500,7 +495,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const fromEntityId = xeroUuidToEntityId.get(cd.uuid);
+        const fromEntityId = xeroUuidToEntityId.get(uuid);
         if (!fromEntityId) {
           relationshipsSkipped++;
           continue;
@@ -543,7 +538,7 @@ Deno.serve(async (req) => {
           });
 
         if (relErr) {
-          warnings.push(`Failed to create ${relType} relationship: ${cd.name} → ${relatedName}: ${relErr.message}`);
+          warnings.push(`Failed to create ${relType} relationship: ${xmlText(c, "Name")} → ${relatedName}: ${relErr.message}`);
           relationshipsSkipped++;
         } else {
           relationshipsCreated++;
@@ -685,55 +680,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ════════════════════════════════════════════════════════════════
-    // STEP 5: Fetch /client.api/{uuid}/customfield — ownership
-    // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 5: Fetching custom fields for ownership data...");
-
-    const ownershipKeywords = ["ownership", "shareholding", "unit", "holding", "percent", "share %", "units held"];
-
-    for (const cd of clientDetails) {
-      const cfXml = await xpmGetXml(`/client.api/${cd.uuid}/customfield`, accessToken, xeroTenantId);
-      if (!cfXml) continue;
-
-      const cfContainer = cfXml?.Response?.CustomFields;
-      const fields = xmlArray(cfContainer, "CustomField");
-
-      for (const field of fields) {
-        const fieldName = xmlText(field, "Name").toLowerCase();
-        const fieldValue = xmlText(field, "Value");
-        if (!fieldValue) continue;
-
-        const isOwnershipField = ownershipKeywords.some((kw) => fieldName.includes(kw));
-        if (!isOwnershipField) continue;
-
-        const numericValue = parseFloat(fieldValue.replace(/[^0-9.]/g, ""));
-        if (isNaN(numericValue)) continue;
-
-        const entityId = xeroUuidToEntityId.get(cd.uuid);
-        if (!entityId) continue;
-
-        const isPercentage = fieldName.includes("percent") || fieldName.includes("%") || numericValue <= 100;
-        const isUnits = fieldName.includes("unit") || fieldName.includes("holding");
-
-        const updatePayload: Record<string, any> = {};
-        if (isUnits && !isPercentage) {
-          updatePayload.ownership_units = numericValue;
-        } else {
-          updatePayload.ownership_percent = numericValue;
-        }
-
-        if (Object.keys(updatePayload).length > 0) {
-          await supabase
-            .from("relationships")
-            .update(updatePayload)
-            .eq("tenant_id", tenantId)
-            .eq("from_entity_id", entityId)
-            .in("relationship_type", ["shareholder", "beneficiary", "member"])
-            .is("deleted_at", null);
-        }
-      }
-    }
+    // Step 5 (custom fields for ownership) skipped to avoid timeout with large client lists.
+    // Ownership data can be enriched in a future incremental sync.
 
     // ════════════════════════════════════════════════════════════════
     // STEP 6: Fetch staff list (may 401 if scope missing)
