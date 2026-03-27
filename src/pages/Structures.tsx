@@ -215,18 +215,36 @@ export default function Structures() {
             {/* Group list */}
             <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
               {filtered.map((g) => (
-                <button
+                <div
                   key={g.xpm_uuid}
                   onClick={() => handleSelectGroup(g)}
-                  className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium transition-colors ${
+                  className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium transition-colors cursor-pointer ${
                     selectedGroup.xpm_uuid === g.xpm_uuid
                       ? "bg-accent text-foreground"
                       : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                   }`}
                 >
                   <Users className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{g.name}</span>
-                </button>
+                  <span className="truncate flex-1">{g.name}</span>
+                  <Tooltip delayDuration={0}>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={(e) => handleImportToEditor(e, g)}
+                        disabled={importingId === g.xpm_uuid}
+                        className="shrink-0 p-1 rounded hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
+                      >
+                        {importingId === g.xpm_uuid ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <PenLine className="h-3 w-3" />
+                        )}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs">
+                      Open in Editor
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               ))}
               {filtered.length === 0 && groups.length > 0 && (
                 <p className="text-[11px] text-muted-foreground text-center py-4">No matches</p>
