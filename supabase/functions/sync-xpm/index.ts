@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
     console.log(`[sync-xpm] Found ${clients.length} clients`);
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 2: Fetch /client.api/{uuid} — detail for each client
+    // STEP 2: Fetch /client.api/get/{uuid} — detail for each client
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 2: Fetching client details...");
 
@@ -312,27 +312,45 @@ Deno.serve(async (req) => {
 
     const clientDetails: ClientDetail[] = [];
 
-    for (const client of clients) {
-      const uuid = xmlText(client, "UUID");
-      if (!uuid) continue;
+    // Fetch details in concurrent batches of 10 to avoid timeout
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < clients.length; i += BATCH_SIZE) {
+      const batch = clients.slice(i, i + BATCH_SIZE);
+      const batchPromises = batch.map(async (client: any) => {
+        const uuid = xmlText(client, "UUID");
+        if (!uuid) return null;
 
-      // Fetch individual client detail
-      const detailXml = await xpmGetXml(`/client.api/${uuid}`, accessToken, xeroTenantId);
-      const c = detailXml?.Response?.Client || client;
+        // XPM detail endpoint is /client.api/get/{uuid}
+        const detailXml = await xpmGetXml(`/client.api/get/${uuid}`, accessToken, xeroTenantId);
+        const c = detailXml?.Response?.Client || client;
 
-      const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
-      if (!name) continue;
+        // Log first client's keys for diagnostics
+        if (i === 0 && clientDetails.length === 0) {
+          console.log(`[sync-xpm] Sample client keys: ${Object.keys(c || {}).join(", ")}`);
+          console.log(`[sync-xpm] Sample Type=${xmlText(c, "Type")} Structure=${xmlText(c, "Structure")} BusinessStructure=${xmlText(c, "BusinessStructure")}`);
+        }
 
-      clientDetails.push({
-        uuid,
-        name,
-        type: xmlText(c, "Type") || xmlText(client, "Type"),
-        structure: xmlText(c, "Structure") || xmlText(client, "Structure"),
-        businessStructure: xmlText(c, "BusinessStructure") || xmlText(client, "BusinessStructure"),
-        companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
-        taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
+        const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
+        if (!name) return null;
+
+        return {
+          uuid,
+          name,
+          type: xmlText(c, "Type") || xmlText(client, "Type"),
+          structure: xmlText(c, "Structure") || xmlText(client, "Structure"),
+          businessStructure: xmlText(c, "BusinessStructure") || xmlText(client, "BusinessStructure"),
+          companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
+          taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
+        } as ClientDetail;
       });
+
+      const results = await Promise.all(batchPromises);
+      for (const r of results) {
+        if (r) clientDetails.push(r);
+      }
     }
+
+    console.log(`[sync-xpm] Fetched details for ${clientDetails.length} clients`);
 
     // Upsert entities from client details
     for (const cd of clientDetails) {
@@ -411,14 +429,14 @@ Deno.serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // STEP 3: Fetch /client.api/{uuid}/relationship — relationships
+    // STEP 3: Fetch /client.api/get/{uuid}/relationship — relationships
     // ════════════════════════════════════════════════════════════════
     console.log("[sync-xpm] Step 3: Fetching client relationships...");
 
     const relDedupeSet = new Set<string>();
 
     for (const cd of clientDetails) {
-      const relXml = await xpmGetXml(`/client.api/${cd.uuid}/relationship`, accessToken, xeroTenantId);
+      const relXml = await xpmGetXml(`/client.api/get/${cd.uuid}/relationship`, accessToken, xeroTenantId);
       if (!relXml) continue;
 
       const relContainer = relXml?.Response?.Relationships;
