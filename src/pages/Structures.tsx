@@ -29,7 +29,7 @@ export default function Structures() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold tracking-tight">Structures</h1>
       <p className="text-sm text-muted-foreground">
-        Connect with XPM Practice Manager to view your client groups and their structures.
+        View your XPM client groups and explore their entity structures.
       </p>
       <XpmGroupCards
         onSelectGroup={(g) => setSelectedGroup({ xpm_uuid: g.xpm_uuid, name: g.name })}

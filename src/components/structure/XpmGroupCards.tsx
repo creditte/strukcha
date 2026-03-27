@@ -4,10 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Search, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, Users, RefreshCw, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 interface XpmGroup {
-  id: string;
   xpm_uuid: string;
   name: string;
 }
@@ -20,19 +21,56 @@ interface XpmGroupCardsProps {
 export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGroupCardsProps) {
   const [groups, setGroups] = useState<XpmGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const { data } = await supabase
-        .from("xpm_groups")
-        .select("id, xpm_uuid, name")
-        .order("name", { ascending: true });
-      setGroups((data as XpmGroup[]) ?? []);
-      setLoading(false);
+  async function loadFromDb() {
+    const { data } = await supabase
+      .from("xpm_groups")
+      .select("xpm_uuid, name")
+      .order("name", { ascending: true });
+    return (data as XpmGroup[]) ?? [];
+  }
+
+  async function fetchFromXpm() {
+    setSyncing(true);
+    setError(null);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("list-xpm-groups");
+      if (fnError) throw fnError;
+      if (data?.error && (!data?.groups || data.groups.length === 0)) {
+        setError(data.error);
+        return;
+      }
+      const fetchedGroups = (data?.groups ?? []) as XpmGroup[];
+      setGroups(fetchedGroups);
+      if (fetchedGroups.length > 0) {
+        toast.success(`${fetchedGroups.length} groups loaded from XPM`);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to fetch groups");
+      toast.error("Failed to fetch groups from XPM");
+    } finally {
+      setSyncing(false);
     }
-    load();
+  }
+
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      // First try loading from DB cache
+      const cached = await loadFromDb();
+      if (cached.length > 0) {
+        setGroups(cached);
+        setLoading(false);
+        return;
+      }
+      // No cached groups — fetch live from XPM
+      setLoading(false);
+      await fetchFromXpm();
+    }
+    init();
   }, []);
 
   const filtered = useMemo(
@@ -44,59 +82,105 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
     return (
       <div className="space-y-3">
         <Skeleton className="h-9 w-full max-w-xs" />
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-48 shrink-0 rounded-xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
       </div>
     );
   }
 
-  if (groups.length === 0) return null;
-
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-foreground">XPM Groups</h2>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-            {groups.length}
-          </Badge>
+          <h2 className="text-sm font-semibold text-foreground">Client Groups</h2>
+          {groups.length > 0 && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              {groups.length}
+            </Badge>
+          )}
         </div>
-        <div className="relative w-48">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Filter groups..."
-            className="h-8 pl-8 text-xs"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-      </div>
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
-        {filtered.map((g) => (
-          <Card
-            key={g.id}
-            className={`shrink-0 cursor-pointer transition-all hover:bg-accent/50 ${
-              selectedGroupId === g.xpm_uuid
-                ? "ring-2 ring-primary bg-accent/30"
-                : ""
-            }`}
-            onClick={() => onSelectGroup(g)}
+        <div className="flex items-center gap-2">
+          {groups.length > 0 && (
+            <div className="relative w-48">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Filter groups..."
+                className="h-8 pl-8 text-xs"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={fetchFromXpm}
+            disabled={syncing}
           >
-            <CardContent className="flex items-center gap-3 p-4 min-w-[180px]">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-                <Users className="h-4 w-4 text-primary" />
-              </div>
-              <p className="text-sm font-medium truncate max-w-[140px]">{g.name}</p>
-            </CardContent>
-          </Card>
-        ))}
-        {filtered.length === 0 && (
-          <p className="text-xs text-muted-foreground py-4">No groups match your search.</p>
-        )}
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing..." : "Refresh"}
+          </Button>
+        </div>
       </div>
+
+      {/* Error state */}
+      {error && groups.length === 0 && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {groups.length === 0 && !error && !syncing && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Users className="h-10 w-10 mx-auto mb-3 opacity-40" />
+          <p className="text-sm font-medium">No client groups found</p>
+          <p className="text-xs mt-1">Connect XPM Practice Manager and click Refresh to load groups.</p>
+        </div>
+      )}
+
+      {/* Syncing state */}
+      {syncing && groups.length === 0 && (
+        <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+          <RefreshCw className="h-5 w-5 animate-spin" />
+          <span className="text-sm">Fetching groups from XPM...</span>
+        </div>
+      )}
+
+      {/* Group cards grid */}
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {filtered.map((g) => (
+            <Card
+              key={g.xpm_uuid}
+              className={`cursor-pointer transition-all hover:bg-accent/50 ${
+                selectedGroupId === g.xpm_uuid
+                  ? "ring-2 ring-primary bg-accent/30"
+                  : ""
+              }`}
+              onClick={() => onSelectGroup(g)}
+            >
+              <CardContent className="flex items-center gap-3 p-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
+                  <Users className="h-4 w-4 text-primary" />
+                </div>
+                <p className="text-sm font-medium truncate">{g.name}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* No search results */}
+      {filtered.length === 0 && groups.length > 0 && (
+        <p className="text-xs text-muted-foreground py-4 text-center">No groups match your search.</p>
+      )}
     </div>
   );
 }
