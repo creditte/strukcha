@@ -680,55 +680,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ════════════════════════════════════════════════════════════════
-    // STEP 5: Fetch /client.api/{uuid}/customfield — ownership
-    // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 5: Fetching custom fields for ownership data...");
-
-    const ownershipKeywords = ["ownership", "shareholding", "unit", "holding", "percent", "share %", "units held"];
-
-    for (const cd of clientDetails) {
-      const cfXml = await xpmGetXml(`/client.api/${cd.uuid}/customfield`, accessToken, xeroTenantId);
-      if (!cfXml) continue;
-
-      const cfContainer = cfXml?.Response?.CustomFields;
-      const fields = xmlArray(cfContainer, "CustomField");
-
-      for (const field of fields) {
-        const fieldName = xmlText(field, "Name").toLowerCase();
-        const fieldValue = xmlText(field, "Value");
-        if (!fieldValue) continue;
-
-        const isOwnershipField = ownershipKeywords.some((kw) => fieldName.includes(kw));
-        if (!isOwnershipField) continue;
-
-        const numericValue = parseFloat(fieldValue.replace(/[^0-9.]/g, ""));
-        if (isNaN(numericValue)) continue;
-
-        const entityId = xeroUuidToEntityId.get(cd.uuid);
-        if (!entityId) continue;
-
-        const isPercentage = fieldName.includes("percent") || fieldName.includes("%") || numericValue <= 100;
-        const isUnits = fieldName.includes("unit") || fieldName.includes("holding");
-
-        const updatePayload: Record<string, any> = {};
-        if (isUnits && !isPercentage) {
-          updatePayload.ownership_units = numericValue;
-        } else {
-          updatePayload.ownership_percent = numericValue;
-        }
-
-        if (Object.keys(updatePayload).length > 0) {
-          await supabase
-            .from("relationships")
-            .update(updatePayload)
-            .eq("tenant_id", tenantId)
-            .eq("from_entity_id", entityId)
-            .in("relationship_type", ["shareholder", "beneficiary", "member"])
-            .is("deleted_at", null);
-        }
-      }
-    }
+    // Step 5 (custom fields for ownership) skipped to avoid timeout with large client lists.
+    // Ownership data can be enriched in a future incremental sync.
 
     // ════════════════════════════════════════════════════════════════
     // STEP 6: Fetch staff list (may 401 if scope missing)
