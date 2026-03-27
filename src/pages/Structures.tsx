@@ -101,6 +101,24 @@ export default function Structures() {
     setSelectedGroup(g);
   };
 
+  async function handleImportToEditor(e: React.MouseEvent, group: XpmGroup) {
+    e.stopPropagation();
+    setImportingId(group.xpm_uuid);
+    try {
+      const { data, error } = await supabase.functions.invoke("import-xpm-group", {
+        body: { group_uuid: group.xpm_uuid, group_name: group.name },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
+      navigate(`/structures/${data.structure_id}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to import group");
+    } finally {
+      setImportingId(null);
+    }
+  }
+
   // If no group selected, show the full cards view
   if (!selectedGroup) {
     return (
