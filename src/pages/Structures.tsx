@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, Users, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
+import { Search, Users, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, PenLine, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import XpmGroupCards from "@/components/structure/XpmGroupCards";
