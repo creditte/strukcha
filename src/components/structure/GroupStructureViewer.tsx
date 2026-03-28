@@ -15,11 +15,11 @@ import "@xyflow/react/dist/style.css";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import dagre from "@dagrejs/dagre";
+import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 
 interface GroupNode {
   id: string;
@@ -193,19 +193,36 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
     setEdges(rfEdges);
   }, [groupNodes, groupEdges]);
 
-  const formatEntityType = (type: string) => {
-    const map: Record<string, string> = {
-      trust_discretionary: "Discretionary Trust",
-      trust_unit: "Unit Trust",
-      trust_hybrid: "Hybrid Trust",
-      trust_bare: "Bare Trust",
-      trust_testamentary: "Testamentary Trust",
-      trust_deceased_estate: "Deceased Estate",
-      trust_family: "Family Trust",
-      smsf: "SMSF",
-    };
-    return map[type] || type;
+  const GROUP_ORDER = [
+    "director", "shareholder", "trustee", "beneficiary", "spouse",
+    "appointer", "settlor", "partner", "member", "parent", "child",
+  ];
+
+  const GROUP_COLORS: Record<string, string> = {
+    director: "bg-blue-500",
+    shareholder: "bg-emerald-500",
+    trustee: "bg-amber-500",
+    beneficiary: "bg-purple-500",
+    spouse: "bg-muted-foreground",
   };
+
+  const formatEntityType = (type: string) => getEntityLabel(type);
+
+  // Group relationships by type for the selected node
+  const groupedRelationships = useMemo(() => {
+    if (!selectedNode) return [];
+    const groups = new Map<string, typeof selectedNode.relationships>();
+    for (const r of selectedNode.relationships) {
+      const arr = groups.get(r.type) ?? [];
+      arr.push(r);
+      groups.set(r.type, arr);
+    }
+    return [...groups.entries()].sort((a, b) => {
+      const ai = GROUP_ORDER.indexOf(a[0]);
+      const bi = GROUP_ORDER.indexOf(b[0]);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+  }, [selectedNode]);
 
   return (
     <div className="flex flex-col h-full">
@@ -256,66 +273,110 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
             <Controls showInteractive={false} />
           </ReactFlow>
         )}
-      </div>
 
-      {/* Entity detail side panel */}
-      <Sheet open={!!selectedNode} onOpenChange={(open) => !open && setSelectedNode(null)}>
-        <SheetContent className="w-[360px] sm:w-[400px]">
-          <SheetHeader>
-            <SheetTitle className="text-lg">{selectedNode?.name}</SheetTitle>
-          </SheetHeader>
-          {selectedNode && (
-            <div className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-[11px] text-muted-foreground font-medium uppercase">Type</p>
-                  <p className="text-sm font-medium">{formatEntityType(selectedNode.entityType)}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-muted-foreground font-medium uppercase">Structure</p>
-                  <p className="text-sm">{selectedNode.businessStructure || "—"}</p>
-                </div>
-                {selectedNode.abn && (
-                  <div>
-                    <p className="text-[11px] text-muted-foreground font-medium uppercase">ABN</p>
-                    <p className="text-sm font-mono">{selectedNode.abn}</p>
+        {/* Entity detail side panel */}
+        {selectedNode && (
+          <div className="absolute right-0 top-0 z-10 flex h-full w-80 flex-col border-l bg-card shadow-lg">
+            <div className="flex items-center justify-between border-b p-4">
+              <h3 className="font-semibold text-sm">Entity Details</h3>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedNode(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Entity header */}
+              {(() => {
+                const Icon = getEntityIcon(selectedNode.entityType);
+                return (
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+                      <Icon className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium leading-tight">{selectedNode.name}</p>
+                      <p className="text-xs text-muted-foreground">{formatEntityType(selectedNode.entityType)}</p>
+                      {selectedNode.businessStructure && selectedNode.businessStructure !== selectedNode.entityType && (
+                        <p className="text-[10px] text-muted-foreground">{selectedNode.businessStructure}</p>
+                      )}
+                    </div>
                   </div>
-                )}
-                {selectedNode.acn && (
-                  <div>
-                    <p className="text-[11px] text-muted-foreground font-medium uppercase">ACN</p>
-                    <p className="text-sm font-mono">{selectedNode.acn}</p>
+                );
+              })()}
+
+              {/* Info fields */}
+              {(selectedNode.abn || selectedNode.acn) && (
+                <div className="space-y-1.5 rounded-md border p-3 bg-muted/30">
+                  {selectedNode.abn && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-medium text-muted-foreground">ABN</p>
+                      <span className="text-xs font-mono">{selectedNode.abn}</span>
+                    </div>
+                  )}
+                  {selectedNode.acn && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-medium text-muted-foreground">ACN</p>
+                      <span className="text-xs font-mono">{selectedNode.acn}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Relationships grouped */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <p className="text-xs font-medium text-muted-foreground">Relationships</p>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 min-w-[1.25rem] justify-center">
+                    {selectedNode.relationships.length}
+                  </Badge>
+                </div>
+
+                {selectedNode.relationships.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No relationships</p>
+                ) : (
+                  <div className="space-y-3">
+                    {groupedRelationships.map(([type, items]) => {
+                      const pillColor = GROUP_COLORS[type] ?? "bg-muted-foreground";
+                      const label = type === "appointer" ? "Appointors" : type.charAt(0).toUpperCase() + type.slice(1) + "s";
+                      return (
+                        <div key={type}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className={`inline-block h-2 w-2 rounded-full ${pillColor}`} />
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {label}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground">({items.length})</span>
+                          </div>
+                          <div className="space-y-1">
+                            {items.map((r, i) => (
+                              <button
+                                key={i}
+                                className="flex w-full items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent"
+                                onClick={() => {
+                                  const target = groupNodes.find((n) => n.id === r.relatedClientUuid);
+                                  if (target) setSelectedNode(target);
+                                }}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className="truncate font-medium text-xs">{r.relatedClientName || r.relatedClientUuid}</p>
+                                  {r.percentage != null && r.percentage > 0 && (
+                                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 mt-0.5">
+                                      {r.percentage}%
+                                    </Badge>
+                                  )}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-
-              {selectedNode.relationships.length > 0 && (
-                <>
-                  <Separator />
-                  <div>
-                    <p className="text-[11px] text-muted-foreground font-medium uppercase mb-2">
-                      Relationships ({selectedNode.relationships.length})
-                    </p>
-                    <div className="space-y-2">
-                      {selectedNode.relationships.map((r, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/50">
-                          <div>
-                            <span className="font-medium capitalize">{r.type}</span>
-                            <span className="text-muted-foreground"> → {r.relatedClientName || r.relatedClientUuid}</span>
-                          </div>
-                          {r.percentage != null && r.percentage > 0 && (
-                            <Badge variant="outline" className="text-[10px]">{r.percentage}%</Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
             </div>
-          )}
-        </SheetContent>
-      </Sheet>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
