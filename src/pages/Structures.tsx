@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, Users, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, PenLine, Loader2, Plus, Settings, FileBox, Calendar } from "lucide-react";
+import { Search, Users, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, PenLine, Loader2, Plus, Settings, FileBox, Calendar, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import XpmGroupCards from "@/components/structure/XpmGroupCards";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
 
 interface XpmGroup {
@@ -58,6 +59,8 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
   const [manualLoading, setManualLoading] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Check if XPM is connected
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
@@ -217,6 +220,25 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
       toast.error(err.message || "Failed to import group");
     } finally {
       setImportingId(null);
+    }
+  }
+
+  async function handleDeleteStructure() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", deleteTarget.id);
+      if (error) throw error;
+      setManualStructures((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+      toast.success("Structure deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete structure");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   }
 
@@ -501,9 +523,15 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
               {filteredManual.map((s) => (
                 <Card
                   key={s.id}
-                  className="cursor-pointer transition-all hover:bg-accent/50"
+                  className="cursor-pointer transition-all hover:bg-accent/50 relative group"
                   onClick={() => navigate(`/structures/${s.id}`)}
                 >
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
+                    className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
@@ -541,6 +569,28 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
         onOpenChange={setShowCreateModal}
         onImportXpm={() => setActiveTab("xpm")}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this structure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteStructure}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
