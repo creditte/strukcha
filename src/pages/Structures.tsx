@@ -126,12 +126,13 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
       const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
       if (!tenantId) return;
 
-      // Get structures that are NOT scenarios and NOT deleted
+      // Get manual structures that are NOT scenarios and NOT deleted
       const { data: structures } = await supabase
         .from("structures")
         .select("id, name, created_at")
         .eq("tenant_id", tenantId)
         .eq("is_scenario", false)
+        .eq("source", "manual")
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
