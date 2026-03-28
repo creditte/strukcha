@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useTrustedDevice } from "@/hooks/useTrustedDevice";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Loader2, Smartphone, Mail } from "lucide-react";
 
@@ -48,6 +50,7 @@ export default function MfaVerify() {
   const { user, bootStatus, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { validateDevice, registerDevice } = useTrustedDevice();
 
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -55,12 +58,36 @@ export default function MfaVerify() {
   const [activeMethod, setActiveMethod] = useState<"totp" | "email" | null>(null);
   const [hasTotpFactor, setHasTotpFactor] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [trustDevice, setTrustDevice] = useState(false);
+  const [checkingTrust, setCheckingTrust] = useState(true);
   const autoSubmitTriggered = useRef(false);
+  const trustCheckDone = useRef(false);
+
+  // Check trusted device before showing MFA
+  useEffect(() => {
+    if (bootStatus !== "authenticated" || !user || trustCheckDone.current) return;
+    trustCheckDone.current = true;
+
+    (async () => {
+      try {
+        const isTrusted = await validateDevice();
+        if (isTrusted) {
+          // Device is trusted — skip MFA entirely
+          clearStoredMfaVerifyState(user.id);
+          navigate("/", { replace: true });
+          return;
+        }
+      } catch {
+        // Not trusted, proceed with MFA
+      }
+      setCheckingTrust(false);
+    })();
+  }, [bootStatus, user?.id]);
 
   useEffect(() => {
-    if (bootStatus !== "authenticated" || !user || preferredMethod) return;
+    if (checkingTrust || bootStatus !== "authenticated" || !user || preferredMethod) return;
     void detectMethod();
-  }, [bootStatus, user?.id, preferredMethod]);
+  }, [checkingTrust, bootStatus, user?.id, preferredMethod]);
 
   const handleVerify = activeMethod === "totp" ? verifyTotp : verifyEmail;
 
@@ -170,6 +197,20 @@ export default function MfaVerify() {
     }
   }
 
+  async function onVerifySuccess() {
+    // Register trusted device if checkbox is checked
+    if (trustDevice) {
+      try {
+        await registerDevice();
+      } catch (err) {
+        console.warn("[MfaVerify] Failed to register trusted device:", err);
+        // Don't block login for this
+      }
+    }
+    clearStoredMfaVerifyState(user?.id);
+    navigate("/", { replace: true });
+  }
+
   async function verifyTotp() {
     setSubmitting(true);
     try {
@@ -189,8 +230,7 @@ export default function MfaVerify() {
       });
       if (verifyErr) throw verifyErr;
 
-      clearStoredMfaVerifyState(user?.id);
-      navigate("/", { replace: true });
+      await onVerifySuccess();
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
       setCode("");
@@ -208,8 +248,7 @@ export default function MfaVerify() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      clearStoredMfaVerifyState(user?.id);
-      navigate("/", { replace: true });
+      await onVerifySuccess();
     } catch (err: any) {
       toast({ title: "Invalid code", description: err.message, variant: "destructive" });
       setCode("");
@@ -230,6 +269,15 @@ export default function MfaVerify() {
 
   if (!user) {
     return null;
+  }
+
+  // Show loading while checking trusted device
+  if (checkingTrust) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/30">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return (
@@ -258,6 +306,21 @@ export default function MfaVerify() {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           )}
+
+          {/* Trust this device checkbox */}
+          <div className="flex items-center gap-2 rounded-lg border border-border/50 p-3">
+            <Checkbox
+              id="trust-device"
+              checked={trustDevice}
+              onCheckedChange={(checked) => setTrustDevice(checked === true)}
+            />
+            <label
+              htmlFor="trust-device"
+              className="text-sm text-muted-foreground cursor-pointer select-none leading-tight"
+            >
+              Trust this device for 30 days
+            </label>
+          </div>
 
           {activeMethod === "email" && (
             <Button variant="ghost" onClick={() => void sendEmailCode()} className="w-full text-sm">

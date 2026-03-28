@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMfa } from "@/hooks/useMfa";
+import { useTrustedDevice } from "@/hooks/useTrustedDevice";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Shield, Smartphone, Mail, Loader2, Check, ArrowRight, Monitor, Globe, X } from "lucide-react";
+import { Shield, Smartphone, Mail, Loader2, Check, ArrowRight, Monitor, Globe, X, ShieldOff } from "lucide-react";
+import { format } from "date-fns";
 
 type ChangeStep = "idle" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
 
@@ -51,9 +53,19 @@ function clearStoredMfaSettingsState(userId?: string) {
   }
 }
 
+type TrustedDeviceRecord = {
+  id: string;
+  device_label: string;
+  ip_address: string;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+};
+
 export default function MfaSettings() {
   const { user } = useAuth();
   const { method: currentMethod, loading: mfaLoading, refetch } = useMfa();
+  const { listDevices, revokeDevice, revokeAllDevices } = useTrustedDevice();
   const { toast } = useToast();
 
   const [step, setStep] = useState<ChangeStep>("idle");
@@ -64,6 +76,12 @@ export default function MfaSettings() {
   const [totpSecret, setTotpSecret] = useState("");
   const autoSubmitTriggered = useRef(false);
 
+  // Trusted devices state
+  const [trustedDevices, setTrustedDevices] = useState<TrustedDeviceRecord[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const [revokingAll, setRevokingAll] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!user?.id) return;
     const stored = readStoredMfaSettingsState();
@@ -71,6 +89,50 @@ export default function MfaSettings() {
       setStep("email-verify");
     }
   }, [user?.id]);
+
+  // Load trusted devices
+  useEffect(() => {
+    if (!user?.id) return;
+    loadDevices();
+  }, [user?.id]);
+
+  async function loadDevices() {
+    setDevicesLoading(true);
+    try {
+      const devices = await listDevices();
+      setTrustedDevices(devices);
+    } catch {
+      // silent
+    } finally {
+      setDevicesLoading(false);
+    }
+  }
+
+  async function handleRevokeDevice(deviceId: string) {
+    setRevokingId(deviceId);
+    try {
+      await revokeDevice(deviceId);
+      setTrustedDevices((prev) => prev.filter((d) => d.id !== deviceId));
+      toast({ title: "Device removed", description: "Trusted device has been revoked." });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  async function handleRevokeAll() {
+    setRevokingAll(true);
+    try {
+      await revokeAllDevices();
+      setTrustedDevices([]);
+      toast({ title: "All devices revoked", description: "You'll need to verify MFA on all devices again." });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRevokingAll(false);
+    }
+  }
 
   useEffect(() => {
     if (code.length === 6 && !submitting && !autoSubmitTriggered.current) {
@@ -349,67 +411,101 @@ export default function MfaSettings() {
         </CardContent>
       </Card>
 
-      {/* Active Sessions */}
+      {/* Trusted Devices */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Monitor className="h-5 w-5 text-primary" />
-            Active Sessions
-          </CardTitle>
-          <CardDescription>
-            Devices currently signed in to your account.
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Monitor className="h-5 w-5 text-primary" />
+                Trusted Devices
+              </CardTitle>
+              <CardDescription>
+                Devices that can skip MFA verification for 30 days.
+              </CardDescription>
+            </div>
+            {trustedDevices.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRevokeAll}
+                disabled={revokingAll}
+                className="gap-1.5 text-destructive hover:text-destructive"
+              >
+                {revokingAll ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ShieldOff className="h-3.5 w-3.5" />
+                )}
+                Revoke All
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Device</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Last active</TableHead>
-                <TableHead className="w-[80px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Monitor className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Chrome on macOS</span>
-                    <Badge variant="secondary" className="text-[10px]">Current</Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Globe className="h-3.5 w-3.5" /> Sydney, AU
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">Now</TableCell>
-                <TableCell>
-                  <span className="text-xs text-muted-foreground">—</span>
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Safari on iPhone</span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Globe className="h-3.5 w-3.5" /> Melbourne, AU
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">2 hours ago</TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive">
-                    <X className="h-3 w-3 mr-1" /> Revoke
-                  </Button>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+          {devicesLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : trustedDevices.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No trusted devices. Check "Trust this device" during MFA verification to add one.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Device</TableHead>
+                  <TableHead>IP Address</TableHead>
+                  <TableHead>Last Used</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead className="w-[80px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {trustedDevices.map((device) => (
+                  <TableRow key={device.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Monitor className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium">{device.device_label || "Unknown"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <Globe className="h-3.5 w-3.5" />
+                        {device.ip_address}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {format(new Date(device.last_used_at), "d MMM yyyy")}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {format(new Date(device.expires_at), "d MMM yyyy")}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRevokeDevice(device.id)}
+                        disabled={revokingId === device.id}
+                        className="h-7 text-xs text-destructive hover:text-destructive"
+                      >
+                        {revokingId === device.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <>
+                            <X className="h-3 w-3 mr-1" /> Revoke
+                          </>
+                        )}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
