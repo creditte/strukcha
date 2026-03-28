@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, Users, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucide-react";
+import { Search, Network, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface XpmGroup {
