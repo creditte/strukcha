@@ -223,6 +223,25 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
     }
   }
 
+  async function handleDeleteStructure() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", deleteTarget.id);
+      if (error) throw error;
+      setManualStructures((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+      toast.success("Structure deleted");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete structure");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
+  }
+
   // Tab component
   const TabBar = () => (
     <div className="flex items-center gap-1 border-b border-border/50 mb-4">
