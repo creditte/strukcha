@@ -109,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     trace("useAuth", "signOut called");
+    try { localStorage.removeItem("td_token"); } catch { /* noop */ }
     await supabase.auth.signOut();
     setBootStatus("unauthenticated");
   };
