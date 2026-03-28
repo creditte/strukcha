@@ -580,10 +580,11 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground">
                         Manual
                       </Badge>
+                      {Object.keys(s.typeBreakdown).length > 0 && <EntityTypeBadges breakdown={s.typeBreakdown} />}
                     </div>
                   </CardContent>
                 </Card>
