@@ -15,11 +15,11 @@ import "@xyflow/react/dist/style.css";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import dagre from "@dagrejs/dagre";
+import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 
 interface GroupNode {
   id: string;
