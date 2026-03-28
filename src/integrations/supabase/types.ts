@@ -148,18 +148,24 @@ export type Database = {
       entities: {
         Row: {
           abn: string | null
+          account_manager: string | null
           acn: string | null
+          client_code: string | null
           created_at: string
           deleted_at: string | null
           entity_type: Database["public"]["Enums"]["entity_type"]
+          gst_registered: boolean
           id: string
+          is_archived: boolean
           is_investment_company: boolean
           is_operating_entity: boolean
           is_trustee_company: boolean
           merged_into_entity_id: string | null
           name: string
           source: Database["public"]["Enums"]["data_source"]
+          state: string | null
           tenant_id: string
+          tfn: string | null
           trust_subtype: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at: string
           verified: boolean
@@ -167,18 +173,24 @@ export type Database = {
         }
         Insert: {
           abn?: string | null
+          account_manager?: string | null
           acn?: string | null
+          client_code?: string | null
           created_at?: string
           deleted_at?: string | null
           entity_type?: Database["public"]["Enums"]["entity_type"]
+          gst_registered?: boolean
           id?: string
+          is_archived?: boolean
           is_investment_company?: boolean
           is_operating_entity?: boolean
           is_trustee_company?: boolean
           merged_into_entity_id?: string | null
           name: string
           source?: Database["public"]["Enums"]["data_source"]
+          state?: string | null
           tenant_id: string
+          tfn?: string | null
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean
@@ -186,18 +198,24 @@ export type Database = {
         }
         Update: {
           abn?: string | null
+          account_manager?: string | null
           acn?: string | null
+          client_code?: string | null
           created_at?: string
           deleted_at?: string | null
           entity_type?: Database["public"]["Enums"]["entity_type"]
+          gst_registered?: boolean
           id?: string
+          is_archived?: boolean
           is_investment_company?: boolean
           is_operating_entity?: boolean
           is_trustee_company?: boolean
           merged_into_entity_id?: string | null
           name?: string
           source?: Database["public"]["Enums"]["data_source"]
+          state?: string | null
           tenant_id?: string
+          tfn?: string | null
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean

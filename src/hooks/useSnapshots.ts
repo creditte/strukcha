@@ -71,6 +71,12 @@ export async function loadSnapshotData(snapshotId: string): Promise<SnapshotData
       is_trustee_company: se.is_trustee_company,
       is_investment_company: false,
       created_at: "",
+      tfn: null,
+      state: null,
+      client_code: null,
+      account_manager: null,
+      gst_registered: false,
+      is_archived: false,
     };
   });
 
