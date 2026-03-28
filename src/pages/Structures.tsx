@@ -146,16 +146,42 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
         return;
       }
 
-      // Get entity counts for each structure
+      // Get entity links and types for each structure
       const structureIds = structures.map((s) => s.id);
       const { data: entityLinks } = await supabase
         .from("structure_entities")
-        .select("structure_id")
+        .select("structure_id, entity_id")
         .in("structure_id", structureIds);
 
+      if (!entityLinks || entityLinks.length === 0) {
+        setManualStructures(
+          structures.map((s) => ({ id: s.id, name: s.name, created_at: s.created_at, entity_count: 0, typeBreakdown: {} }))
+        );
+        return;
+      }
+
+      const entityIds = [...new Set(entityLinks.map((l) => l.entity_id))];
+      const { data: entities } = await supabase
+        .from("entities")
+        .select("id, entity_type")
+        .in("id", entityIds)
+        .is("deleted_at", null);
+
+      const entityTypeMap: Record<string, string> = {};
+      for (const e of entities ?? []) {
+        entityTypeMap[e.id] = e.entity_type;
+      }
+
+      // Build count and type breakdown per structure
       const countMap: Record<string, number> = {};
-      for (const link of entityLinks ?? []) {
+      const breakdownMap: Record<string, Record<string, number>> = {};
+      for (const link of entityLinks) {
         countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
+        const eType = entityTypeMap[link.entity_id];
+        if (eType) {
+          if (!breakdownMap[link.structure_id]) breakdownMap[link.structure_id] = {};
+          breakdownMap[link.structure_id][eType] = (breakdownMap[link.structure_id][eType] || 0) + 1;
+        }
       }
 
       setManualStructures(
@@ -164,6 +190,7 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
           name: s.name,
           created_at: s.created_at,
           entity_count: countMap[s.id] || 0,
+          typeBreakdown: breakdownMap[s.id] || {},
         }))
       );
     } catch (err) {
