@@ -37,7 +37,10 @@ type Tab = "xpm" | "manual";
 export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>("xpm");
+const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const saved = sessionStorage.getItem("structures_active_tab");
+    return saved === "manual" ? "manual" : "xpm";
+  });
   const [selectedGroup, setSelectedGroup] = useState<XpmGroup | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
