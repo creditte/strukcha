@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, Users, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, PenLine, Loader2, Plus, Settings, FileBox, Calendar } from "lucide-react";
+import { Search, Users, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, PenLine, Loader2, Plus, Settings, FileBox, Calendar, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
