@@ -160,7 +160,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       {/* Empty state */}
       {groups.length === 0 && !error && !syncing && (
         <div className="text-center py-12 text-muted-foreground">
-          <Users className="h-10 w-10 mx-auto mb-3 opacity-40" />
+          <Network className="h-10 w-10 mx-auto mb-3 opacity-40" />
           <p className="text-sm font-medium">No client groups found</p>
           <p className="text-xs mt-1">Connect XPM Practice Manager and click Refresh to load groups.</p>
         </div>
