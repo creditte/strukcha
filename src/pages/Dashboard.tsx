@@ -131,6 +131,7 @@ export default function Dashboard() {
       setRecentStructures((recent.data as any) ?? []);
       setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
       setRelationshipCount(relCount.count ?? 0);
+      setImportCount(impCount.count ?? 0);
 
       // Process entity stats
       const entities = entitiesData.data ?? [];
