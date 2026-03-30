@@ -325,7 +325,7 @@ export default function Dashboard() {
                 Continue working on a recent structure or create a new one.
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <Button variant="outline" className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
                 <Plus className="h-4 w-4" />
                 Create New Structure
@@ -356,6 +356,37 @@ export default function Dashboard() {
                     )}
                     Connect to Xero
                   </Button>
+                </div>
+              )}
+              {canManageIntegrations && xeroConnection && (
+                <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-1.5">
+                  <Badge
+                    variant="secondary"
+                    className="gap-1 rounded-md bg-success/10 text-success border-0 text-[11px] font-medium px-2 py-0.5"
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    Connected
+                  </Badge>
+                  {xeroConnection.xero_org_name && (
+                    <span className="text-xs text-muted-foreground">{xeroConnection.xero_org_name}</span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2"
+                    onClick={handleSyncXpm}
+                    disabled={syncing}
+                  >
+                    {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    {syncing ? "Syncing…" : "Sync"}
+                  </Button>
+                  <button
+                    className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
+                    onClick={handleDisconnectXero}
+                    disabled={disconnecting}
+                  >
+                    <Unplug className="h-3 w-3" />
+                  </button>
                 </div>
               )}
             </div>
