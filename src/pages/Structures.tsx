@@ -243,11 +243,6 @@ export default function Structures() {
   // ── Handlers ──
   const handleSelectGroup = useCallback((g: XpmGroup) => {
     setSelectedGroup(g);
-    // Add to recent (session-only)
-    setRecentGroups((prev) => {
-      const without = prev.filter((r) => r.xpm_uuid !== g.xpm_uuid);
-      return [g, ...without].slice(0, MAX_RECENT);
-    });
   }, []);
 
   const handleToggleFavourite = useCallback(async (g: XpmGroup) => {
