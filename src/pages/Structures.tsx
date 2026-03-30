@@ -65,6 +65,7 @@ export default function Structures() {
   // Favourite groups (persisted)
   const [favourites, setFavourites] = useState<XpmGroup[]>([]);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
+  const [xpmSearch, setXpmSearch] = useState("");
 
   // Manual structures state
   const [manualStructures, setManualStructures] = useState<ManualStructure[]>([]);
