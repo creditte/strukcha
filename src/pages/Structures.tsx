@@ -58,8 +58,6 @@ export default function Structures() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  // Recent groups (session only)
-  const [recentGroups, setRecentGroups] = useState<XpmGroup[]>([]);
 
   // Favourite groups (persisted)
   const [favourites, setFavourites] = useState<XpmGroup[]>([]);
