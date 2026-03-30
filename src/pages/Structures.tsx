@@ -342,6 +342,7 @@ export default function Structures() {
               <TooltipContent>Import this group into an editable structure</TooltipContent>
             </Tooltip>
           </div>
+        </div>
 
         {/* Canvas */}
         <div className="flex-1 min-h-0">
