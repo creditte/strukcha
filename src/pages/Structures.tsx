@@ -9,13 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
-  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star,
+  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
-import RecentGroups from "@/components/structure/RecentGroups";
 import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import {
@@ -41,7 +40,6 @@ interface ManualStructure {
 }
 
 type Tab = "xpm" | "manual";
-const MAX_RECENT = 10;
 const MAX_FAVOURITES = 10;
 
 export default function Structures() {
@@ -59,13 +57,14 @@ export default function Structures() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  // Recent groups (session only)
-  const [recentGroups, setRecentGroups] = useState<XpmGroup[]>([]);
 
   // Favourite groups (persisted)
   const [favourites, setFavourites] = useState<XpmGroup[]>([]);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [xpmSearch, setXpmSearch] = useState("");
+
+  // Recent structures (persisted, most recently updated)
+  const [recentStructures, setRecentStructures] = useState<ManualStructure[]>([]);
 
   // Manual structures state
   const [manualStructures, setManualStructures] = useState<ManualStructure[]>([]);
@@ -133,6 +132,46 @@ export default function Structures() {
           setFavouriteIds(new Set(favs.map((f: XpmGroup) => f.xpm_uuid)));
         }
       });
+  }, [user?.id]);
+
+  // ── Load recent structures (most recently updated) ──
+  useEffect(() => {
+    if (!user?.id) return;
+    async function loadRecent() {
+      try {
+        const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user!.id });
+        if (!tenantId) return;
+        const { data: structures } = await supabase
+          .from("structures")
+          .select("id, name, created_at, updated_at")
+          .eq("tenant_id", tenantId)
+          .eq("is_scenario", false)
+          .is("deleted_at", null)
+          .order("updated_at", { ascending: false })
+          .limit(10);
+        if (!structures || structures.length === 0) return;
+        const structureIds = structures.map((s) => s.id);
+        const { data: entityLinks } = await supabase
+          .from("structure_entities")
+          .select("structure_id")
+          .in("structure_id", structureIds);
+        const countMap: Record<string, number> = {};
+        for (const link of entityLinks ?? []) {
+          countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
+        }
+        setRecentStructures(
+          structures.map((s) => ({
+            id: s.id,
+            name: s.name,
+            created_at: s.created_at,
+            entity_count: countMap[s.id] || 0,
+          }))
+        );
+      } catch (err) {
+        console.error("[Structures] Failed to load recent structures:", err);
+      }
+    }
+    loadRecent();
   }, [user?.id]);
 
   // Persist tab
@@ -203,11 +242,6 @@ export default function Structures() {
   // ── Handlers ──
   const handleSelectGroup = useCallback((g: XpmGroup) => {
     setSelectedGroup(g);
-    // Add to recent (session-only)
-    setRecentGroups((prev) => {
-      const without = prev.filter((r) => r.xpm_uuid !== g.xpm_uuid);
-      return [g, ...without].slice(0, MAX_RECENT);
-    });
   }, []);
 
   const handleToggleFavourite = useCallback(async (g: XpmGroup) => {
@@ -441,19 +475,25 @@ export default function Structures() {
                 onRemove={handleToggleFavourite}
               />
 
-              {/* Recent structures */}
-              {recentGroups.length > 0 && (
+              {/* Recent Structures */}
+              {recentStructures.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recent Structures</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />
+                    Recent Structures
+                  </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2">
-                    {recentGroups.map((g) => (
+                    {recentStructures.map((s) => (
                       <button
-                        key={g.xpm_uuid}
-                        onClick={() => handleSelectGroup(g)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card text-left text-xs font-medium text-foreground hover:border-primary/40 hover:bg-accent/50 transition-colors"
+                        key={s.id}
+                        onClick={() => navigate(`/structures/${s.id}`)}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border bg-card text-left text-xs font-medium text-foreground hover:border-primary/40 hover:bg-accent/50 transition-colors"
                       >
-                        <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="truncate">{g.name}</span>
+                        <Waypoints className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="truncate block">{s.name}</span>
+                          <span className="text-[10px] text-muted-foreground">{s.entity_count} entities</span>
+                        </div>
                       </button>
                     ))}
                   </div>
