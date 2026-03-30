@@ -678,45 +678,6 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* ── Xero Status ── */}
-      {canManageIntegrations && xeroConnection && (
-        <section className="rounded-xl border-t border-border/60 bg-muted/30 px-5 py-3.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Badge
-                variant="secondary"
-                className="gap-1.5 rounded-md bg-success/10 text-success border-0 text-xs font-medium"
-              >
-                <CheckCircle2 className="h-3 w-3" />
-                Connected
-              </Badge>
-              {xeroConnection.xero_org_name && (
-                <span className="text-sm text-muted-foreground">{xeroConnection.xero_org_name}</span>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                onClick={handleSyncXpm}
-                disabled={syncing}
-              >
-                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                {syncing ? "Syncing…" : "Sync"}
-              </Button>
-              <button
-                className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
-                onClick={handleDisconnectXero}
-                disabled={disconnecting}
-              >
-                {disconnecting ? "Disconnecting…" : "Disconnect"}
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
       <CreateStructureModal
         open={showCreateModal}
