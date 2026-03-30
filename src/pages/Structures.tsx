@@ -193,6 +193,13 @@ export default function Structures() {
     [manualStructures, manualSearch],
   );
 
+  const filteredXpmGroups = useMemo(
+    () => xpmSearch.trim()
+      ? groups.filter((g) => g.name.toLowerCase().includes(xpmSearch.toLowerCase()))
+      : groups,
+    [groups, xpmSearch],
+  );
+
   // ── Handlers ──
   const handleSelectGroup = useCallback((g: XpmGroup) => {
     setSelectedGroup(g);
