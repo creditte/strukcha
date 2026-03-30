@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Search, Star, X, Network, Loader2, Settings } from "lucide-react";
+import { Search, Star, X, Network, Loader2, Settings, PenLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ interface GroupSearchDropdownProps {
   favouriteIds: Set<string>;
   onSelect: (group: XpmGroup) => void;
   onToggleFavourite: (group: XpmGroup) => void;
+  onImport?: (group: XpmGroup) => void;
   selectedGroupId?: string | null;
 }
 
@@ -30,6 +31,7 @@ export default function GroupSearchDropdown({
   favouriteIds,
   onSelect,
   onToggleFavourite,
+  onImport,
   selectedGroupId,
 }: GroupSearchDropdownProps) {
   const [open, setOpen] = useState(false);
@@ -187,6 +189,19 @@ export default function GroupSearchDropdown({
                     >
                       <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       <span className="text-xs font-medium truncate flex-1">{g.name}</span>
+                      {onImport && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onImport(g);
+                            setOpen(false);
+                          }}
+                          className="shrink-0 p-1 rounded text-muted-foreground/40 hover:text-primary transition-colors"
+                          title="Open in Editor"
+                        >
+                          <PenLine className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

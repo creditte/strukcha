@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
-  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight,
+  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -73,6 +73,7 @@ export default function Structures() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [importingId, setImportingId] = useState<string | null>(null);
 
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
@@ -250,6 +251,23 @@ export default function Structures() {
     }
   }
 
+  const handleImportToEditor = useCallback(async (group: XpmGroup) => {
+    setImportingId(group.xpm_uuid);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("import-xpm-group", {
+        body: { group_uuid: group.xpm_uuid, group_name: group.name },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
+      navigate(`/structures/${data.structure_id}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to import group");
+    } finally {
+      setImportingId(null);
+    }
+  }, [navigate]);
+
   // ── Tab Bar ──
   const TabBar = () => (
     <div className="flex items-center gap-1 border-b border-border/50 mb-4">
@@ -302,7 +320,28 @@ export default function Structures() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <h2 className="text-lg font-semibold text-foreground">{selectedGroup.name}</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-foreground">{selectedGroup.name}</h2>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  onClick={() => handleImportToEditor(selectedGroup)}
+                  disabled={importingId === selectedGroup.xpm_uuid}
+                >
+                  {importingId === selectedGroup.xpm_uuid ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PenLine className="h-3.5 w-3.5" />
+                  )}
+                  Open in Editor
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Import this group into an editable structure</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         {/* Canvas */}
@@ -353,12 +392,13 @@ export default function Structures() {
             <>
               {/* Searchable dropdown */}
               <div className="flex items-center gap-2">
-                <GroupSearchDropdown
+               <GroupSearchDropdown
                   groups={groups}
                   loading={loading || syncing}
                   favouriteIds={favouriteIds}
                   onSelect={handleSelectGroup}
                   onToggleFavourite={handleToggleFavourite}
+                  onImport={handleImportToEditor}
                   selectedGroupId={selectedGroup?.xpm_uuid}
                 />
                 <Button
