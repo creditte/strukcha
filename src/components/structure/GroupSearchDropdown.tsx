@@ -31,6 +31,7 @@ export default function GroupSearchDropdown({
   favouriteIds,
   onSelect,
   onToggleFavourite,
+  onImport,
   selectedGroupId,
 }: GroupSearchDropdownProps) {
   const [open, setOpen] = useState(false);
