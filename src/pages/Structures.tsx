@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -7,13 +7,25 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search, Users, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, PenLine, Loader2, Plus, Settings, FileBox, Calendar, Trash2, Waypoints, Network } from "lucide-react";
+import {
+  Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
+  Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight,
+} from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
-import XpmGroupCards from "@/components/structure/XpmGroupCards";
+import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
+import RecentGroups from "@/components/structure/RecentGroups";
+import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink,
+  BreadcrumbSeparator, BreadcrumbPage,
+} from "@/components/ui/breadcrumb";
 import { useAuth } from "@/hooks/useAuth";
 
 interface XpmGroup {
@@ -28,31 +40,31 @@ interface ManualStructure {
   entity_count: number;
 }
 
-const COLLAPSED_WIDTH = 52;
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 500;
-const DEFAULT_WIDTH = 300;
-
 type Tab = "xpm" | "manual";
+const MAX_RECENT = 5;
+const MAX_FAVOURITES = 10;
 
 export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
-const [activeTab, setActiveTab] = useState<Tab>(() => {
+
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem("structures_active_tab");
     return saved === "manual" ? "manual" : "xpm";
   });
   const [selectedGroup, setSelectedGroup] = useState<XpmGroup | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
-  const [isResizing, setIsResizing] = useState(false);
-  const [importingId, setImportingId] = useState<string | null>(null);
 
-  // Groups state for the sidebar strip
+  // Groups state
   const [groups, setGroups] = useState<XpmGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [search, setSearch] = useState("");
+
+  // Recent groups (session only)
+  const [recentGroups, setRecentGroups] = useState<XpmGroup[]>([]);
+
+  // Favourite groups (persisted)
+  const [favourites, setFavourites] = useState<XpmGroup[]>([]);
+  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
 
   // Manual structures state
   const [manualStructures, setManualStructures] = useState<ManualStructure[]>([]);
@@ -62,61 +74,71 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Check if XPM is connected
+  // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
 
-  async function loadFromDb() {
-    const { data } = await supabase
-      .from("xpm_groups")
-      .select("xpm_uuid, name")
-      .order("name", { ascending: true });
-    return (data as XpmGroup[]) ?? [];
-  }
-
-  async function fetchFromXpm() {
-    setSyncing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("list-xpm-groups");
-      if (error) throw error;
-      const fetchedGroups = (data?.groups ?? []) as XpmGroup[];
-      setGroups(fetchedGroups);
-      if (fetchedGroups.length > 0) toast.success(`${fetchedGroups.length} groups loaded`);
-    } catch {
-      toast.error("Failed to fetch groups");
-    } finally {
-      setSyncing(false);
-    }
-  }
-
+  // ── Load groups ──
   useEffect(() => {
     async function init() {
       setLoading(true);
-      // Check XPM connection
       try {
         const { data: connInfo } = await supabase.rpc("get_xero_connection_info");
         setXpmConnected(connInfo !== null && connInfo !== "null");
       } catch {
         setXpmConnected(false);
       }
-
-      const cached = await loadFromDb();
+      const { data } = await supabase
+        .from("xpm_groups")
+        .select("xpm_uuid, name")
+        .order("name", { ascending: true });
+      const cached = (data as XpmGroup[]) ?? [];
       if (cached.length > 0) {
         setGroups(cached);
         setLoading(false);
         return;
       }
       setLoading(false);
-      await fetchFromXpm();
+      // Try fetching from XPM
+      setSyncing(true);
+      try {
+        const { data: xpmData, error } = await supabase.functions.invoke("list-xpm-groups");
+        if (error) throw error;
+        const fetchedGroups = (xpmData?.groups ?? []) as XpmGroup[];
+        setGroups(fetchedGroups);
+        if (fetchedGroups.length > 0) toast.success(`${fetchedGroups.length} groups loaded`);
+      } catch {
+        toast.error("Failed to fetch groups");
+      } finally {
+        setSyncing(false);
+      }
     }
     init();
   }, []);
 
-  // Persist tab to sessionStorage
+  // ── Load favourites ──
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from("favourite_groups")
+      .select("group_xpm_uuid, group_name")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(MAX_FAVOURITES)
+      .then(({ data }) => {
+        if (data) {
+          const favs = data.map((d: any) => ({ xpm_uuid: d.group_xpm_uuid, name: d.group_name }));
+          setFavourites(favs);
+          setFavouriteIds(new Set(favs.map((f: XpmGroup) => f.xpm_uuid)));
+        }
+      });
+  }, [user?.id]);
+
+  // Persist tab
   useEffect(() => {
     sessionStorage.setItem("structures_active_tab", activeTab);
   }, [activeTab]);
 
-  // Load manual structures when tab is selected
+  // Load manual structures
   useEffect(() => {
     if (activeTab !== "manual" || !user?.id) return;
     loadManualStructures();
@@ -128,8 +150,6 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
     try {
       const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
       if (!tenantId) return;
-
-      // Get manual structures that are NOT scenarios and NOT deleted
       const { data: structures } = await supabase
         .from("structures")
         .select("id, name, created_at")
@@ -138,24 +158,19 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
         .eq("source", "manual")
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
-
       if (!structures || structures.length === 0) {
         setManualStructures([]);
         return;
       }
-
-      // Get entity counts for each structure
       const structureIds = structures.map((s) => s.id);
       const { data: entityLinks } = await supabase
         .from("structure_entities")
         .select("structure_id")
         .in("structure_id", structureIds);
-
       const countMap: Record<string, number> = {};
       for (const link of entityLinks ?? []) {
         countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
       }
-
       setManualStructures(
         structures.map((s) => ({
           id: s.id,
@@ -171,57 +186,50 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
     }
   }
 
-  const filtered = useMemo(
-    () => groups.filter((g) => g.name.toLowerCase().includes(search.toLowerCase())),
-    [groups, search],
-  );
-
   const filteredManual = useMemo(
     () => manualStructures.filter((s) => s.name.toLowerCase().includes(manualSearch.toLowerCase())),
     [manualStructures, manualSearch],
   );
 
-  // Resize handler
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-
-    const onMove = (ev: MouseEvent) => {
-      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + (ev.clientX - startX)));
-      setSidebarWidth(newWidth);
-    };
-    const onUp = () => {
-      setIsResizing(false);
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  };
-
-  const handleSelectGroup = (g: XpmGroup) => {
+  // ── Handlers ──
+  const handleSelectGroup = useCallback((g: XpmGroup) => {
     setSelectedGroup(g);
-  };
+    // Add to recent (session-only)
+    setRecentGroups((prev) => {
+      const without = prev.filter((r) => r.xpm_uuid !== g.xpm_uuid);
+      return [g, ...without].slice(0, MAX_RECENT);
+    });
+  }, []);
 
-  async function handleImportToEditor(e: React.MouseEvent, group: XpmGroup) {
-    e.stopPropagation();
-    setImportingId(group.xpm_uuid);
-    try {
-      const { data, error } = await supabase.functions.invoke("import-xpm-group", {
-        body: { group_uuid: group.xpm_uuid, group_name: group.name },
+  const handleToggleFavourite = useCallback(async (g: XpmGroup) => {
+    if (!user?.id) return;
+    const isFav = favouriteIds.has(g.xpm_uuid);
+    if (isFav) {
+      // Remove
+      setFavourites((prev) => prev.filter((f) => f.xpm_uuid !== g.xpm_uuid));
+      setFavouriteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(g.xpm_uuid);
+        return next;
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
-      navigate(`/structures/${data.structure_id}`);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to import group");
-    } finally {
-      setImportingId(null);
+      await supabase
+        .from("favourite_groups")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("group_xpm_uuid", g.xpm_uuid);
+    } else {
+      if (favourites.length >= MAX_FAVOURITES) {
+        toast.error("Maximum 10 favourites allowed");
+        return;
+      }
+      // Add
+      setFavourites((prev) => [g, ...prev]);
+      setFavouriteIds((prev) => new Set(prev).add(g.xpm_uuid));
+      await supabase
+        .from("favourite_groups")
+        .insert({ user_id: user.id, group_xpm_uuid: g.xpm_uuid, group_name: g.name });
     }
-  }
+  }, [user?.id, favouriteIds, favourites.length]);
 
   async function handleDeleteStructure() {
     if (!deleteTarget) return;
@@ -242,15 +250,13 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
     }
   }
 
-  // Tab component
+  // ── Tab Bar ──
   const TabBar = () => (
     <div className="flex items-center gap-1 border-b border-border/50 mb-4">
       <button
         onClick={() => setActiveTab("xpm")}
         className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-          activeTab === "xpm"
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground"
+          activeTab === "xpm" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         }`}
       >
         XPM Structures
@@ -261,9 +267,7 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
       <button
         onClick={() => setActiveTab("manual")}
         className={`px-4 py-2.5 text-sm font-medium transition-colors relative ${
-          activeTab === "manual"
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground"
+          activeTab === "manual" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         }`}
       >
         My Structures
@@ -274,141 +278,35 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
     </div>
   );
 
-  // If a group is selected, show canvas with sidebar (same as before)
+  // ═══════════════════════════════════════════════════
+  // GROUP SELECTED → show breadcrumb + full-width canvas
+  // ═══════════════════════════════════════════════════
   if (selectedGroup) {
-    const actualWidth = sidebarCollapsed ? COLLAPSED_WIDTH : sidebarWidth;
-
     return (
-      <div className="flex h-[calc(100vh-4rem)] -m-6">
-        {/* Sidebar */}
-        <div
-          className="relative flex flex-col border-r border-border/50 bg-card/50 shrink-0 overflow-hidden transition-[width] duration-200"
-          style={{ width: actualWidth }}
-        >
-          {/* Toggle button */}
-          <div className="flex items-center justify-end p-1.5 border-b border-border/30">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            >
-              {sidebarCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-
-          {/* Collapsed: icon strip */}
-          {sidebarCollapsed && (
-            <div className="flex-1 overflow-y-auto py-1.5 space-y-0.5 px-1.5">
-              {loading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-8 rounded-lg mx-auto" />
-                ))
-              ) : (
-                filtered.map((g) => (
-                  <Tooltip key={g.xpm_uuid} delayDuration={0}>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => handleSelectGroup(g)}
-                        className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors mx-auto ${
-                          selectedGroup.xpm_uuid === g.xpm_uuid
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-accent text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <Users className="h-4 w-4" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="text-xs">
-                      {g.name}
-                    </TooltipContent>
-                  </Tooltip>
-                ))
-              )}
-            </div>
-          )}
-
-          {/* Expanded: full list */}
-          {!sidebarCollapsed && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Search + Refresh */}
-              <div className="p-2.5 space-y-2 border-b border-border/30">
-                <div className="flex items-center gap-1.5">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="Filter groups..."
-                      className="h-7 pl-7 text-[11px]"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    onClick={fetchFromXpm}
-                    disabled={syncing}
-                  >
-                    <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Group list */}
-              <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
-                {filtered.map((g) => (
-                  <div
-                    key={g.xpm_uuid}
-                    onClick={() => handleSelectGroup(g)}
-                    className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] font-medium transition-colors cursor-pointer ${
-                      selectedGroup.xpm_uuid === g.xpm_uuid
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    }`}
-                  >
-                    <Users className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate flex-1">{g.name}</span>
-                    <Tooltip delayDuration={0}>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={(e) => handleImportToEditor(e, g)}
-                          disabled={importingId === g.xpm_uuid}
-                          className="shrink-0 p-1 rounded hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
-                        >
-                          {importingId === g.xpm_uuid ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <PenLine className="h-3 w-3" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="text-xs">
-                        Open in Editor
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                ))}
-                {filtered.length === 0 && groups.length > 0 && (
-                  <p className="text-[11px] text-muted-foreground text-center py-4">No matches</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Resize handle (only when expanded) */}
-          {!sidebarCollapsed && (
-            <div
-              className={`absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/20 transition-colors ${
-                isResizing ? "bg-primary/30" : ""
-              }`}
-              onMouseDown={handleMouseDown}
-            />
-          )}
+      <div className="flex flex-col h-[calc(100vh-4rem)] -m-6">
+        {/* Breadcrumb + heading */}
+        <div className="px-6 pt-4 pb-3 border-b border-border/50 bg-card/50 space-y-1">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink
+                  className="cursor-pointer text-xs"
+                  onClick={() => setSelectedGroup(null)}
+                >
+                  Structures
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage className="text-xs">{selectedGroup.name}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <h2 className="text-lg font-semibold text-foreground">{selectedGroup.name}</h2>
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-h-0">
           <GroupStructureViewer
             groupUuid={selectedGroup.xpm_uuid}
             groupName={selectedGroup.name}
@@ -419,7 +317,9 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
     );
   }
 
-  // No group selected — show tabs view
+  // ═══════════════════════════════════════════════════
+  // NO GROUP SELECTED → tabs view
+  // ═══════════════════════════════════════════════════
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold tracking-tight">Structures</h1>
@@ -431,7 +331,7 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
 
       {/* XPM Structures tab */}
       {activeTab === "xpm" && (
-        <>
+        <div className="space-y-6">
           {xpmConnected === false && groups.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <Settings className="h-10 w-10 mx-auto mb-3 opacity-40" />
@@ -450,15 +350,59 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
               </Button>
             </div>
           ) : (
-            <XpmGroupCards onSelectGroup={handleSelectGroup} selectedGroupId={null} />
+            <>
+              {/* Searchable dropdown */}
+              <div className="flex items-center gap-2">
+                <GroupSearchDropdown
+                  groups={groups}
+                  loading={loading || syncing}
+                  favouriteIds={favouriteIds}
+                  onSelect={handleSelectGroup}
+                  onToggleFavourite={handleToggleFavourite}
+                  selectedGroupId={selectedGroup?.xpm_uuid}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-[42px] px-3 gap-1.5 shrink-0"
+                  onClick={async () => {
+                    setSyncing(true);
+                    try {
+                      const { data, error } = await supabase.functions.invoke("list-xpm-groups");
+                      if (error) throw error;
+                      const fetchedGroups = (data?.groups ?? []) as XpmGroup[];
+                      setGroups(fetchedGroups);
+                      if (fetchedGroups.length > 0) toast.success(`${fetchedGroups.length} groups loaded`);
+                    } catch {
+                      toast.error("Failed to fetch groups");
+                    } finally {
+                      setSyncing(false);
+                    }
+                  }}
+                  disabled={syncing}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+                  <span className="text-xs">{syncing ? "Syncing…" : "Refresh"}</span>
+                </Button>
+              </div>
+
+              {/* Recent groups */}
+              <RecentGroups groups={recentGroups} onSelect={handleSelectGroup} />
+
+              {/* Favourite groups */}
+              <FavouriteGroups
+                groups={favourites}
+                onSelect={handleSelectGroup}
+                onRemove={handleToggleFavourite}
+              />
+            </>
           )}
-        </>
+        </div>
       )}
 
       {/* My Structures tab */}
       {activeTab === "manual" && (
         <div className="space-y-4">
-          {/* Header with search and create button */}
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-foreground">My Structures</h2>
@@ -491,7 +435,6 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
             </div>
           </div>
 
-          {/* Loading state */}
           {manualLoading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -500,7 +443,6 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
             </div>
           )}
 
-          {/* Empty state */}
           {!manualLoading && manualStructures.length === 0 && (
             <div className="text-center py-16 text-muted-foreground">
               <FileBox className="h-10 w-10 mx-auto mb-3 opacity-40" />
@@ -517,7 +459,6 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
             </div>
           )}
 
-          {/* Structure cards */}
           {!manualLoading && filteredManual.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {filteredManual.map((s) => (
@@ -562,7 +503,6 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
             </div>
           )}
 
-          {/* No search results */}
           {!manualLoading && filteredManual.length === 0 && manualStructures.length > 0 && (
             <p className="text-xs text-muted-foreground py-4 text-center">No structures match your search.</p>
           )}
@@ -579,9 +519,7 @@ const [activeTab, setActiveTab] = useState<Tab>(() => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this structure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
