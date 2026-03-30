@@ -138,6 +138,46 @@ export default function Structures() {
       });
   }, [user?.id]);
 
+  // ── Load recent structures (most recently updated) ──
+  useEffect(() => {
+    if (!user?.id) return;
+    async function loadRecent() {
+      try {
+        const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user!.id });
+        if (!tenantId) return;
+        const { data: structures } = await supabase
+          .from("structures")
+          .select("id, name, created_at, updated_at")
+          .eq("tenant_id", tenantId)
+          .eq("is_scenario", false)
+          .is("deleted_at", null)
+          .order("updated_at", { ascending: false })
+          .limit(10);
+        if (!structures || structures.length === 0) return;
+        const structureIds = structures.map((s) => s.id);
+        const { data: entityLinks } = await supabase
+          .from("structure_entities")
+          .select("structure_id")
+          .in("structure_id", structureIds);
+        const countMap: Record<string, number> = {};
+        for (const link of entityLinks ?? []) {
+          countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
+        }
+        setRecentStructures(
+          structures.map((s) => ({
+            id: s.id,
+            name: s.name,
+            created_at: s.created_at,
+            entity_count: countMap[s.id] || 0,
+          }))
+        );
+      } catch (err) {
+        console.error("[Structures] Failed to load recent structures:", err);
+      }
+    }
+    loadRecent();
+  }, [user?.id]);
+
   // Persist tab
   useEffect(() => {
     sessionStorage.setItem("structures_active_tab", activeTab);
