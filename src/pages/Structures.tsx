@@ -320,8 +320,28 @@ export default function Structures() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <h2 className="text-lg font-semibold text-foreground">{selectedGroup.name}</h2>
-        </div>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-foreground">{selectedGroup.name}</h2>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  onClick={() => handleImportToEditor(selectedGroup)}
+                  disabled={importingId === selectedGroup.xpm_uuid}
+                >
+                  {importingId === selectedGroup.xpm_uuid ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PenLine className="h-3.5 w-3.5" />
+                  )}
+                  Open in Editor
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Import this group into an editable structure</TooltipContent>
+            </Tooltip>
+          </div>
 
         {/* Canvas */}
         <div className="flex-1 min-h-0">
