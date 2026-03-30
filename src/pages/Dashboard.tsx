@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
   const [structureCount, setStructureCount] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [importCount, setImportCount] = useState(0);
   const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
   const [totalEntities, setTotalEntities] = useState(0);
   const [trusteeCount, setTrusteeCount] = useState(0);
