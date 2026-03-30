@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
-import RecentGroups from "@/components/structure/RecentGroups";
+import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import {
