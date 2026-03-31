@@ -1,9 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Stripe from "https://esm.sh/stripe@18.5.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const PRICE_ID = "price_1TDLyr03zgsCflnsVAheazkG";
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
