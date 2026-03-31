@@ -43,3 +43,9 @@ project_id = "kdwmetjwxfzovdmarijl"
     verify_jwt = false
   [functions.trusted-device]
     verify_jwt = false
+  [functions.self-signup]
+    verify_jwt = false
+  [functions.verify-signup]
+    verify_jwt = false
+  [functions.mfa-email]
+    verify_jwt = false
