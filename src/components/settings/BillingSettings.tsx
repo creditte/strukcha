@@ -1,13 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { CreditCard, Network, Receipt } from "lucide-react";
+import { CreditCard, Network } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
-import { format, addDays } from "date-fns";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BillingSettings() {
