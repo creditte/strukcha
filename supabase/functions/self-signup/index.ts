@@ -1,9 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Stripe from "https://esm.sh/stripe@18.5.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const PRICE_ID = "price_1TDLyr03zgsCflnsVAheazkG";
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
@@ -94,6 +97,36 @@ Deno.serve(async (req) => {
       .single();
 
     if (tenantError) throw tenantError;
+
+    // 2b. Create Stripe customer + subscription with 7-day trial
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (stripeKey) {
+      try {
+        const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+        const customer = await stripe.customers.create({
+          email,
+          metadata: { workspace_id: tenant.id, owner_user_id: userId },
+        });
+
+        const subscription = await stripe.subscriptions.create({
+          customer: customer.id,
+          items: [{ price: PRICE_ID }],
+          trial_period_days: 7,
+          metadata: { workspace_id: tenant.id },
+        });
+
+        await supabaseAdmin.from("tenants").update({
+          stripe_customer_id: customer.id,
+          stripe_subscription_id: subscription.id,
+          subscription_status: "trialing",
+          trial_used_at: now.toISOString(),
+        }).eq("id", tenant.id);
+
+        console.log(`[Signup] Stripe customer ${customer.id} and subscription ${subscription.id} created with 7-day trial`);
+      } catch (stripeErr: any) {
+        console.error("[Signup] Stripe setup failed:", stripeErr.message);
+      }
+    }
 
     // 3. Create tenant_user row (owner)
     const { error: tuError } = await supabaseAdmin.from("tenant_users").insert({
