@@ -104,22 +104,17 @@ export default function Signup() {
     }
   };
 
-  // ── Verified success → redirect to Stripe checkout ──
+  // ── Verified success → sign in and go to dashboard ──
   if (verified) {
     const handleStartTrial = async () => {
       setStartingCheckout(true);
       try {
-        // Sign in the user first
+        // Sign in the user — subscription already created during signup
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-
-        // Create checkout session
-        const { data, error } = await supabase.functions.invoke("create-checkout");
-        if (error || data?.error) throw new Error(data?.error || error?.message);
-        if (data.url) window.location.href = data.url;
+        navigate("/dashboard");
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" });
-        // Fallback to login
         navigate("/login");
       } finally {
         setStartingCheckout(false);
@@ -134,7 +129,7 @@ export default function Signup() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
           <p className="mt-3 text-muted-foreground">
-            Start your 7-day free trial. No credit card required upfront.
+            Your 7-day free trial is ready. Let's get started!
           </p>
           <Button
             className="mt-8 w-full h-11 font-semibold"
@@ -142,13 +137,13 @@ export default function Signup() {
             disabled={startingCheckout}
           >
             {startingCheckout ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Setting up trial…</>
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…</>
             ) : (
-              "Start Free Trial"
+              "Get Started"
             )}
           </Button>
           <p className="mt-3 text-xs text-muted-foreground">
-            Then A$149/month after your trial ends
+            7-day free trial · Then A$149/month
           </p>
         </div>
       </div>
