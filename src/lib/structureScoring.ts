@@ -426,7 +426,28 @@ export function computeHealthScoreV2(
     });
   }
 
-  // Unclassified entities
+  // Invalid director relationships (non-Individual→Company)
+  for (const rel of relationships) {
+    if (rel.relationship_type === "director") {
+      const from = entityMap.get(rel.from_entity_id);
+      const to = entityMap.get(rel.to_entity_id);
+      if (from && to && (from.entity_type !== "Individual" || to.entity_type !== "Company")) {
+        const ded = 5;
+        structuralDeductions += ded;
+        issues.push({
+          code: "invalid_director",
+          category: "structural",
+          severity: "critical",
+          message: `Invalid director relationship: "${from.name}" (${from.entity_type}) → "${to.name}" (${to.entity_type}). Directors must be individuals linked to companies.`,
+          entity_id: from.id,
+          entity_name: from.name,
+          relationship_id: rel.id,
+          deduction: ded,
+        });
+      }
+    }
+  }
+
   for (const entity of entities) {
     if (entity.entity_type === "Unclassified") {
       const ded = 3;

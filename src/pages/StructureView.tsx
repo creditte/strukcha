@@ -546,6 +546,8 @@ export default function StructureView() {
             open={true}
             fromEntityName={entities.find(e => e.id === pendingConnection.source)?.name ?? "Entity"}
             toEntityName={entities.find(e => e.id === pendingConnection.target)?.name ?? "Entity"}
+            fromEntityType={entities.find(e => e.id === pendingConnection.source)?.entity_type}
+            toEntityType={entities.find(e => e.id === pendingConnection.target)?.entity_type}
             onConfirm={handleConfirmRelationship}
             onCancel={() => setPendingConnection(null)}
           />
