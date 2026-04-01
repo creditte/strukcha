@@ -230,9 +230,19 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
         {isInvalid && (
           <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
             <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="text-xs font-medium text-destructive">Invalid Relationship</p>
               <p className="text-xs text-destructive/80 mt-0.5">{invalidMessage}</p>
+              <div className="flex gap-2 mt-2">
+                {wouldReverseBeValid && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleReverseClick}>
+                    <ArrowLeftRight className="h-3 w-3 mr-1" /> Fix Direction
+                  </Button>
+                )}
+                <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={() => setConfirmDelete(true)}>
+                  <Trash2 className="h-3 w-3 mr-1" /> Delete
+                </Button>
+              </div>
             </div>
           </div>
         )}
