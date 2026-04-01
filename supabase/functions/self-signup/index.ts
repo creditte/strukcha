@@ -82,7 +82,8 @@ Deno.serve(async (req) => {
 
     // 2. Create the tenant
     const now = new Date();
-    const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // TODO: Change back to 7 days for production: 7 * 24 * 60 * 60 * 1000
+    const trialEnd = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes for testing
 
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from("tenants")
