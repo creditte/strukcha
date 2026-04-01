@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { Info } from "lucide-react";
+import { getValidRelationshipTypes, getDirectionError } from "@/lib/relationshipRules";
 import type { EntityNode } from "@/hooks/useStructureData";
 
 const RELATIONSHIP_TYPES = [
@@ -29,10 +31,35 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
   const [ownershipClass, setOwnershipClass] = useState("");
   const [adding, setAdding] = useState(false);
 
+  const currentEntity = allEntities.find((e) => e.id === currentEntityId);
   const otherEntities = allEntities.filter((e) => e.id !== currentEntityId);
 
+  // When a target is selected, filter valid relationship types for this pair
+  const targetEntity = allEntities.find((e) => e.id === target);
+  const validTypes = useMemo(() => {
+    if (!currentEntity || !targetEntity) return [...RELATIONSHIP_TYPES];
+    return getValidRelationshipTypes(
+      RELATIONSHIP_TYPES,
+      currentEntity.entity_type,
+      targetEntity.entity_type,
+    );
+  }, [currentEntity, targetEntity]);
+
+  // Reset type if it becomes invalid when target changes
+  const effectiveType = validTypes.includes(type) ? type : "";
+
   const handleSubmit = async () => {
-    if (!target || !type) return;
+    if (!target || !effectiveType) return;
+
+    // Final validation
+    if (currentEntity && targetEntity) {
+      const error = getDirectionError(effectiveType, currentEntity.entity_type, targetEntity.entity_type);
+      if (error) {
+        toast({ title: "Invalid relationship", description: error, variant: "destructive" });
+        return;
+      }
+    }
+
     const pct = ownershipPercent ? parseFloat(ownershipPercent) : null;
     if (pct != null && (pct < 0 || pct > 100)) {
       toast({ title: "Invalid percentage", description: "Must be between 0 and 100", variant: "destructive" });
@@ -42,10 +69,10 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
 
     const data: Record<string, unknown> = {
       to_entity_id: target,
-      relationship_type: type,
+      relationship_type: effectiveType,
     };
 
-    if (OWNERSHIP_REL_TYPES.has(type)) {
+    if (OWNERSHIP_REL_TYPES.has(effectiveType)) {
       if (ownershipPercent) data.ownership_percent = parseFloat(ownershipPercent);
       if (ownershipUnits) data.ownership_units = parseFloat(ownershipUnits);
       if (ownershipClass) data.ownership_class = ownershipClass;
@@ -59,7 +86,7 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
     <div className="rounded-md border p-3 space-y-2 mb-3">
       <div>
         <Label className="text-xs">Target Entity</Label>
-        <Select value={target} onValueChange={setTarget}>
+        <Select value={target} onValueChange={(v) => { setTarget(v); setType(""); }}>
           <SelectTrigger className="h-8 mt-1 text-xs"><SelectValue placeholder="Select entity" /></SelectTrigger>
           <SelectContent>
             {otherEntities.map((e) => (
@@ -70,16 +97,24 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
       </div>
       <div>
         <Label className="text-xs">Type</Label>
-        <Select value={type} onValueChange={setType}>
+        <Select value={effectiveType} onValueChange={setType}>
           <SelectTrigger className="h-8 mt-1 text-xs"><SelectValue placeholder="Select type" /></SelectTrigger>
           <SelectContent>
-            {RELATIONSHIP_TYPES.map((t) => (
+            {validTypes.map((t) => (
               <SelectItem key={t} value={t} className="text-xs">{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {target && validTypes.length < RELATIONSHIP_TYPES.length && (
+          <div className="flex items-start gap-1.5 mt-1.5">
+            <Info className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+            <p className="text-[10px] text-muted-foreground">
+              Only valid relationship types for this entity pair are shown.
+            </p>
+          </div>
+        )}
       </div>
-      {OWNERSHIP_REL_TYPES.has(type) && (
+      {OWNERSHIP_REL_TYPES.has(effectiveType) && (
         <>
           <div>
             <Label className="text-xs">Ownership %</Label>
@@ -96,7 +131,7 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
         </>
       )}
       <div className="flex gap-2 pt-1">
-        <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleSubmit} disabled={adding || !target || !type}>
+        <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleSubmit} disabled={adding || !target || !effectiveType}>
           {adding ? "Adding..." : "Add"}
         </Button>
         <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={onCancel}>

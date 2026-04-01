@@ -72,3 +72,38 @@ export function isDirectionValid(
 
   return false;
 }
+
+/**
+ * Return a user-friendly validation message if the direction is invalid,
+ * or null if it's valid.
+ */
+export function getDirectionError(
+  relationshipType: string,
+  fromEntityType: string,
+  toEntityType: string,
+): string | null {
+  if (isDirectionValid(relationshipType, fromEntityType, toEntityType)) return null;
+
+  if (relationshipType === "director") {
+    return "Directors must be individuals and can only be linked to companies.";
+  }
+  if (relationshipType === "member") {
+    return "Members must be individuals linked to an SMSF.";
+  }
+  if (TRUST_TARGET_TYPES.has(relationshipType)) {
+    const label = relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
+    return `${label} must be an individual or company linked to a trust or SMSF.`;
+  }
+  return `Invalid direction for ${relationshipType} relationship.`;
+}
+
+/**
+ * Filter relationship types to only those valid for a given (from, to) entity pair.
+ */
+export function getValidRelationshipTypes(
+  allTypes: readonly string[],
+  fromEntityType: string,
+  toEntityType: string,
+): string[] {
+  return allTypes.filter((t) => isDirectionValid(t, fromEntityType, toEntityType));
+}
