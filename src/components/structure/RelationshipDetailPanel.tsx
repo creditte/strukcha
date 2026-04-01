@@ -118,14 +118,26 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     setDeleting(false);
   };
 
-  const handleReverseClick = () => {
-    const reversedFromType = toEntity?.entity_type ?? "Unclassified";
-    const reversedToType = fromEntity?.entity_type ?? "Unclassified";
+  // Check if reversing would fix an invalid relationship
+  const wouldReverseBeValid = fromEntity && toEntity
+    ? isDirectionValid(relationship.relationship_type, toEntity.entity_type, fromEntity.entity_type)
+    : false;
 
-    if (!isReverseAllowed(relationship.relationship_type, fromEntity?.entity_type ?? "Unclassified", toEntity?.entity_type ?? "Unclassified")) {
+  const handleReverseClick = () => {
+    // Allow reverse if the relationship is currently invalid and reversing would fix it
+    if (!isInvalid && !isReverseAllowed(relationship.relationship_type, fromEntity?.entity_type ?? "Unclassified", toEntity?.entity_type ?? "Unclassified")) {
       toast({
         title: "Cannot reverse",
         description: "This relationship type has a required direction and cannot be reversed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isInvalid && !wouldReverseBeValid) {
+      toast({
+        title: "Cannot reverse",
+        description: "Reversing would not fix this invalid relationship. Consider deleting it instead.",
         variant: "destructive",
       });
       return;
