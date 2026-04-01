@@ -109,10 +109,12 @@ Deno.serve(async (req) => {
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
         });
 
+        // TODO: Change back to trial_period_days: 7 for production
+        const trialEndUnix = Math.floor(trialEnd.getTime() / 1000);
         const subscription = await stripe.subscriptions.create({
           customer: customer.id,
           items: [{ price: PRICE_ID }],
-          trial_period_days: 7,
+          trial_end: trialEndUnix,
           metadata: { workspace_id: tenant.id },
         });
 
