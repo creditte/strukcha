@@ -16,6 +16,8 @@ interface Props {
 export default function EntityEditForm({ entity, onSave, onCancel }: Props) {
   const [editName, setEditName] = useState(entity.name);
   const [editType, setEditType] = useState(entity.entity_type);
+  const [editAbn, setEditAbn] = useState(entity.abn ?? "");
+  const [editAcn, setEditAcn] = useState(entity.acn ?? "");
   const [editIsOperating, setEditIsOperating] = useState(entity.is_operating_entity);
   const [editIsTrustee, setEditIsTrustee] = useState(entity.is_trustee_company);
   const [editIsInvestment, setEditIsInvestment] = useState(entity.is_investment_company);
@@ -26,6 +28,8 @@ export default function EntityEditForm({ entity, onSave, onCancel }: Props) {
     await onSave({
       name: editName,
       entity_type: editType,
+      abn: editAbn.replace(/\s/g, "") || null,
+      acn: editAcn.replace(/\s/g, "") || null,
       is_operating_entity: editIsOperating,
       is_trustee_company: editIsTrustee,
       is_investment_company: editIsInvestment,
