@@ -98,8 +98,6 @@ function EntityNodeComponent({ data }: { data: any }) {
           {abn ? `ABN ${formatAbn(abn)}` : `ACN ${formatAcn(acn!)}`}
         </p>
       )}
-        </p>
-      )}
       <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0 !w-0 !h-0" />
     </div>
   );
