@@ -303,7 +303,17 @@ export default function Dashboard() {
 
       {/* ── Hero Section ── */}
       <section className="space-y-5">
-        {hasStructures ? (
+        {dashboardLoading ? (
+          <>
+            <div className="space-y-2.5">
+              <Skeleton className="h-8 w-[360px]" />
+              <Skeleton className="h-4 w-[260px]" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-[200px] rounded-xl" />
+            </div>
+          </>
+        ) : hasStructures ? (
           <>
             <div className="space-y-1.5">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
