@@ -498,7 +498,12 @@ export default function Dashboard() {
 
       {/* ── Workflow Cards ── */}
       <section className="grid gap-5 sm:grid-cols-2">
-        {structureCount === 0 ? (
+        {dashboardLoading ? (
+          <>
+            <Skeleton className="h-[200px] rounded-2xl" />
+            <Skeleton className="h-[200px] rounded-2xl" />
+          </>
+        ) : structureCount === 0 ? (
           <>
             <div className="rounded-2xl border border-border/60 bg-card p-6 opacity-50 cursor-not-allowed">
               <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-success/10">
