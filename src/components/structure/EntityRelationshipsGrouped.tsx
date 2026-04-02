@@ -20,6 +20,7 @@ const GROUP_COLORS: Record<string, string> = {
 function groupLabel(type: string): string {
   const label = getRelationshipLabel(type);
   if (type === "appointer") return "Appointors";
+  if (type === "beneficiary") return "Beneficiaries";
   return label + "s";
 }
 
