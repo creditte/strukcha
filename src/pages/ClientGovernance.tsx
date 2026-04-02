@@ -50,8 +50,7 @@ const STATUS_PILL: Record<string, string> = {
 export default function ClientGovernance() {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [review, setReview] = useState<ClientReview | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { review, loading, runReview: doReview } = useClientHealthReview();
   const [structuresChanged, setStructuresChanged] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
@@ -71,137 +70,18 @@ export default function ClientGovernance() {
     checkChanges();
   }, [review]);
 
-  const runReview = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data: structures } = await supabase
-        .from("structures")
-        .select("id, name")
-        .is("deleted_at", null)
-        .eq("is_scenario", false);
-
-      if (!structures || structures.length === 0) {
-        toast({ title: "No structures", description: "No active structures to review." });
-        setLoading(false);
-        return;
-      }
-
-      const structureIds = structures.map((s) => s.id);
-
-      const [seResult, srResult] = await Promise.all([
-        supabase.from("structure_entities").select("structure_id, entity_id").in("structure_id", structureIds),
-        supabase.from("structure_relationships").select("structure_id, relationship_id").in("structure_id", structureIds),
-      ]);
-
-      const seByStruct = new Map<string, string[]>();
-      for (const row of seResult.data ?? []) {
-        const arr = seByStruct.get(row.structure_id) ?? [];
-        arr.push(row.entity_id);
-        seByStruct.set(row.structure_id, arr);
-      }
-
-      const srByStruct = new Map<string, string[]>();
-      for (const row of srResult.data ?? []) {
-        const arr = srByStruct.get(row.structure_id) ?? [];
-        arr.push(row.relationship_id);
-        srByStruct.set(row.structure_id, arr);
-      }
-
-      const allEntityIds = new Set<string>();
-      const allRelIds = new Set<string>();
-      for (const ids of seByStruct.values()) ids.forEach((id) => allEntityIds.add(id));
-      for (const ids of srByStruct.values()) ids.forEach((id) => allRelIds.add(id));
-
-      const [entResult, relResult] = await Promise.all([
-        allEntityIds.size > 0
-          ? supabase.from("entities")
-              .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
-              .in("id", Array.from(allEntityIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
-        allRelIds.size > 0
-          ? supabase.from("relationships")
-              .select("id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at")
-              .in("id", Array.from(allRelIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
-      ]);
-
-      const entityById = new Map<string, EntityNode>();
-      for (const e of (entResult.data ?? []) as any[]) entityById.set(e.id, e as EntityNode);
-
-      const relById = new Map<string, RelationshipEdge>();
-      for (const r of (relResult.data ?? []) as any[]) {
-        relById.set(r.id, {
-          id: r.id, from_entity_id: r.from_entity_id, to_entity_id: r.to_entity_id,
-          relationship_type: r.relationship_type, source_data: r.source,
-          ownership_percent: r.ownership_percent, ownership_units: r.ownership_units,
-          ownership_class: r.ownership_class, created_at: r.created_at,
-        });
-      }
-
-      const results: StructureResult[] = [];
-      let trustsWithoutCorporateTrustee = 0;
-      let missingAppointerCount = 0;
-      let circularCount = 0;
-
-      for (const s of structures) {
-        const entIds = seByStruct.get(s.id) ?? [];
-        const relIds = srByStruct.get(s.id) ?? [];
-        const ents = entIds.map((id) => entityById.get(id)).filter(Boolean) as EntityNode[];
-        const rels = relIds.map((id) => relById.get(id)).filter(Boolean) as RelationshipEdge[];
-        const health = computeHealthScoreV2(ents, rels);
-
-        results.push({
-          id: s.id,
-          name: s.name,
-          score: health.score,
-          status: getHealthStatus(health.score),
-          friendlyLabel: getFriendlyLabel(health.score),
-          issues: health.issues.map((i) => i.message),
-          criticalCount: health.criticalGaps.length,
-        });
-
-        if (health.isCapped) trustsWithoutCorporateTrustee++;
-        missingAppointerCount += health.issues.filter((i) => i.code === "missing_appointer").length;
-        if (health.issues.some((i) => i.code === "circular_ownership")) circularCount++;
-      }
-
-      const crossObservations: string[] = [];
-      if (trustsWithoutCorporateTrustee > 0)
-        crossObservations.push(`${trustsWithoutCorporateTrustee} structure${trustsWithoutCorporateTrustee > 1 ? "s have" : " has"} trusts without corporate trustees`);
-      if (missingAppointerCount > 0)
-        crossObservations.push(`${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointors across structures`);
-      if (circularCount > 0)
-        crossObservations.push(`${circularCount} structure${circularCount > 1 ? "s" : ""} with circular ownership detected`);
-
-      const avgScore = results.length > 0
-        ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)
-        : 100;
-      const allPerfect = results.every((r) => r.score >= 100);
-      const finalClientScore = allPerfect ? avgScore : Math.min(avgScore, 99);
-
-      const criticalStructures = results.filter((r) => r.status === "critical").length;
-      const needsAttention = results.filter((r) => r.score < 100).length;
-
-      setReview({
-        timestamp: new Date().toISOString(),
-        clientScore: finalClientScore,
-        structures: results.sort((a, b) => a.score - b.score),
-        crossObservations,
-        criticalStructures,
-        needsAttention,
-      });
-
+  const handleRunReview = async () => {
+    const result = await doReview();
+    if (result && result.structures.length === 0) {
+      toast({ title: "No structures", description: "No active structures to review." });
+    } else if (result) {
       setStructuresChanged(false);
       setStatusFilter(null);
       toast({ title: "Health check complete" });
-    } catch (e) {
-      console.error("Review error:", e);
+    } else {
       toast({ title: "Review failed", variant: "destructive" });
     }
-    setLoading(false);
-  }, [toast]);
+  };
 
   const filteredStructures = review
     ? statusFilter
