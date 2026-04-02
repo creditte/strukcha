@@ -39,19 +39,8 @@ export default function Auth() {
           return;
         }
 
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("onboarding_complete")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
         if (cancelled) return;
-
-        if (profile?.onboarding_complete === false) {
-          navigate("/setup-password", { replace: true });
-        } else {
-          navigate("/", { replace: true });
-        }
+        navigate("/", { replace: true });
       } finally {
         if (!cancelled) setCheckingAdmin(false);
       }

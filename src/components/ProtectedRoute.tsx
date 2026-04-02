@@ -171,11 +171,12 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const showDebug = searchParams.get("debug") === "boot";
 
   // Check onboarding_complete for password setup redirect
+  // IMPORTANT: query AFTER tenant loading completes so link_tenant_user_on_login has run first
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   useEffect(() => {
-    if (bootStatus !== "authenticated" || !user) {
+    if (bootStatus !== "authenticated" || !user || tenantLoading) {
       setOnboardingChecked(false);
       return;
     }
@@ -188,7 +189,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         setOnboardingComplete(data?.onboarding_complete ?? false);
         setOnboardingChecked(true);
       });
-  }, [bootStatus, user]);
+  }, [bootStatus, user, tenantLoading]);
 
   // ── Loading timeout – never stay on spinner forever ───────────
   const [timedOut, setTimedOut] = useState(false);
