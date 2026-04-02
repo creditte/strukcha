@@ -122,8 +122,6 @@ Deno.serve(async (req) => {
           stripe_customer_id: customer.id,
           stripe_subscription_id: subscription.id,
           subscription_status: "trialing",
-          subscription_plan: "pro",
-          diagram_limit: 50,
           trial_used_at: now.toISOString(),
         }).eq("id", tenant.id);
 
