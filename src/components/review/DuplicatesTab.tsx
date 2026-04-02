@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { formatAbn, formatAcn } from "@/components/structure/EntityInfoFields";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -501,8 +502,8 @@ export default function DuplicatesTab() {
                                 {getEntityLabel(e.type)}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-xs py-2 font-mono">{e.abn || "—"}</TableCell>
-                            <TableCell className="text-xs py-2 font-mono">{e.acn || "—"}</TableCell>
+                            <TableCell className="text-xs py-2 font-mono">{e.abn ? formatAbn(e.abn) : "—"}</TableCell>
+                            <TableCell className="text-xs py-2 font-mono">{e.acn ? formatAcn(e.acn) : "—"}</TableCell>
                             <TableCell className="text-xs py-2 text-center">
                               {e.is_trustee_company ? <Shield className="h-3.5 w-3.5 text-primary mx-auto" /> : "—"}
                             </TableCell>

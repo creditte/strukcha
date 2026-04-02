@@ -20,6 +20,7 @@ import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
+import { formatAbn, formatAcn } from "./EntityInfoFields";
 
 interface GroupNode {
   id: string;
@@ -94,7 +95,7 @@ function EntityNodeComponent({ data }: { data: any }) {
       <p className="text-[9px] opacity-60 mt-0.5">{typeLabel}</p>
       {(abn || acn) && (
         <p className="text-[10px] opacity-70 mt-0.5 truncate">
-          {abn ? `ABN ${abn}` : `ACN ${acn}`}
+          {abn ? `ABN ${formatAbn(abn)}` : `ACN ${formatAcn(acn!)}`}
         </p>
       )}
       <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0 !w-0 !h-0" />
@@ -312,13 +313,13 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
                   {selectedNode.abn && (
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-medium text-muted-foreground">ABN</p>
-                      <span className="text-xs font-mono">{selectedNode.abn}</span>
+                      <span className="text-xs font-mono">{formatAbn(selectedNode.abn)}</span>
                     </div>
                   )}
                   {selectedNode.acn && (
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-medium text-muted-foreground">ACN</p>
-                      <span className="text-xs font-mono">{selectedNode.acn}</span>
+                      <span className="text-xs font-mono">{formatAcn(selectedNode.acn)}</span>
                     </div>
                   )}
                 </div>
