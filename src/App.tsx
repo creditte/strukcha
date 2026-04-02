@@ -29,7 +29,7 @@ import ProtectedAdminRoute from "@/components/ProtectedAdminRoute";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminTenantDetail from "./pages/admin/AdminTenantDetail";
 import BillingSuccess from "./pages/BillingSuccess";
-import SubscriptionLocked from "./pages/SubscriptionLocked";
+
 import Unsubscribe from "./pages/Unsubscribe";
 
 const queryClient = new QueryClient();
