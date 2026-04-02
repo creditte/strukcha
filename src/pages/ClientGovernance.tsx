@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 import { getHealthStatus } from "@/lib/structureScoring";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
 import type { StructureResult, ClientReview } from "@/hooks/useClientHealthReview";
+import StructureIssuesPanel from "@/components/health/StructureIssuesPanel";
 
 /* ── Friendly labels ────────────────────────────────────────────── */
 
@@ -53,6 +54,7 @@ export default function ClientGovernance() {
   const { review, loading, runReview: doReview } = useClientHealthReview();
   const [structuresChanged, setStructuresChanged] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [selectedStructure, setSelectedStructure] = useState<StructureResult | null>(null);
 
   useEffect(() => {
     if (!review) return;
@@ -90,6 +92,17 @@ export default function ClientGovernance() {
     : [];
 
   const healthyCount = review ? review.structures.filter((s) => s.status === "good").length : 0;
+
+  if (selectedStructure) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16">
+        <StructureIssuesPanel
+          structure={selectedStructure}
+          onBack={() => setSelectedStructure(null)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
@@ -347,10 +360,10 @@ export default function ClientGovernance() {
 
             <div className="space-y-1.5">
               {filteredStructures.map((s) => (
-                <Link
+                <button
                   key={s.id}
-                  to={`/structures/${s.id}`}
-                  className="group flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm"
+                  onClick={() => setSelectedStructure(s)}
+                  className="group w-full flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm text-left"
                 >
                   <div className="flex items-center gap-3.5">
                     <div className={`h-2 w-2 rounded-full shrink-0 ${STATUS_DOT[s.status]}`} />
@@ -365,7 +378,7 @@ export default function ClientGovernance() {
                     </Badge>
                     <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
                   </div>
-                </Link>
+                </button>
               ))}
               {filteredStructures.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-6">No structures match the current filter.</p>
