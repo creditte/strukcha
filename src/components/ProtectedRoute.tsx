@@ -340,10 +340,5 @@ function BillingGate({ children }: { children: React.ReactNode }) {
     return <BootLoadingScreen currentStep="subscription" />;
   }
 
-  // If billing data loaded and access is disabled, redirect
-  if (billing && billing.access_enabled === false) {
-    return <Navigate to="/subscription-locked" replace />;
-  }
-
   return <>{children}</>;
 }

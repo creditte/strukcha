@@ -34,25 +34,20 @@ Deno.serve(async (req) => {
       .single();
     if (!tenant) throw new Error("No tenant found");
 
-    // Auto-lock expired trials
+    // Mark expired trials but keep access enabled (diagram limit is the real constraint)
     if (
       tenant.subscription_status === "trialing" &&
       tenant.trial_ends_at &&
-      new Date(tenant.trial_ends_at) < new Date() &&
-      tenant.access_enabled !== false
+      new Date(tenant.trial_ends_at) < new Date()
     ) {
       await supabaseAdmin
         .from("tenants")
         .update({
           subscription_status: "trial_expired",
-          access_enabled: false,
-          access_locked_reason: "trial_expired",
         })
         .eq("id", profile.tenant_id);
 
       tenant.subscription_status = "trial_expired";
-      tenant.access_enabled = false;
-      tenant.access_locked_reason = "trial_expired";
     }
 
     return new Response(JSON.stringify({
