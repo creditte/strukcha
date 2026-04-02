@@ -696,8 +696,8 @@ export default function Dashboard() {
             ))}
           </div>
         </section>
-      )}
-
+        )}
+        
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
       <CreateStructureModal
         open={showCreateModal}
