@@ -477,27 +477,23 @@ export default function Dashboard() {
 
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-3">
-        <div className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
-          <div className="flex items-center gap-2">
-            <Network className="h-4 w-4 text-primary/70" />
-            <span className="text-xs text-muted-foreground">Structures</span>
+        {[
+          { icon: <Network className="h-4 w-4 text-primary/70" />, label: "Structures", value: structureCount },
+          { icon: <Building2 className="h-4 w-4 text-primary/70" />, label: "Entities", value: totalEntities },
+          { icon: <Upload className="h-4 w-4 text-primary/70" />, label: "Imports", value: importCount },
+        ].map((card) => (
+          <div key={card.label} className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
+            <div className="flex items-center gap-2">
+              {card.icon}
+              <span className="text-xs text-muted-foreground">{card.label}</span>
+            </div>
+            {dashboardLoading ? (
+              <Skeleton className="h-8 w-12 mt-1" />
+            ) : (
+              <p className="text-2xl font-semibold text-foreground">{card.value}</p>
+            )}
           </div>
-          <p className="text-2xl font-semibold text-foreground">{dashboardLoading ? "—" : structureCount}</p>
-        </div>
-        <div className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
-          <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-primary/70" />
-            <span className="text-xs text-muted-foreground">Entities</span>
-          </div>
-          <p className="text-2xl font-semibold text-foreground">{dashboardLoading ? "—" : totalEntities}</p>
-        </div>
-        <div className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
-          <div className="flex items-center gap-2">
-            <Upload className="h-4 w-4 text-primary/70" />
-            <span className="text-xs text-muted-foreground">Imports</span>
-          </div>
-          <p className="text-2xl font-semibold text-foreground">{dashboardLoading ? "—" : importCount}</p>
-        </div>
+        ))}
       </section>
 
       {/* ── Workflow Cards ── */}
