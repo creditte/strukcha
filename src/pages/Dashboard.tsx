@@ -300,8 +300,6 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
-      {/* ── Billing Banner ── */}
-      <BillingBanner />
 
       {/* ── Hero Section ── */}
       <section className="space-y-5">
@@ -463,6 +461,9 @@ export default function Dashboard() {
           </>
         )}
       </section>
+
+      {/* ── Billing Banner ── */}
+      <BillingBanner />
 
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-3">
