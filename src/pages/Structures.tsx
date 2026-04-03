@@ -408,6 +408,7 @@ export default function Structures() {
   // NO GROUP SELECTED → tabs view
   // ═══════════════════════════════════════════════════
   return (
+    <TooltipProvider>
     <div className="space-y-4">
       <h1 className="text-2xl font-bold tracking-tight">Structures</h1>
       <p className="text-sm text-muted-foreground">
