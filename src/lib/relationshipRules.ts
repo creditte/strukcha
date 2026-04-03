@@ -285,6 +285,34 @@ export function getMetadataFields(relationshipType: string): readonly MetadataFi
 }
 
 /**
+ * Check if a beneficiary relationship targets a discretionary trust.
+ * Discretionary trusts don't have percentage/unit holdings — a person is
+ * either a beneficiary or they're not.
+ */
+export function isDiscretionaryTrustBeneficiary(
+  relationshipType: string,
+  targetEntityType: string,
+): boolean {
+  if (relationshipType !== "beneficiary") return false;
+  const cats = getCanonicalCategories(targetEntityType);
+  return cats.includes("discretionary_trust");
+}
+
+/**
+ * Get metadata fields filtered for context — hides ownership fields
+ * for discretionary trust beneficiary relationships.
+ */
+export function getEffectiveMetadataFields(
+  relationshipType: string,
+  targetEntityType?: string,
+): readonly MetadataField[] {
+  if (targetEntityType && isDiscretionaryTrustBeneficiary(relationshipType, targetEntityType)) {
+    return [];
+  }
+  return getMetadataFields(relationshipType);
+}
+
+/**
  * Check if reverse is allowed for a relationship type.
  */
 export function isReverseAllowed(

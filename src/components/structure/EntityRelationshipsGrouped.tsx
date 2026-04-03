@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { RELATIONSHIP_RULES, getRelationshipLabel } from "@/lib/relationshipRules";
+import { RELATIONSHIP_RULES, getRelationshipLabel, isDiscretionaryTrustBeneficiary } from "@/lib/relationshipRules";
 
 const GROUP_ORDER = RELATIONSHIP_RULES.map((r) => r.type);
 
@@ -31,6 +31,8 @@ interface RelatedItem {
   relationship_type: string;
   direction: string;
   ownership_percent: number | null;
+  /** Entity type of the target (to_entity) of this relationship */
+  targetEntityType?: string;
 }
 
 interface Props {
@@ -85,7 +87,7 @@ export default function EntityRelationshipsGrouped({ related, onSelectEntity }: 
                       <span className="text-[10px] text-muted-foreground">
                         {r.direction === "outgoing" ? "→" : "←"}
                       </span>
-                      {r.ownership_percent != null && (
+                      {r.ownership_percent != null && !(r.targetEntityType && isDiscretionaryTrustBeneficiary(r.relationship_type, r.targetEntityType)) && (
                         <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
                           {r.ownership_percent}%
                         </Badge>

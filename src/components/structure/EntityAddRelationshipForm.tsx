@@ -10,8 +10,10 @@ import {
   getValidRelationshipTypes,
   getDirectionError,
   getMetadataFields,
+  getEffectiveMetadataFields,
   hasMetadataFields,
   getRelationshipLabel,
+  isDiscretionaryTrustBeneficiary,
 } from "@/lib/relationshipRules";
 import type { EntityNode } from "@/hooks/useStructureData";
 
@@ -44,7 +46,10 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
 
   const effectiveType = validTypes.includes(type) ? type : "";
 
-  const meta = useMemo(() => getMetadataFields(effectiveType), [effectiveType]);
+  const meta = useMemo(() => {
+    if (targetEntity && isDiscretionaryTrustBeneficiary(effectiveType, targetEntity.entity_type)) return [] as const;
+    return getMetadataFields(effectiveType);
+  }, [effectiveType, targetEntity]);
   const showPercent = meta.includes("ownership_percent");
   const showUnits = meta.includes("ownership_units");
   const showClass = meta.includes("ownership_class");

@@ -15,8 +15,10 @@ import {
   getDirectionError,
   getRelationshipLabel,
   getMetadataFields,
+  getEffectiveMetadataFields,
   hasMetadataFields,
   getValidRelationshipTypes,
+  isDiscretionaryTrustBeneficiary,
 } from "@/lib/relationshipRules";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
@@ -60,7 +62,8 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     ? getValidRelationshipTypes(ALL_TYPE_VALUES, fromEntity.entity_type, toEntity.entity_type)
     : [...ALL_TYPE_VALUES];
 
-  const editMeta = getMetadataFields(editType);
+  const isDiscTrustBene = toEntity ? isDiscretionaryTrustBeneficiary(editType, toEntity.entity_type) : false;
+  const editMeta = isDiscTrustBene ? [] : [...getMetadataFields(editType)];
 
   const handleSave = async () => {
     // Validate the new type against entity types
@@ -306,7 +309,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
         </div>
 
         {/* Metadata fields */}
-        {(editing ? editMeta : getMetadataFields(relationship.relationship_type)).length > 0 && (
+        {(editing ? editMeta : (toEntity && isDiscretionaryTrustBeneficiary(relationship.relationship_type, toEntity.entity_type) ? [] : getMetadataFields(relationship.relationship_type))).length > 0 && (
           editing ? (
             <>
               {editMeta.includes("ownership_percent") && (
