@@ -259,16 +259,31 @@ export default function ClientGovernance() {
               </h2>
               <div className="space-y-2">
                 {review.crossObservations.map((obs, idx) => {
-                  const isActionable = obs.includes("missing") || obs.includes("without") || obs.includes("circular");
+                  const isActionable = obs.message.includes("missing") || obs.message.includes("without") || obs.message.includes("circular");
+                  const affectedStructures = review.structures.filter((s) => obs.structureIds.includes(s.id));
                   return (
-                    <div
+                    <button
                       key={idx}
-                      className={`rounded-xl border border-border/60 bg-card px-5 py-3.5 text-sm text-foreground border-l-[3px] ${
+                      onClick={() => {
+                        if (affectedStructures.length === 1) {
+                          setSelectedStructure(affectedStructures[0]);
+                        } else {
+                          setStatusFilter(null);
+                          setInsightFilter(obs.structureIds);
+                        }
+                      }}
+                      className={`group w-full rounded-xl border border-border/60 bg-card px-5 py-3.5 text-sm text-foreground border-l-[3px] text-left transition-all hover:border-border hover:shadow-sm ${
                         isActionable ? "border-l-warning" : "border-l-primary"
                       }`}
                     >
-                      {obs}
-                    </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{obs.message}</span>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                          <span>{affectedStructures.length} structure{affectedStructures.length !== 1 ? "s" : ""}</span>
+                          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                        </div>
+                      </div>
+                    </button>
                   );
                 })}
               </div>

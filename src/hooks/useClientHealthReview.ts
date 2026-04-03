@@ -172,12 +172,10 @@ export function useClientHealthReview() {
         }
 
         if (health.isCapped) {
-          trustsWithoutCorporateTrustee++;
           trustsWithoutCorporateTrusteeIds.push(s.id);
         }
         const appointerIssues = health.issues.filter((i) => i.code === "missing_appointer");
         if (appointerIssues.length > 0) {
-          missingAppointerCount += appointerIssues.length;
           missingAppointerIds.push(s.id);
         }
         if (health.issues.some((i) => i.code === "circular_ownership")) {
@@ -187,16 +185,18 @@ export function useClientHealthReview() {
       }
 
       const crossObservations: CrossObservation[] = [];
-      if (trustsWithoutCorporateTrustee > 0)
+      if (trustsWithoutCorporateTrusteeIds.length > 0)
         crossObservations.push({
-          message: `${trustsWithoutCorporateTrustee} structure${trustsWithoutCorporateTrustee > 1 ? "s have" : " has"} trusts without corporate trustees`,
+          message: `${trustsWithoutCorporateTrusteeIds.length} structure${trustsWithoutCorporateTrusteeIds.length > 1 ? "s have" : " has"} trusts without corporate trustees`,
           structureIds: trustsWithoutCorporateTrusteeIds,
         });
-      if (missingAppointerCount > 0)
+      if (missingAppointerIds.length > 0) {
+        const totalAppointerIssues = allIssues.filter((i) => i.code === "missing_appointer").length;
         crossObservations.push({
-          message: `${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointors across structures`,
+          message: `${totalAppointerIssues} trust${totalAppointerIssues > 1 ? "s" : ""} missing appointors across structures`,
           structureIds: missingAppointerIds,
         });
+      }
       if (circularCount > 0)
         crossObservations.push({
           message: `${circularCount} structure${circularCount > 1 ? "s" : ""} with circular ownership detected`,
