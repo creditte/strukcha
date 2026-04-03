@@ -85,6 +85,7 @@ export default function Signup() {
         const msg = data?.error || error?.message || "Verification failed";
         toast({ title: "Verification failed", description: msg, variant: "destructive" });
         setVerifyCode("");
+        autoSubmitTriggered.current = false;
         return;
       }
 
