@@ -87,11 +87,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // ── Initial session fetch ───────────────────────────────────
     trace("useAuth", "getSession start");
     supabase.auth.getSession().then(
-      ({ data: { session: s }, error }) => {
+      async ({ data: { session: s }, error }) => {
         trace("useAuth", "getSession resolved", { hasSession: !!s, error: error?.message ?? null });
         if (error) {
           failBoot(error);
           return;
+        }
+        // If we have a cached session, validate it against the server
+        // to catch expired/revoked tokens that getSession returns from storage
+        if (s?.user) {
+          const { data: userData, error: userError } = await supabase.auth.getUser();
+          if (userError || !userData?.user) {
+            trace("useAuth", "getUser failed – stale session, signing out", { error: userError?.message });
+            console.warn("[Auth] Stale session detected, clearing and redirecting to login");
+            await supabase.auth.signOut();
+            try { localStorage.removeItem("td_token"); } catch { /* noop */ }
+            finishBoot(null);
+            return;
+          }
         }
         finishBoot(s);
       },
