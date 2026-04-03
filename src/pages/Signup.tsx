@@ -31,6 +31,18 @@ export default function Signup() {
   const [verified, setVerified] = useState(false);
   const [startingCheckout, setStartingCheckout] = useState(false);
   const navigate = useNavigate();
+  const autoSubmitTriggered = useRef(false);
+
+  // Auto-submit when 6 digits entered
+  useEffect(() => {
+    if (verifyCode.length === 6 && !verifying && !autoSubmitTriggered.current && needsVerification) {
+      autoSubmitTriggered.current = true;
+      handleVerify();
+    }
+    if (verifyCode.length < 6) {
+      autoSubmitTriggered.current = false;
+    }
+  }, [verifyCode, verifying, needsVerification]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
