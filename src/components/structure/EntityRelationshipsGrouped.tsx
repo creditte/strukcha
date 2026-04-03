@@ -31,6 +31,8 @@ interface RelatedItem {
   relationship_type: string;
   direction: string;
   ownership_percent: number | null;
+  /** Entity type of the target (to_entity) of this relationship */
+  targetEntityType?: string;
 }
 
 interface Props {
