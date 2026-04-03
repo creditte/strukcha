@@ -357,9 +357,9 @@ export default function ClientGovernance() {
               <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 All Structures
               </h2>
-              {statusFilter && (
+              {(statusFilter || insightFilter) && (
                 <button
-                  onClick={() => setStatusFilter(null)}
+                  onClick={() => { setStatusFilter(null); setInsightFilter(null); }}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Clear filter
