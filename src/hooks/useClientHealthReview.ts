@@ -26,7 +26,7 @@ export interface ClientReview {
   timestamp: string;
   clientScore: number;
   structures: StructureResult[];
-  crossObservations: string[];
+  crossObservations: CrossObservation[];
   criticalStructures: number;
   needsAttention: number;
   /** Flat list of all issues across all structures, with structure context */
