@@ -63,6 +63,7 @@ export default function Dashboard() {
   const { currentUser, loading: usersLoading } = useTenantUsers();
   const { tenant, loading: tenantLoading } = useTenantSettings();
   const { billing } = useBilling();
+  const { duplicateCount } = useDuplicateCount();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
