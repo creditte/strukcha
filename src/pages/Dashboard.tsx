@@ -24,10 +24,12 @@ import {
   Users,
   Briefcase,
   Shield,
+  Copy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
+import { useDuplicateCount } from "@/hooks/useDuplicateCount";
 
 import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
@@ -61,6 +63,7 @@ export default function Dashboard() {
   const { currentUser, loading: usersLoading } = useTenantUsers();
   const { tenant, loading: tenantLoading } = useTenantSettings();
   const { billing } = useBilling();
+  const { duplicateCount } = useDuplicateCount();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
@@ -474,6 +477,21 @@ export default function Dashboard() {
 
       {/* ── Billing Banner ── */}
       <BillingBanner />
+
+      {/* ── Duplicate Entities Callout ── */}
+      {duplicateCount > 0 && (
+        <Link
+          to="/review?tab=duplicates"
+          className="group flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-5 py-3.5 transition-all hover:border-warning/50 hover:shadow-sm"
+        >
+          <Copy className="h-4 w-4 text-warning shrink-0" />
+          <span className="flex-1 text-sm text-foreground">
+            <span className="font-semibold">{duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}</span>{" "}
+            detected — review and merge to keep data clean.
+          </span>
+          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      )}
 
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-3">
