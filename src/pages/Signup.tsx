@@ -126,7 +126,7 @@ export default function Signup() {
         // Sign in the user — subscription already created during signup
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-        navigate("/dashboard");
+        navigate("/");
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" });
         navigate("/login");
