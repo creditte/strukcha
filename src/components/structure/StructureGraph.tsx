@@ -138,7 +138,7 @@ function buildEdges(
       id: r.id,
       source: r.from_entity_id,
       target: r.to_entity_id,
-      label: invalid ? `⚠ ${buildEdgeLabel(r)}` : buildEdgeLabel(r),
+      label: invalid ? `⚠ ${buildEdgeLabel(r, entityMap)}` : buildEdgeLabel(r, entityMap),
       type: "default",
       animated: false,
       style: {
