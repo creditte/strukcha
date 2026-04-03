@@ -80,6 +80,7 @@ export default function ClientGovernance() {
     } else if (result) {
       setStructuresChanged(false);
       setStatusFilter(null);
+      setInsightFilter(null);
       toast({ title: "Health check complete" });
     } else {
       toast({ title: "Review failed", variant: "destructive" });
