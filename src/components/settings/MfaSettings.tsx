@@ -13,6 +13,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Shield, Smartphone, Mail, Loader2, Check, ArrowRight, Monitor, Globe, X, ShieldOff } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 
 type ChangeStep = "idle" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
@@ -425,20 +430,37 @@ export default function MfaSettings() {
               </CardDescription>
             </div>
             {trustedDevices.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRevokeAll}
-                disabled={revokingAll}
-                className="gap-1.5 text-destructive hover:text-destructive"
-              >
-                {revokingAll ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <ShieldOff className="h-3.5 w-3.5" />
-                )}
-                Revoke All
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={revokingAll}
+                    className="gap-1.5 text-destructive hover:text-destructive"
+                  >
+                    {revokingAll ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ShieldOff className="h-3.5 w-3.5" />
+                    )}
+                    Revoke All
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Revoke all trusted devices?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will immediately log out all trusted devices and require MFA verification on next login from each device. Are you sure?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleRevokeAll} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Revoke All Devices
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
         </CardHeader>
