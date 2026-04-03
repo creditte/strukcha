@@ -446,6 +446,19 @@ export default function StructureView() {
             <CreateScenarioDialog snapshotId={activeSnapshotId} structureName={activeSnapshot?.name ?? structureName} triggerLabel="Scenario from Snapshot" />
           )}
 
+          {/* AI Review button */}
+          {!isViewingSnapshot && healthV2 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => { setShowReviewPanel(true); setShowFixMode(false); setShowAiPanel(false); }}
+            >
+              <HeartPulse className="h-3.5 w-3.5" />
+              AI Review
+            </Button>
+          )}
+
           {/* Secondary actions ••• */}
           <SecondaryActionsMenu
             structureId={id!}
