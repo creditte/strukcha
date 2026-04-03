@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,18 @@ export default function Signup() {
   const [verified, setVerified] = useState(false);
   const [startingCheckout, setStartingCheckout] = useState(false);
   const navigate = useNavigate();
+  const autoSubmitTriggered = useRef(false);
+
+  // Auto-submit when 6 digits entered
+  useEffect(() => {
+    if (verifyCode.length === 6 && !verifying && !autoSubmitTriggered.current && needsVerification) {
+      autoSubmitTriggered.current = true;
+      handleVerify();
+    }
+    if (verifyCode.length < 6) {
+      autoSubmitTriggered.current = false;
+    }
+  }, [verifyCode, verifying, needsVerification]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,6 +85,7 @@ export default function Signup() {
         const msg = data?.error || error?.message || "Verification failed";
         toast({ title: "Verification failed", description: msg, variant: "destructive" });
         setVerifyCode("");
+        autoSubmitTriggered.current = false;
         return;
       }
 
@@ -80,6 +93,7 @@ export default function Signup() {
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setVerifyCode("");
+      autoSubmitTriggered.current = false;
     } finally {
       setVerifying(false);
     }
