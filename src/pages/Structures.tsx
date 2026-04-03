@@ -709,9 +709,16 @@ export default function Structures() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground">
-                        Manual
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground cursor-help">
+                            Manual
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs max-w-[220px]">
+                          This structure was created manually in Strukcha and is not synced from XPM.
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   </CardContent>
                 </Card>
