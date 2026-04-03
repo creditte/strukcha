@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { RELATIONSHIP_RULES, getRelationshipLabel } from "@/lib/relationshipRules";
+import { RELATIONSHIP_RULES, getRelationshipLabel, isDiscretionaryTrustBeneficiary } from "@/lib/relationshipRules";
 
 const GROUP_ORDER = RELATIONSHIP_RULES.map((r) => r.type);
 
