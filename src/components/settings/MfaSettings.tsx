@@ -13,6 +13,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Shield, Smartphone, Mail, Loader2, Check, ArrowRight, Monitor, Globe, X, ShieldOff } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 
 type ChangeStep = "idle" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
