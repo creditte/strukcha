@@ -98,8 +98,15 @@ const REL_TYPE_LABELS: Record<string, string> = {
   appointer: "appointor",
 };
 
-function buildEdgeLabel(r: RelationshipEdge): string {
+function buildEdgeLabel(r: RelationshipEdge, entityMap?: Map<string, EntityNode>): string {
   let label = REL_TYPE_LABELS[r.relationship_type] ?? r.relationship_type;
+
+  // Discretionary trust beneficiaries don't show ownership metadata
+  const toEntity = entityMap?.get(r.to_entity_id);
+  if (toEntity && isDiscretionaryTrustBeneficiary(r.relationship_type, toEntity.entity_type)) {
+    return label;
+  }
+
   const parts: string[] = [];
   if (r.ownership_percent != null) parts.push(`${r.ownership_percent}%`);
   if (r.ownership_units != null) parts.push(`${r.ownership_units} units`);
