@@ -138,9 +138,11 @@ export function useClientHealthReview() {
 
       const results: StructureResult[] = [];
       const allIssues: StructureIssue[] = [];
-      let trustsWithoutCorporateTrustee = 0;
-      let missingAppointerCount = 0;
       let circularCount = 0;
+
+      const trustsWithoutCorporateTrusteeIds: string[] = [];
+      const missingAppointerIds: string[] = [];
+      const circularIds: string[] = [];
 
       for (const s of structures) {
         const entIds = seByStruct.get(s.id) ?? [];
@@ -169,18 +171,37 @@ export function useClientHealthReview() {
           });
         }
 
-        if (health.isCapped) trustsWithoutCorporateTrustee++;
-        missingAppointerCount += health.issues.filter((i) => i.code === "missing_appointer").length;
-        if (health.issues.some((i) => i.code === "circular_ownership")) circularCount++;
+        if (health.isCapped) {
+          trustsWithoutCorporateTrustee++;
+          trustsWithoutCorporateTrusteeIds.push(s.id);
+        }
+        const appointerIssues = health.issues.filter((i) => i.code === "missing_appointer");
+        if (appointerIssues.length > 0) {
+          missingAppointerCount += appointerIssues.length;
+          missingAppointerIds.push(s.id);
+        }
+        if (health.issues.some((i) => i.code === "circular_ownership")) {
+          circularCount++;
+          circularIds.push(s.id);
+        }
       }
 
-      const crossObservations: string[] = [];
+      const crossObservations: CrossObservation[] = [];
       if (trustsWithoutCorporateTrustee > 0)
-        crossObservations.push(`${trustsWithoutCorporateTrustee} structure${trustsWithoutCorporateTrustee > 1 ? "s have" : " has"} trusts without corporate trustees`);
+        crossObservations.push({
+          message: `${trustsWithoutCorporateTrustee} structure${trustsWithoutCorporateTrustee > 1 ? "s have" : " has"} trusts without corporate trustees`,
+          structureIds: trustsWithoutCorporateTrusteeIds,
+        });
       if (missingAppointerCount > 0)
-        crossObservations.push(`${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointors across structures`);
+        crossObservations.push({
+          message: `${missingAppointerCount} trust${missingAppointerCount > 1 ? "s" : ""} missing appointors across structures`,
+          structureIds: missingAppointerIds,
+        });
       if (circularCount > 0)
-        crossObservations.push(`${circularCount} structure${circularCount > 1 ? "s" : ""} with circular ownership detected`);
+        crossObservations.push({
+          message: `${circularCount} structure${circularCount > 1 ? "s" : ""} with circular ownership detected`,
+          structureIds: circularIds,
+        });
 
       const avgScore = results.length > 0
         ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)

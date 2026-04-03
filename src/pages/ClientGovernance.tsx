@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { getHealthStatus } from "@/lib/structureScoring";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
-import type { StructureResult, ClientReview } from "@/hooks/useClientHealthReview";
+import type { StructureResult, ClientReview, CrossObservation } from "@/hooks/useClientHealthReview";
 import StructureIssuesPanel from "@/components/health/StructureIssuesPanel";
 
 /* ── Friendly labels ────────────────────────────────────────────── */
