@@ -302,7 +302,7 @@ export default function ClientGovernance() {
             <div className="space-y-2">
               {review.criticalStructures > 0 && (
                 <button
-                  onClick={() => setStatusFilter(statusFilter === "critical" ? null : "critical")}
+                  onClick={() => { setInsightFilter(null); setStatusFilter(statusFilter === "critical" ? null : "critical"); }}
                   className={`w-full flex items-center gap-3 rounded-xl border px-5 py-3.5 text-left transition-all ${
                     statusFilter === "critical"
                       ? "border-destructive/40 bg-destructive/10 ring-1 ring-destructive/20"
