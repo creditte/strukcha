@@ -37,6 +37,9 @@ interface ManualStructure {
   name: string;
   created_at: string;
   entity_count: number;
+  is_scenario?: boolean;
+  scenario_label?: string | null;
+  parent_structure_id?: string | null;
 }
 
 type Tab = "xpm" | "manual";
