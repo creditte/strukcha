@@ -195,19 +195,30 @@ export default function Structures() {
     try {
       const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
       if (!tenantId) return;
-      const { data: structures } = await supabase
-        .from("structures")
-        .select("id, name, created_at")
-        .eq("tenant_id", tenantId)
-        .eq("is_scenario", false)
-        .eq("source", "manual")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false });
-      if (!structures || structures.length === 0) {
+      // Load manual structures + all scenarios
+      const [manualRes, scenarioRes] = await Promise.all([
+        supabase
+          .from("structures")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .eq("tenant_id", tenantId)
+          .eq("is_scenario", false)
+          .eq("source", "manual")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("structures")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .eq("tenant_id", tenantId)
+          .eq("is_scenario", true)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false }),
+      ]);
+      const allStructures = [...(manualRes.data ?? []), ...(scenarioRes.data ?? [])];
+      if (allStructures.length === 0) {
         setManualStructures([]);
         return;
       }
-      const structureIds = structures.map((s) => s.id);
+      const structureIds = allStructures.map((s) => s.id);
       const { data: entityLinks } = await supabase
         .from("structure_entities")
         .select("structure_id")
@@ -217,11 +228,14 @@ export default function Structures() {
         countMap[link.structure_id] = (countMap[link.structure_id] || 0) + 1;
       }
       setManualStructures(
-        structures.map((s) => ({
+        allStructures.map((s) => ({
           id: s.id,
           name: s.name,
           created_at: s.created_at,
           entity_count: countMap[s.id] || 0,
+          is_scenario: s.is_scenario,
+          scenario_label: s.scenario_label,
+          parent_structure_id: s.parent_structure_id,
         }))
       );
     } catch (err) {
