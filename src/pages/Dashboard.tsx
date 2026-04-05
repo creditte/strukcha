@@ -510,21 +510,33 @@ export default function Dashboard() {
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-3">
         {[
-          { icon: <Network className="h-4 w-4 text-primary/70" />, label: "Structures", value: structureCount },
-          { icon: <Building2 className="h-4 w-4 text-primary/70" />, label: "Entities", value: totalEntities },
-          { icon: <Upload className="h-4 w-4 text-primary/70" />, label: "Imports", value: importCount },
+          { icon: <Network className="h-4 w-4 text-primary/70" />, label: "Structures", value: structureCount, trend: weeklyTrends.structures, href: "/structures" },
+          { icon: <Building2 className="h-4 w-4 text-primary/70" />, label: "Entities", value: totalEntities, trend: weeklyTrends.entities, href: "/review" },
+          { icon: <Upload className="h-4 w-4 text-primary/70" />, label: "Imports", value: importCount, trend: weeklyTrends.imports, href: "/import" },
         ].map((card) => (
-          <div key={card.label} className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
+          <Link
+            key={card.label}
+            to={card.href}
+            className="group rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1 transition-all hover:border-border hover:shadow-sm"
+          >
             <div className="flex items-center gap-2">
               {card.icon}
               <span className="text-xs text-muted-foreground">{card.label}</span>
+              <ArrowRight className="h-3 w-3 ml-auto text-muted-foreground/0 transition-all group-hover:text-muted-foreground group-hover:translate-x-0.5" />
             </div>
             {dashboardLoading ? (
               <Skeleton className="h-8 w-12 mt-1" />
             ) : (
-              <p className="text-2xl font-semibold text-foreground">{card.value}</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl font-semibold text-foreground">{card.value}</p>
+                {card.trend > 0 && (
+                  <span className="text-[11px] font-medium text-primary">
+                    ↑ {card.trend} this week
+                  </span>
+                )}
+              </div>
             )}
-          </div>
+          </Link>
         ))}
       </section>
 
