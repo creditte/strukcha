@@ -32,7 +32,7 @@ import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { useDuplicateCount } from "@/hooks/useDuplicateCount";
 
 import { useBilling } from "@/hooks/useBilling";
-import { formatDistanceToNow, differenceInDays } from "date-fns";
+import { formatDistanceToNow, differenceInDays, subDays } from "date-fns";
 import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
   const [totalEntities, setTotalEntities] = useState(0);
   const [trusteeCount, setTrusteeCount] = useState(0);
+  const [weeklyTrends, setWeeklyTrends] = useState<{ structures: number; entities: number; imports: number }>({ structures: 0, entities: 0, imports: 0 });
   const [recentEntities, setRecentEntities] = useState<{ id: string; name: string; entity_type: string; is_trustee_company: boolean; abn: string | null; created_at: string }[]>([]);
   const [xeroConnection, setXeroConnection] = useState<{
     id: string;
@@ -146,6 +147,19 @@ export default function Dashboard() {
         .sort((a, b) => b.count - a.count);
       setEntityStats(stats);
       setRecentEntities((recentEnts.data as any) ?? []);
+
+      // Fetch weekly trends
+      const oneWeekAgo = subDays(new Date(), 7).toISOString();
+      const [weekStructures, weekEntities, weekImports] = await Promise.all([
+        supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null).gte("created_at", oneWeekAgo),
+        supabase.from("entities").select("id", { count: "exact", head: true }).is("deleted_at", null).gte("created_at", oneWeekAgo),
+        supabase.from("import_logs").select("id", { count: "exact", head: true }).gte("created_at", oneWeekAgo),
+      ]);
+      setWeeklyTrends({
+        structures: weekStructures.count ?? 0,
+        entities: weekEntities.count ?? 0,
+        imports: weekImports.count ?? 0,
+      });
 
       setDashboardLoading(false);
     }
@@ -496,21 +510,33 @@ export default function Dashboard() {
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-3">
         {[
-          { icon: <Network className="h-4 w-4 text-primary/70" />, label: "Structures", value: structureCount },
-          { icon: <Building2 className="h-4 w-4 text-primary/70" />, label: "Entities", value: totalEntities },
-          { icon: <Upload className="h-4 w-4 text-primary/70" />, label: "Imports", value: importCount },
+          { icon: <Network className="h-4 w-4 text-primary/70" />, label: "Structures", value: structureCount, trend: weeklyTrends.structures, href: "/structures" },
+          { icon: <Building2 className="h-4 w-4 text-primary/70" />, label: "Entities", value: totalEntities, trend: weeklyTrends.entities, href: "/review" },
+          { icon: <Upload className="h-4 w-4 text-primary/70" />, label: "Imports", value: importCount, trend: weeklyTrends.imports, href: "/import" },
         ].map((card) => (
-          <div key={card.label} className="rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1">
+          <Link
+            key={card.label}
+            to={card.href}
+            className="group rounded-2xl border border-border/60 bg-card px-5 py-4 space-y-1 transition-all hover:border-border hover:shadow-sm"
+          >
             <div className="flex items-center gap-2">
               {card.icon}
               <span className="text-xs text-muted-foreground">{card.label}</span>
+              <ArrowRight className="h-3 w-3 ml-auto text-muted-foreground/0 transition-all group-hover:text-muted-foreground group-hover:translate-x-0.5" />
             </div>
             {dashboardLoading ? (
               <Skeleton className="h-8 w-12 mt-1" />
             ) : (
-              <p className="text-2xl font-semibold text-foreground">{card.value}</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl font-semibold text-foreground">{card.value}</p>
+                {card.trend > 0 && (
+                  <span className="text-[11px] font-medium text-primary">
+                    ↑ {card.trend} this week
+                  </span>
+                )}
+              </div>
             )}
-          </div>
+          </Link>
         ))}
       </section>
 
