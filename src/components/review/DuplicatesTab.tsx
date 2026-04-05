@@ -522,15 +522,30 @@ export default function DuplicatesTab() {
                         </Badge>
                       )}
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0 gap-1.5"
-                      onClick={() => openMergeDialog(group)}
-                      disabled={crossType}
-                    >
-                      <Merge className="h-3.5 w-3.5" /> Merge
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1 text-muted-foreground"
+                            onClick={() => dismissGroup(group)}
+                          >
+                            <X className="h-3.5 w-3.5" /> Not a duplicate
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">Dismiss this group as a false positive</TooltipContent>
+                      </Tooltip>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => openMergeDialog(group)}
+                        disabled={crossType}
+                      >
+                        <Merge className="h-3.5 w-3.5" /> Merge
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Comparison table */}
