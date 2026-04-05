@@ -148,6 +148,19 @@ export default function Dashboard() {
       setEntityStats(stats);
       setRecentEntities((recentEnts.data as any) ?? []);
 
+      // Fetch weekly trends
+      const oneWeekAgo = subDays(new Date(), 7).toISOString();
+      const [weekStructures, weekEntities, weekImports] = await Promise.all([
+        supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null).gte("created_at", oneWeekAgo),
+        supabase.from("entities").select("id", { count: "exact", head: true }).is("deleted_at", null).gte("created_at", oneWeekAgo),
+        supabase.from("import_logs").select("id", { count: "exact", head: true }).gte("created_at", oneWeekAgo),
+      ]);
+      setWeeklyTrends({
+        structures: weekStructures.count ?? 0,
+        entities: weekEntities.count ?? 0,
+        imports: weekImports.count ?? 0,
+      });
+
       setDashboardLoading(false);
     }
     load();
