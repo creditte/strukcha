@@ -735,7 +735,7 @@ export default function Structures() {
                       {s.is_scenario ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium gap-1 cursor-help">
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium gap-1">
                               <Copy className="h-2.5 w-2.5" /> Scenario
                             </Badge>
                           </TooltipTrigger>
@@ -746,7 +746,7 @@ export default function Structures() {
                       ) : (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground cursor-help">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium border-muted-foreground/30 text-muted-foreground">
                               Manual
                             </Badge>
                           </TooltipTrigger>
