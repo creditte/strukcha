@@ -58,7 +58,10 @@ export default function Import() {
       });
       if (error) throw error;
       setResult(data);
-      toast({ title: "Import complete", description: `${data.entitiesCreated ?? 0} entities, ${data.relationshipsCreated ?? 0} relationships processed.` });
+      toast({
+        title: "Import complete",
+        description: `${data.entitiesCreated ?? 0} entities, ${data.relationshipsCreated ?? 0} relationships processed.`,
+      });
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
     } finally {
@@ -79,7 +82,11 @@ export default function Import() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "completed":
-        return <Badge variant="default" className="bg-primary/15 text-primary border-primary/20">Completed</Badge>;
+        return (
+          <Badge variant="default" className="bg-primary/15 text-primary border-primary/20">
+            Completed
+          </Badge>
+        );
       case "failed":
         return <Badge variant="destructive">Failed</Badge>;
       case "processing":
@@ -109,16 +116,28 @@ export default function Import() {
               <Info className="h-4 w-4 text-primary" />
               <CardTitle className="text-base">How to export from XPM</CardTitle>
             </div>
-            {showInstructions ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            {showInstructions ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
           </div>
         </CardHeader>
         {showInstructions && (
           <CardContent className="pt-0 space-y-3 text-sm text-muted-foreground">
             <ol className="list-decimal list-inside space-y-2">
-              <li>In Xero Practice Manager, navigate to <strong className="text-foreground">Business → Reports</strong>.</li>
-              <li>Find and open the <strong className="text-foreground">Client Relationships Report</strong>.</li>
+              <li>
+                In Xero Practice Manager, navigate to <strong className="text-foreground">Business → Reports</strong>.
+              </li>
+              <li>
+                Find and open the <strong className="text-foreground">Client Relationships Report</strong>.
+              </li>
               <li>Set the report filters as needed (e.g. all clients or a specific group).</li>
-              <li>Click <strong className="text-foreground">Export</strong> and choose <strong className="text-foreground">CSV</strong> or <strong className="text-foreground">XML</strong> format.</li>
+              <li>
+                Click <strong className="text-foreground">Export</strong> and choose{" "}
+                <strong className="text-foreground">CSV</strong> or <strong className="text-foreground">XML</strong>{" "}
+                format.
+              </li>
               <li>Save the file to your computer, then upload it below.</li>
             </ol>
             <div className="flex items-center gap-2 pt-1">
@@ -136,9 +155,7 @@ export default function Import() {
       <Card className="max-w-lg">
         <CardHeader>
           <CardTitle className="text-base">Upload XPM Report</CardTitle>
-          <CardDescription>
-            Upload a Client Relationships Report from XPM in CSV or XML format.
-          </CardDescription>
+          <CardDescription>Upload a Client Relationships Report from XPM in CSV or XML format.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-8 text-muted-foreground transition-colors hover:border-primary hover:text-foreground">
@@ -147,9 +164,7 @@ export default function Import() {
             <input type="file" accept=".csv,.xml" className="hidden" onChange={handleFileChange} />
           </label>
 
-          {!file && (
-            <p className="text-xs text-muted-foreground text-center">Select a file above to enable import.</p>
-          )}
+          {!file && <p className="text-xs text-muted-foreground text-center">Select a file above to enable import.</p>}
 
           <Button onClick={handleImport} disabled={!file || importing} className="w-full">
             {importing ? "Importing..." : "Import"}
@@ -159,10 +174,17 @@ export default function Import() {
           <div className="rounded-md bg-muted/50 p-3 space-y-1">
             <p className="text-xs font-medium text-foreground">What happens after import?</p>
             <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-              <li>Existing entities are <strong>matched by name and type</strong> — matching records are updated, not duplicated.</li>
-              <li>New entities and relationships are <strong>created automatically</strong>.</li>
+              <li>
+                Existing entities are <strong>matched by name and type</strong> — matching records are updated, not
+                duplicated.
+              </li>
+              <li>
+                New entities and relationships are <strong>created automatically</strong>.
+              </li>
               <li>A new structure is created for each client group found in the file.</li>
-              <li>You can review and merge any potential duplicates from the <strong>Review</strong> page.</li>
+              <li>
+                You can review and merge any potential duplicates from the <strong>Review</strong> page.
+              </li>
             </ul>
           </div>
         </CardContent>
@@ -184,25 +206,37 @@ export default function Import() {
           <CardContent className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Rows parsed: <strong>{result.totalRowsParsed ?? 0}</strong></span>
+              <span>
+                Rows parsed: <strong>{result.totalRowsParsed ?? 0}</strong>
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Entities created: <strong>{result.entitiesCreated ?? 0}</strong> | updated: <strong>{result.entitiesUpdated ?? 0}</strong></span>
+              <span>
+                Entities created: <strong>{result.entitiesCreated ?? 0}</strong> | updated:{" "}
+                <strong>{result.entitiesUpdated ?? 0}</strong>
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Relationships created: <strong>{result.relationshipsCreated ?? 0}</strong> | skipped: <strong>{result.relationshipsSkipped ?? 0}</strong></span>
+              <span>
+                Relationships created: <strong>{result.relationshipsCreated ?? 0}</strong> | skipped:{" "}
+                <strong>{result.relationshipsSkipped ?? 0}</strong>
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>Structures created: <strong>{result.structuresCreated ?? 0}</strong></span>
+              <span>
+                Structures created: <strong>{result.structuresCreated ?? 0}</strong>
+              </span>
             </div>
             {result.warnings?.length > 0 && (
               <div className="mt-3 space-y-1 rounded-md bg-destructive/10 p-3">
                 <p className="font-medium text-destructive">Warnings:</p>
                 {result.warnings.map((w: string, i: number) => (
-                  <p key={i} className="text-xs text-destructive">{w}</p>
+                  <p key={i} className="text-xs text-destructive">
+                    {w}
+                  </p>
                 ))}
               </div>
             )}
@@ -211,7 +245,7 @@ export default function Import() {
       )}
 
       {/* Import history */}
-      <Card>
+      <Card classname="mb-2">
         <CardHeader>
           <CardTitle className="text-base">Import History</CardTitle>
           <CardDescription>Previous imports for your workspace.</CardDescription>
@@ -235,9 +269,7 @@ export default function Import() {
                     <TableCell className="text-xs whitespace-nowrap">
                       {format(new Date(log.created_at), "d MMM yyyy, h:mm a")}
                     </TableCell>
-                    <TableCell className="text-xs font-medium truncate max-w-[200px]">
-                      {log.file_name || "—"}
-                    </TableCell>
+                    <TableCell className="text-xs font-medium truncate max-w-[200px]">{log.file_name || "—"}</TableCell>
                     <TableCell className="text-xs">{getRecordCount(log)}</TableCell>
                     <TableCell>{getStatusBadge(log.status)}</TableCell>
                   </TableRow>
