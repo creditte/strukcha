@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { useTenantSettings } from "@/hooks/useTenantSettings";
 import { useDuplicateCount } from "@/hooks/useDuplicateCount";
+import { useClientHealthReview } from "@/hooks/useClientHealthReview";
 
 import { useBilling } from "@/hooks/useBilling";
 import { formatDistanceToNow, differenceInDays, subDays } from "date-fns";
