@@ -281,7 +281,13 @@ function StructureGraphInner({
       }
     }
     setEdges(buildEdges(relationships, viewMode, entityMap));
-  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions]);
+
+    // Auto-fit on initial data load
+    if (!initialFitDone.current && entities.length > 0) {
+      initialFitDone.current = true;
+      setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 80);
+    }
+  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions, fitView]);
 
   // Auto-layout button trigger
   useEffect(() => {
