@@ -260,6 +260,13 @@ export default function Dashboard() {
 
   const hasStructures = structureCount > 0;
 
+  // Auto-run health review when structures are loaded
+  useEffect(() => {
+    if (!dashboardLoading && hasStructures && !review && !healthLoading) {
+      runReview();
+    }
+  }, [dashboardLoading, hasStructures, review, healthLoading, runReview]);
+
   const getEntityIcon = (type: string) => {
     switch (type) {
       case "Company":
