@@ -245,7 +245,7 @@ export default function Import() {
       )}
 
       {/* Import history */}
-      <Card classname="mb-2">
+      <Card className="mb-2">
         <CardHeader>
           <CardTitle className="text-base">Import History</CardTitle>
           <CardDescription>Previous imports for your workspace.</CardDescription>
