@@ -155,6 +155,8 @@ Deno.serve(async (req) => {
         full_name: fullName,
         status: "active",
         onboarding_complete: true,
+        selected_plan: plan,
+        selected_billing: billing,
       }, { onConflict: "user_id" });
     if (profileError) throw profileError;
 
