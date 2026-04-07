@@ -6,7 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PRICE_ID = "price_1TDLyr03zgsCflnsVAheazkG";
+const PRICE_MAP: Record<string, string | undefined> = {
+  starter: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+  pro: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+};
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
