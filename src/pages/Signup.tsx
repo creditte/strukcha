@@ -69,7 +69,7 @@ export default function Signup() {
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke("self-signup", {
-        body: { fullName, email, password, firmName },
+        body: { fullName, email, password, firmName, selectedPlan, selectedBilling },
       });
       if (error || data?.error) {
         const msg = data?.error || error?.message || "Signup failed";
