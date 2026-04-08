@@ -59,8 +59,24 @@ export default function BillingSettings() {
   const label = statusLabels[status] || status;
   const colorClass = statusColors[status] || "bg-muted text-muted-foreground border-0";
 
-  const diagramCount = billing?.diagram_count ?? 3;
-  const diagramLimit = billing?.diagram_limit ?? 10;
+  // Derive plan display info
+  const planName = billing?.subscription_plan === "starter" ? "strukcha Starter" : "strukcha Pro";
+  const isAnnual = billing?.billing_interval === "year";
+  
+  const priceDisplay = (() => {
+    if (billing?.price_amount) {
+      const amount = billing.price_amount / 100;
+      return isAnnual ? `A$${amount.toLocaleString()}/year` : `A$${amount}/month`;
+    }
+    // Fallback based on plan
+    if (billing?.subscription_plan === "starter") {
+      return isAnnual ? "A$990/year" : "A$99/month";
+    }
+    return isAnnual ? "A$2,490/year" : "A$249/month";
+  })();
+
+  const diagramCount = billing?.diagram_count ?? 0;
+  const diagramLimit = billing?.diagram_limit ?? 15;
 
   // Use a future trial end date for display
   const trialEnd = billing?.trial_ends_at
@@ -79,8 +95,8 @@ export default function BillingSettings() {
         <CardContent className="space-y-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">strukcha Pro</p>
-              <p className="text-xs text-muted-foreground">A$149/month</p>
+              <p className="text-sm font-medium">{planName}</p>
+              <p className="text-xs text-muted-foreground">{priceDisplay}</p>
             </div>
             <Badge className={colorClass}>{label}</Badge>
           </div>
@@ -88,10 +104,10 @@ export default function BillingSettings() {
           {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
-                Trial ends {format(trialEnd, "d MMM yyyy")}
+                Trial ends {format(trialEnd, "d MMM yyyy 'at' h:mm a")}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                After your trial, you'll be charged A$149/month.
+                After your trial, you'll be charged {priceDisplay}.
               </p>
             </div>
           )}
