@@ -130,6 +130,9 @@ Deno.serve(async (req) => {
       }
     }
 
+    // During trial, enforce a fixed limit of 3 regardless of selected plan
+    const effectiveDiagramLimit = tenant.subscription_status === "trialing" ? 3 : tenant.diagram_limit;
+
     return new Response(JSON.stringify({
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
@@ -137,7 +140,7 @@ Deno.serve(async (req) => {
       access_locked_reason: tenant.access_locked_reason,
       trial_ends_at: tenant.trial_ends_at,
       current_period_end: tenant.current_period_end,
-      diagram_limit: tenant.diagram_limit,
+      diagram_limit: effectiveDiagramLimit,
       diagram_count: tenant.diagram_count,
       cancel_at_period_end: tenant.cancel_at_period_end,
       stripe_customer_id: tenant.stripe_customer_id,
