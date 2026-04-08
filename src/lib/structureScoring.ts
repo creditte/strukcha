@@ -100,7 +100,7 @@ function estimateDepth(
   relationships: RelationshipEdge[]
 ): number {
   if (entities.length === 0) return 0;
-  const ownershipTypes = new Set(["shareholder", "beneficiary", "trustee", "member"]);
+  const ownershipTypes = new Set(["shareholder", "unit_holder", "beneficiary", "trustee", "member"]);
   const children = new Map<string, string[]>();
   const hasParent = new Set<string>();
 
@@ -234,7 +234,7 @@ export function computeHealthScoreV2(
   // Check if there are entities with ownership rels that don't connect back to an individual
   const shareholderAdj = new Map<string, string[]>();
   for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder") continue;
+    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
     const arr = shareholderAdj.get(rel.from_entity_id) ?? [];
     arr.push(rel.to_entity_id);
     shareholderAdj.set(rel.from_entity_id, arr);
@@ -311,7 +311,7 @@ export function computeHealthScoreV2(
 
   // Missing ownership percentages where ownership relationships exist
   for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder") continue;
+    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
     if (rel.ownership_percent == null) {
       const from = entityMap.get(rel.from_entity_id);
       const to = entityMap.get(rel.to_entity_id);
@@ -333,7 +333,7 @@ export function computeHealthScoreV2(
   // Ownership % exceeds 100
   const byCompany = new Map<string, RelationshipEdge[]>();
   for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder") continue;
+    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
     const arr = byCompany.get(rel.to_entity_id) ?? [];
     arr.push(rel);
     byCompany.set(rel.to_entity_id, arr);

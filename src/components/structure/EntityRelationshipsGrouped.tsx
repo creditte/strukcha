@@ -6,6 +6,7 @@ const GROUP_ORDER = RELATIONSHIP_RULES.map((r) => r.type);
 const GROUP_COLORS: Record<string, string> = {
   director: "bg-blue-500",
   shareholder: "bg-emerald-500",
+  unit_holder: "bg-green-500",
   trustee: "bg-amber-500",
   beneficiary: "bg-purple-500",
   member: "bg-sky-500",
@@ -21,6 +22,7 @@ function groupLabel(type: string): string {
   const label = getRelationshipLabel(type);
   if (type === "appointer") return "Appointors";
   if (type === "beneficiary") return "Beneficiaries";
+  if (type === "unit_holder") return "Unit Holders";
   return label + "s";
 }
 

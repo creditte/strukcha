@@ -37,6 +37,7 @@ function getHumanIssueTitle(issue: ScoringIssue): string {
     case "missing_member": return "No members assigned";
     case "missing_directors": return "No directors recorded";
     case "missing_shareholders": return "No shareholders recorded";
+    case "missing_unit_holder": return "No unit holders recorded";
     case "missing_ownership_percent": return "Ownership % not recorded";
     case "ownership_exceeds": return "Ownership exceeds 100%";
     case "orphan_entity": return "Disconnected entity";
@@ -56,6 +57,7 @@ function getHumanIssueDescription(issue: ScoringIssue): string {
     case "missing_member": return `"${issue.entity_name}" needs members. Add them from the structure diagram.`;
     case "missing_directors": return `"${issue.entity_name}" needs directors. Add them from the structure diagram.`;
     case "missing_shareholders": return `"${issue.entity_name}" needs shareholders. Add them from the structure diagram.`;
+    case "missing_unit_holder": return `"${issue.entity_name}" needs unit holders. Add them from the structure diagram.`;
     case "missing_ownership_percent": return `Record the ownership percentage for this relationship.`;
     case "ownership_exceeds": return `Total ownership for "${issue.entity_name}" exceeds 100%. Review shareholder percentages.`;
     case "orphan_entity": return `"${issue.entity_name}" has no connections. Link it or remove it from the structure.`;
