@@ -226,13 +226,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   // ── Timed out waiting ─────────────────────────────────────────
   if (timedOut) {
-    return (
-      <RecoveryScreen
-        title="Loading Timeout"
-        message="The app took too long to load. This usually means a network issue or missing account data."
-        error={`bootStatus=${bootStatus} tenantStatus=${tenantStatus} userId=${user?.id ?? "none"}`}
-      />
-    );
+    trace("ProtectedRoute", "decision: loading timeout → clearing session, redirect /login");
+    supabase.auth.signOut().catch(() => {});
+    return <Navigate to="/login" replace />;
   }
 
   // ── Auth error / timeout ──────────────────────────────────────
