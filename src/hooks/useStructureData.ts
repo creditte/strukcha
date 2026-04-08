@@ -554,7 +554,7 @@ export function computeStructureHealth(
   // Ownership checks
   const byCompany = new Map<string, RelationshipEdge[]>();
   for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder") continue;
+    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
     const arr = byCompany.get(rel.to_entity_id) ?? [];
     arr.push(rel);
     byCompany.set(rel.to_entity_id, arr);
@@ -585,6 +585,7 @@ export function computeStructureHealth(
       const hasOwnershipData = byCompany.has(entity.id);
       if (!hasOwnershipData) warningCount++;
     }
+    if (t === "trust_unit" && !inbound.has("unit_holder")) warningCount++;
     if (t === "Unclassified") unclassifiedCount++;
   }
 
