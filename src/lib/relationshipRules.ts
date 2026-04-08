@@ -131,7 +131,7 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
   {
     type: "beneficiary",
     label: "Beneficiary",
-    allowedSourceTypes: ["individual", "company", "discretionary_trust"],
+    allowedSourceTypes: ["individual", "company", "discretionary_trust", "smsf"],
     allowedTargetTypes: ["discretionary_trust", "hybrid_trust", "other_trust"],
     allowReverse: false,
     validationMessage: "Beneficiaries can only be linked to eligible trust entities.",
