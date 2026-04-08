@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
-      .select("tenant_id")
+      .select("tenant_id, selected_billing")
       .eq("user_id", userData.user.id)
       .single();
     if (!profile) throw new Error("No profile found");
@@ -54,8 +54,8 @@ Deno.serve(async (req) => {
       tenant.access_locked_reason = "trial_expired";
     }
 
-    // Determine billing interval from Stripe subscription if available
-    let billing_interval: string | null = null;
+    // Determine billing interval from Stripe subscription if available, otherwise fall back to the user's chosen billing cycle
+    let billing_interval: string | null = profile.selected_billing === "annual" ? "year" : "month";
     let price_amount: number | null = null;
     if (tenant.stripe_subscription_id) {
       try {
