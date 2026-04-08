@@ -1491,6 +1491,7 @@ export type Database = {
         }
         Returns: Json
       }
+      rpc_delete_tenant: { Args: { p_tenant_id: string }; Returns: Json }
       rpc_disable_tenant_user: {
         Args: { p_tenant_id: string; p_tenant_user_id: string }
         Returns: Json
