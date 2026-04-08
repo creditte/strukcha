@@ -6,9 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PRICE_MAP: Record<string, string | undefined> = {
-  starter: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-  pro: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
+  starter: {
+    monthly: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    annual: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+  },
+  pro: {
+    monthly: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    annual: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+  },
 };
 
 const SITE_NAME = "strukcha";
@@ -87,8 +93,8 @@ Deno.serve(async (req) => {
 
     // 2. Create the tenant
     const now = new Date();
-    // TODO: Change back to 7 days for production: 7 * 24 * 60 * 60 * 1000
-    const trialEnd = new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000); // 1 day for testing
+    // 10-minute trial for testing
+    const trialEnd = new Date(now.getTime() + 10 * 60 * 1000);
 
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from("tenants")
@@ -114,10 +120,10 @@ Deno.serve(async (req) => {
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
         });
 
-        // TODO: Change back to trial_period_days: 7 for production
         const trialEndUnix = Math.floor(trialEnd.getTime() / 1000);
-        const priceId = PRICE_MAP[plan] || PRICE_MAP.pro;
-        if (!priceId) throw new Error(`No Stripe price configured for plan: ${plan}`);
+        const planPrices = PRICE_MAP[plan] || PRICE_MAP.pro;
+        const priceId = planPrices?.[billing] || planPrices?.monthly;
+        if (!priceId) throw new Error(`No Stripe price configured for plan: ${plan}, billing: ${billing}`);
 
         const subscription = await stripe.subscriptions.create({
           customer: customer.id,
