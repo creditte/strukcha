@@ -126,10 +126,22 @@ export default function BillingSettings() {
             </div>
           )}
 
-          <Button onClick={handleManageBilling} className="gap-2">
-            <CreditCard className="h-4 w-4" />
-            Manage Billing
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button onClick={handleManageBilling} className="gap-2">
+              <CreditCard className="h-4 w-4" />
+              Manage Billing
+            </Button>
+
+            {billing?.subscription_status === "active" && !billing?.cancel_at_period_end && (
+              <Button
+                variant="outline"
+                className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
+                onClick={handleManageBilling}
+              >
+                Cancel Subscription
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 
