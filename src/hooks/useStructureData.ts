@@ -592,7 +592,7 @@ export function computeStructureHealth(
   // Circular ownership (quick DFS)
   const adj = new Map<string, string[]>();
   for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder") continue;
+    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
     const arr = adj.get(rel.from_entity_id) ?? [];
     arr.push(rel.to_entity_id);
     adj.set(rel.from_entity_id, arr);
