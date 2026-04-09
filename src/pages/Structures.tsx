@@ -812,6 +812,8 @@ export default function Structures() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
     </div>
     </TooltipProvider>
   );
