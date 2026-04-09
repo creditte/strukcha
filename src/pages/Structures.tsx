@@ -50,6 +50,7 @@ const MAX_FAVOURITES = 10;
 export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { tenant } = useTenantSettings();
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem("structures_active_tab");
@@ -76,9 +77,20 @@ export default function Structures() {
   const [manualLoading, setManualLoading] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+
+  const limitReached = tenant != null && tenant.diagram_limit > 0 && tenant.diagram_count >= tenant.diagram_limit;
+
+  const handleCreateClick = () => {
+    if (limitReached) {
+      setShowLimitDialog(true);
+    } else {
+      setShowCreateModal(true);
+    }
+  };
 
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
