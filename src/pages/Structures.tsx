@@ -26,6 +26,8 @@ import {
   BreadcrumbSeparator, BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
+import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 interface XpmGroup {
   xpm_uuid: string;
