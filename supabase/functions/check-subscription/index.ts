@@ -89,12 +89,15 @@ Deno.serve(async (req) => {
           if (["active", "trialing"].includes(sub.status) && !["active", "trialing"].includes(tenant.subscription_status)) {
             const productId = priceData?.product as string | undefined;
             const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-            const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
             let resolvedPlan = "pro";
-            let resolvedLimit = 50;
             if (productId && starterProductId && productId === starterProductId) {
               resolvedPlan = "starter";
-              resolvedLimit = 15;
+            }
+
+            // Determine limit based on status + plan
+            let resolvedLimit = 3; // default for trialing
+            if (sub.status === "active") {
+              resolvedLimit = resolvedPlan === "starter" ? 30 : 100;
             }
 
             const healUpdate: Record<string, any> = {
