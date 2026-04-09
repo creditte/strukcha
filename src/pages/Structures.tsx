@@ -51,6 +51,18 @@ export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { tenant } = useTenantSettings();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Fetch current user's tenant role
+  useEffect(() => {
+    supabase.rpc("get_my_tenant_user").then(({ data }) => {
+      if (data && typeof data === "object" && "role" in data) {
+        setUserRole((data as any).role);
+      }
+    });
+  }, []);
+
+  const canManageStructures = userRole === "owner" || userRole === "admin";
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem("structures_active_tab");
