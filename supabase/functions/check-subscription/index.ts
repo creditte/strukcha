@@ -89,12 +89,15 @@ Deno.serve(async (req) => {
           if (["active", "trialing"].includes(sub.status) && !["active", "trialing"].includes(tenant.subscription_status)) {
             const productId = priceData?.product as string | undefined;
             const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-            const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
             let resolvedPlan = "pro";
-            let resolvedLimit = 50;
             if (productId && starterProductId && productId === starterProductId) {
               resolvedPlan = "starter";
-              resolvedLimit = 15;
+            }
+
+            // Determine limit based on status + plan
+            let resolvedLimit = 3; // default for trialing
+            if (sub.status === "active") {
+              resolvedLimit = resolvedPlan === "starter" ? 30 : 100;
             }
 
             const healUpdate: Record<string, any> = {
@@ -130,8 +133,20 @@ Deno.serve(async (req) => {
       }
     }
 
-    // During trial, enforce a fixed limit of 3 regardless of selected plan
-    const effectiveDiagramLimit = tenant.subscription_status === "trialing" ? 3 : tenant.diagram_limit;
+    // Determine effective diagram_limit based on subscription_status
+    let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
+    if (["active", "past_due"].includes(tenant.subscription_status)) {
+      effectiveDiagramLimit = tenant.subscription_plan === "starter" ? 30 : 100;
+    }
+
+    // Persist corrected limit to DB if it differs
+    if (effectiveDiagramLimit !== tenant.diagram_limit) {
+      await supabaseAdmin
+        .from("tenants")
+        .update({ diagram_limit: effectiveDiagramLimit })
+        .eq("id", profile.tenant_id);
+      tenant.diagram_limit = effectiveDiagramLimit;
+    }
 
     return new Response(JSON.stringify({
       subscription_status: tenant.subscription_status,
