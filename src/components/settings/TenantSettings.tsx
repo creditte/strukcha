@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save, ChevronDown, X } from "lucide-react";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
+import { useTenantSettings } from "@/hooks/useTenantSettings";
 
 interface Props {
   isAdmin?: boolean;
