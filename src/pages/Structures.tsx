@@ -355,6 +355,46 @@ export default function Structures() {
     }
   }
 
+  async function handleArchiveStructure(structure: ManualStructure) {
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ archived_at: new Date().toISOString() } as any)
+        .eq("id", structure.id);
+      if (error) throw error;
+      setManualStructures((prev) =>
+        prev.map((s) => s.id === structure.id ? { ...s, archived_at: new Date().toISOString() } : s)
+      );
+      toast.success("Structure archived");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to archive structure");
+    }
+  }
+
+  async function handleUnarchiveStructure(structure: ManualStructure) {
+    // Check plan limit before unarchiving
+    if (tenant && tenant.diagram_limit > 0) {
+      const activeCount = manualStructures.filter((s) => !s.archived_at && !s.is_scenario).length;
+      if (activeCount >= tenant.diagram_limit) {
+        toast.error(`You've reached your limit of ${tenant.diagram_limit} active structures. Archive an existing structure first to make room.`);
+        return;
+      }
+    }
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ archived_at: null } as any)
+        .eq("id", structure.id);
+      if (error) throw error;
+      setManualStructures((prev) =>
+        prev.map((s) => s.id === structure.id ? { ...s, archived_at: null } : s)
+      );
+      toast.success("Structure unarchived");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to unarchive structure");
+    }
+  }
+
   const handleImportToEditor = useCallback(async (group: XpmGroup) => {
     setImportingId(group.xpm_uuid);
     try {
