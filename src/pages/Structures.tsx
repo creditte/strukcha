@@ -911,8 +911,18 @@ export default function Structures() {
             </div>
           )}
 
-          {!manualLoading && filteredManual.length === 0 && manualStructures.length > 0 && (
+          {!manualLoading && filteredManual.length === 0 && (showArchived ? archivedManualStructures : activeManualStructures).length > 0 && (
             <p className="text-xs text-muted-foreground py-4 text-center">No structures match your search.</p>
+          )}
+
+          {!manualLoading && showArchived && archivedManualStructures.length === 0 && (
+            <div className="text-center py-16 text-muted-foreground">
+              <Archive className="h-10 w-10 mx-auto mb-3 opacity-40" />
+              <p className="text-sm font-medium text-foreground">No archived structures</p>
+              <p className="text-xs mt-1.5 max-w-md mx-auto leading-relaxed">
+                When you archive a structure, it will appear here. Archived structures don't count toward your plan limit.
+              </p>
+            </div>
           )}
         </div>
       )}
