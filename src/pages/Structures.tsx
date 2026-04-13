@@ -268,6 +268,7 @@ export default function Structures() {
           is_scenario: s.is_scenario,
           scenario_label: s.scenario_label,
           parent_structure_id: s.parent_structure_id,
+          archived_at: s.archived_at,
         }))
       );
     } catch (err) {
