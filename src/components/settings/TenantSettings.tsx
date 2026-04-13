@@ -118,6 +118,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     } else {
       toast({ title: "Settings saved" });
       setInitial({ ...currentState });
+      reloadTenant();
     }
     setSaving(false);
   }, [tenantId, firmName, brandColor, exportFooter, exportDisclaimer, showDisclaimer, blockOnCritical, defaultViewMode, allowAdminIntegrations, isOwner, toast]);
@@ -161,6 +162,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     } else {
       setLogoUrl(publicUrl);
       toast({ title: "Logo uploaded" });
+      reloadTenant();
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = "";
@@ -176,6 +178,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     await supabase.from("tenants").update({ logo_url: null }).eq("id", tenantId);
     setLogoUrl(null);
     toast({ title: "Logo removed" });
+    reloadTenant();
     setUploading(false);
   };
 
