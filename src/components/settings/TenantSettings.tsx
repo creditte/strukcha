@@ -22,6 +22,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const { currentUser } = useTenantUsers();
+  const { reload: reloadTenant } = useTenantSettings();
   const isOwner = currentUser?.role === "owner";
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
