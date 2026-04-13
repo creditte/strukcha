@@ -231,7 +231,7 @@ export default function Structures() {
       const [manualRes, scenarioRes] = await Promise.all([
         supabase
           .from("structures")
-          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
           .eq("tenant_id", tenantId)
           .eq("is_scenario", false)
           .eq("source", "manual")
@@ -239,7 +239,7 @@ export default function Structures() {
           .order("created_at", { ascending: false }),
         supabase
           .from("structures")
-          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
           .eq("tenant_id", tenantId)
           .eq("is_scenario", true)
           .is("deleted_at", null)
