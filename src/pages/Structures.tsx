@@ -790,7 +790,7 @@ export default function Structures() {
             </div>
           )}
 
-          {!manualLoading && manualStructures.length === 0 && (
+          {!manualLoading && !showArchived && activeManualStructures.length === 0 && (
             <div className="text-center py-16 text-muted-foreground">
               <FileBox className="h-10 w-10 mx-auto mb-3 opacity-40" />
               <p className="text-sm font-medium text-foreground">No structures yet</p>
