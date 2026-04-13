@@ -10,8 +10,12 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
   Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock, Copy,
+  Archive, ArchiveRestore, MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
