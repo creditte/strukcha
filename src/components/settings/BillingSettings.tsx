@@ -23,12 +23,15 @@ export default function BillingSettings() {
   const { toast } = useToast();
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [navigating, setNavigating] = useState(false);
 
   const handleManageBilling = async () => {
+    setNavigating(true);
     try {
       await openPortal();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+      setNavigating(false);
     }
   };
 
