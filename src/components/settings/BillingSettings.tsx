@@ -19,10 +19,12 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export default function BillingSettings() {
-  const { billing, loading, openPortal, switchBillingInterval } = useBilling();
+  const { billing, loading, openPortal, switchBillingInterval, changePlan } = useBilling();
   const { toast } = useToast();
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
+  const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [changingPlan, setChangingPlan] = useState(false);
   const [navigating, setNavigating] = useState(false);
 
   const handleManageBilling = async () => {
