@@ -72,6 +72,8 @@ export default function BillingSettings() {
       setShowPlanDialog(false);
     }
   };
+
+  if (loading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-6 w-48" />
@@ -87,8 +89,7 @@ export default function BillingSettings() {
     );
   }
 
-  if (loading) {
-    trialing: "Free Trial",
+  const statusLabels: Record<string, string> = {
     active: "Active",
     past_due: "Past Due",
     canceled: "Cancelled",
