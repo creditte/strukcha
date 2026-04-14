@@ -121,7 +121,15 @@ export default function BillingSettings() {
   const isActive = billing?.subscription_status === "active";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {navigating && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Redirecting to billing portal…</p>
+          </div>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
