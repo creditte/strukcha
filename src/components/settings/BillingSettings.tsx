@@ -87,7 +87,7 @@ export default function BillingSettings() {
     );
   }
 
-  const statusLabels: Record<string, string> = {
+  if (loading) {
     trialing: "Free Trial",
     active: "Active",
     past_due: "Past Due",
