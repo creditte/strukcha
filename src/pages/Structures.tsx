@@ -57,6 +57,7 @@ export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { tenant } = useSharedTenantSettings();
+  const { billing } = useBilling();
   const [userRole, setUserRole] = useState<string | null>(null);
 
   // Fetch current user's tenant role
