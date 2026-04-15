@@ -172,6 +172,7 @@ export default function BillingSettings() {
                 size="sm"
                 className="gap-2"
                 onClick={() => setShowSwitchDialog(true)}
+                disabled={isBusy}
               >
                 <ArrowRightLeft className="h-4 w-4" />
                 Switch to {targetIntervalLabel}
