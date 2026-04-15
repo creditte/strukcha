@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { useAuth } from "@/hooks/useAuth";
 import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
+import { useBilling } from "@/hooks/useBilling";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 interface XpmGroup {
@@ -56,6 +57,7 @@ export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { tenant } = useSharedTenantSettings();
+  const { billing } = useBilling();
   const [userRole, setUserRole] = useState<string | null>(null);
 
   // Fetch current user's tenant role
@@ -100,7 +102,7 @@ export default function Structures() {
   const [importingId, setImportingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
-  const limitReached = tenant != null && tenant.diagram_limit > 0 && tenant.diagram_count >= tenant.diagram_limit;
+  const limitReached = billing ? billing.diagram_count >= billing.diagram_limit : false;
 
   const handleCreateClick = () => {
     if (limitReached) {
