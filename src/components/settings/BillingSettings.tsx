@@ -25,10 +25,7 @@ export default function BillingSettings() {
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [planSwitching, setPlanSwitching] = useState(false);
   const [navigating, setNavigating] = useState(false);
-
-  const isBusy = switching || planSwitching;
 
   const handleManageBilling = async () => {
     setNavigating(true);
@@ -123,9 +120,7 @@ export default function BillingSettings() {
   const diagramCount = billing?.diagram_count ?? 0;
   const diagramLimit = billing?.diagram_limit ?? 15;
 
-  const trialEnd = billing?.trial_ends_at
-    ? new Date(billing.trial_ends_at)
-    : addDays(new Date(), 5);
+  const trialEnd = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : addDays(new Date(), 5);
 
   const isActive = billing?.subscription_status === "active";
 
@@ -158,22 +153,12 @@ export default function BillingSettings() {
           {isActive && (
             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
               <div>
-                <p className="text-sm font-medium">
-                  Billing Interval: {isAnnual ? "Annual" : "Monthly"}
-                </p>
+                <p className="text-sm font-medium">Billing Interval: {isAnnual ? "Annual" : "Monthly"}</p>
                 <p className="text-xs text-muted-foreground">
-                  {isAnnual
-                    ? "You're saving with annual billing"
-                    : "Switch to annual to save"}
+                  {isAnnual ? "You're saving with annual billing" : "Switch to annual to save"}
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => setShowSwitchDialog(true)}
-                disabled={isBusy}
-              >
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowSwitchDialog(true)}>
                 <ArrowRightLeft className="h-4 w-4" />
                 Switch to {targetIntervalLabel}
               </Button>
@@ -183,22 +168,12 @@ export default function BillingSettings() {
           {isActive && !billing?.cancel_at_period_end && (
             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
               <div>
-                <p className="text-sm font-medium">
-                  Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}
-                </p>
+                <p className="text-sm font-medium">Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}</p>
                 <p className="text-xs text-muted-foreground">
-                  {isUpgrade
-                    ? "Upgrade to Pro for more structures and features"
-                    : "Downgrade to Starter to reduce costs"}
+                  {isUpgrade ? "Upgrade to Pro for more structures and features" : " "}
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => setShowPlanDialog(true)}
-                disabled={isBusy}
-              >
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanDialog(true)}>
                 {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
                 {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
               </Button>
@@ -226,7 +201,11 @@ export default function BillingSettings() {
             <div className="rounded-lg border border-warning/20 bg-warning/5 px-4 py-3">
               <p className="text-sm text-warning font-medium">Cancellation scheduled</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Access continues until {billing.current_period_end ? format(new Date(billing.current_period_end), "d MMM yyyy") : "end of period"}.
+                Access continues until{" "}
+                {billing.current_period_end
+                  ? format(new Date(billing.current_period_end), "d MMM yyyy")
+                  : "end of period"}
+                .
               </p>
             </div>
           )}
@@ -284,15 +263,13 @@ export default function BillingSettings() {
             <AlertDialogTitle>Switch to {targetIntervalLabel} billing?</AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <p>
-                You will be switched from{" "}
-                <span className="font-medium">{isAnnual ? "Annual" : "Monthly"}</span> to{" "}
+                You will be switched from <span className="font-medium">{isAnnual ? "Annual" : "Monthly"}</span> to{" "}
                 <span className="font-medium">{targetIntervalLabel}</span> billing at{" "}
                 <span className="font-medium">{targetPriceDisplay}</span>.
               </p>
               <p>
-                Your current billing period will be prorated, and the new rate will apply
-                immediately. Any remaining balance from your current period will be credited
-                towards the new charge.
+                Your current billing period will be prorated, and the new rate will apply immediately. Any remaining
+                balance from your current period will be credited towards the new charge.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -308,17 +285,10 @@ export default function BillingSettings() {
       <PlanSwitchDialog
         open={showPlanDialog}
         onOpenChange={setShowPlanDialog}
-        currentPlan={(currentPlan as "starter" | "pro")}
+        currentPlan={currentPlan as "starter" | "pro"}
         isAnnual={isAnnual}
         diagramCount={diagramCount}
-        onConfirm={async () => {
-          setPlanSwitching(true);
-          try {
-            await changePlan(targetPlan as "starter" | "pro");
-          } finally {
-            setPlanSwitching(false);
-          }
-        }}
+        onConfirm={() => changePlan(targetPlan as "starter" | "pro")}
       />
     </div>
   );
