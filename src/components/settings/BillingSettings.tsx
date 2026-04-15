@@ -6,6 +6,7 @@ import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownC
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
+import PlanSwitchDialog from "./PlanSwitchDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
