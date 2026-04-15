@@ -6,6 +6,7 @@ import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownC
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
+import PlanSwitchDialog from "./PlanSwitchDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -24,7 +25,6 @@ export default function BillingSettings() {
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [changingPlan, setChangingPlan] = useState(false);
   const [navigating, setNavigating] = useState(false);
 
   const handleManageBilling = async () => {
@@ -57,22 +57,6 @@ export default function BillingSettings() {
   const currentPlan = billing?.subscription_plan || "pro";
   const targetPlan = currentPlan === "starter" ? "pro" : "starter";
   const isUpgrade = targetPlan === "pro";
-
-  const handleChangePlan = async () => {
-    setChangingPlan(true);
-    try {
-      await changePlan(targetPlan as "starter" | "pro");
-      toast({
-        title: "Plan updated",
-        description: `Successfully switched to strukcha ${targetPlan === "pro" ? "Pro" : "Starter"}.`,
-      });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setChangingPlan(false);
-      setShowPlanDialog(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -316,48 +300,14 @@ export default function BillingSettings() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={showPlanDialog} onOpenChange={setShowPlanDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {isUpgrade ? "Upgrade to strukcha Pro?" : "Switch to strukcha Starter?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              {isUpgrade ? (
-                <>
-                  <p>
-                    You'll be upgraded from <span className="font-medium">Starter</span> to{" "}
-                    <span className="font-medium">Pro</span>. The price difference will be
-                    prorated and charged immediately.
-                  </p>
-                  <p>
-                    Pro includes up to <span className="font-medium">50 active structures</span> and
-                    all premium features.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p>
-                    You'll be switched from <span className="font-medium">Pro</span> to{" "}
-                    <span className="font-medium">Starter</span>. The change takes effect
-                    immediately with no proration charges.
-                  </p>
-                  <p>
-                    Starter is limited to <span className="font-medium">15 active structures</span>.
-                    Please ensure you are within this limit before switching.
-                  </p>
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={changingPlan}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleChangePlan} disabled={changingPlan}>
-              {changingPlan ? "Switching…" : "Confirm"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <PlanSwitchDialog
+        open={showPlanDialog}
+        onOpenChange={setShowPlanDialog}
+        currentPlan={(currentPlan as "starter" | "pro")}
+        isAnnual={isAnnual}
+        diagramCount={diagramCount}
+        onConfirm={() => changePlan(targetPlan as "starter" | "pro")}
+      />
     </div>
   );
 }
