@@ -25,7 +25,6 @@ export default function BillingSettings() {
   const [showSwitchDialog, setShowSwitchDialog] = useState(false);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [changingPlan, setChangingPlan] = useState(false);
   const [navigating, setNavigating] = useState(false);
 
   const handleManageBilling = async () => {
