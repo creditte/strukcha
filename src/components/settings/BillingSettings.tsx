@@ -197,6 +197,7 @@ export default function BillingSettings() {
                 size="sm"
                 className="gap-2"
                 onClick={() => setShowPlanDialog(true)}
+                disabled={isBusy}
               >
                 {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
                 {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
