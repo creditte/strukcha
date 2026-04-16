@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   UserPlus, MoreHorizontal, Ban, CheckCircle, RefreshCw, Loader2,
-  Mail, Shield, ShieldCheck, Crown, Trash2, RotateCcw, Info, Link2,
+  Mail, Shield, ShieldCheck, Crown, Trash2, RotateCcw, Info, Link2, CreditCard,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -88,6 +88,11 @@ export default function UsersPage() {
   // Change role dialog
   const [roleTarget, setRoleTarget] = useState<TenantUser | null>(null);
   const [roleValue, setRoleValue] = useState<"owner" | "admin" | "user">("user");
+
+  // Permission grant dialogs
+  const [grantIntegrationTarget, setGrantIntegrationTarget] = useState<TenantUser | null>(null);
+  const [grantBillingTarget, setGrantBillingTarget] = useState<TenantUser | null>(null);
+  const [conflictDialog, setConflictDialog] = useState<{ type: "integration" | "billing"; holderName: string } | null>(null);
 
   // ── derived ──────────────────────────────────────────────────────
   const activeOwnerCount = users.filter(
@@ -273,11 +278,16 @@ export default function UsersPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <RoleBadge role={u.role} />
                         {u.role === "admin" && u.can_manage_integrations && (
                           <Badge variant="outline" className="gap-1 text-[10px] border-green-500/60 text-green-600">
                             <Link2 className="h-2.5 w-2.5" /> Integrations
+                          </Badge>
+                        )}
+                        {u.role === "admin" && u.can_manage_billing && (
+                          <Badge variant="outline" className="gap-1 text-[10px] border-amber-500/60 text-amber-600">
+                            <CreditCard className="h-2.5 w-2.5" /> Billing
                           </Badge>
                         )}
                       </div>
@@ -349,17 +359,55 @@ export default function UsersPage() {
                             {isOwner && u.role === "admin" && u.status !== "deleted" && (
                               <DropdownMenuItem
                                 onClick={async () => {
-                                  const newVal = !u.can_manage_integrations;
-                                  try {
-                                    await callAction("toggle_integrations", { tenant_user_id: u.id, grant: newVal });
-                                    toast({ title: newVal ? "Integration access granted" : "Integration access revoked" });
-                                  } catch (e: any) {
-                                    toast({ title: "Failed", description: e.message, variant: "destructive" });
+                                  if (u.can_manage_integrations) {
+                                    // Revoke immediately
+                                    try {
+                                      await callAction("toggle_integrations", { tenant_user_id: u.id, grant: false });
+                                      toast({ title: "Integration access revoked" });
+                                    } catch (e: any) {
+                                      toast({ title: "Failed", description: e.message, variant: "destructive" });
+                                    }
+                                  } else {
+                                    // Pre-check: does another admin already hold this?
+                                    const existingHolder = users.find(x => x.can_manage_integrations && x.id !== u.id && x.status === "active");
+                                    if (existingHolder) {
+                                      setConflictDialog({ type: "integration", holderName: existingHolder.display_name || existingHolder.email });
+                                    } else {
+                                      setGrantIntegrationTarget(u);
+                                    }
                                   }
                                 }}
                               >
                                 <Link2 className="h-4 w-4 mr-2" />
                                 {u.can_manage_integrations ? "Revoke Integration Access" : "Grant Integration Access"}
+                              </DropdownMenuItem>
+                            )}
+
+                            {/* Grant / Revoke Billing Access (admin only, owner action) */}
+                            {isOwner && u.role === "admin" && u.status !== "deleted" && (
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  if (u.can_manage_billing) {
+                                    // Revoke immediately
+                                    try {
+                                      await callAction("toggle_billing", { tenant_user_id: u.id, grant: false });
+                                      toast({ title: "Billing access revoked" });
+                                    } catch (e: any) {
+                                      toast({ title: "Failed", description: e.message, variant: "destructive" });
+                                    }
+                                  } else {
+                                    // Pre-check: does another admin already hold this?
+                                    const existingBillHolder = users.find(x => x.can_manage_billing && x.id !== u.id && x.status === "active");
+                                    if (existingBillHolder) {
+                                      setConflictDialog({ type: "billing", holderName: existingBillHolder.display_name || existingBillHolder.email });
+                                    } else {
+                                      setGrantBillingTarget(u);
+                                    }
+                                  }
+                                }}
+                              >
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                {u.can_manage_billing ? "Revoke Billing Access" : "Grant Billing Access"}
                               </DropdownMenuItem>
                             )}
 
@@ -523,6 +571,112 @@ export default function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Grant Integration Access warning dialog */}
+      <AlertDialog open={!!grantIntegrationTarget} onOpenChange={(o) => !o && setGrantIntegrationTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Grant integration access</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <span className="block">
+                You are about to give this person full access to connect and manage third-party integrations for your firm, including XPM and any other connected platforms. This means they will be able to link accounts, configure sync settings, and manage data flowing between strukcha and your external tools.
+              </span>
+              <span className="block font-medium">
+                Only grant this to someone you fully trust with your firm's integration settings.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!grantIntegrationTarget) return;
+                try {
+                  await callAction("toggle_integrations", { tenant_user_id: grantIntegrationTarget.id, grant: true });
+                  toast({ title: "Integration access granted" });
+                } catch (e: any) {
+                  if (e.message?.includes("integration_already_granted")) {
+                    const holder = users.find(x => x.can_manage_integrations && x.id !== grantIntegrationTarget.id);
+                    setConflictDialog({ type: "integration", holderName: holder?.display_name || holder?.email || "another admin" });
+                  } else {
+                    toast({ title: "Failed", description: e.message, variant: "destructive" });
+                  }
+                }
+                setGrantIntegrationTarget(null);
+              }}
+            >
+              Yes, grant access
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Grant Billing Access warning dialog */}
+      <AlertDialog open={!!grantBillingTarget} onOpenChange={(o) => !o && setGrantBillingTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Grant plan & billing access</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <span className="block">
+                You are about to give this person the ability to manage your strukcha subscription on your behalf. This includes upgrading or downgrading your plan, updating payment details, and cancelling your subscription entirely.
+              </span>
+              <span className="block">
+                This action cannot be undone by the admin themselves. Only you as the account owner can revoke this permission.
+              </span>
+              <span className="block font-medium">
+                Only grant this to someone you fully trust with your firm's billing and subscription decisions.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={async () => {
+                if (!grantBillingTarget) return;
+                try {
+                  await callAction("toggle_billing", { tenant_user_id: grantBillingTarget.id, grant: true });
+                  toast({ title: "Billing access granted" });
+                } catch (e: any) {
+                  if (e.message?.includes("billing_already_granted")) {
+                    const holder = users.find(u => u.can_manage_billing && u.id !== grantBillingTarget.id);
+                    setConflictDialog({ type: "billing", holderName: holder?.display_name || holder?.email || "another admin" });
+                  } else {
+                    toast({ title: "Failed", description: e.message, variant: "destructive" });
+                  }
+                }
+                setGrantBillingTarget(null);
+              }}
+            >
+              Yes, grant access
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Conflict dialog — permission already granted to someone else */}
+      <AlertDialog open={!!conflictDialog} onOpenChange={(o) => !o && setConflictDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {conflictDialog?.type === "integration" ? "Integration access already granted" : "Billing access already granted"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                You have already granted {conflictDialog?.type === "integration" ? "integration" : "plan & billing"} access to <strong>{conflictDialog?.holderName}</strong>. For security reasons, only one person can hold this permission at a time.
+              </span>
+              <span className="block">
+                To give this person {conflictDialog?.type === "integration" ? "integration" : "billing"} access, you must first remove it from <strong>{conflictDialog?.holderName}</strong>.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setConflictDialog(null)}>
+              OK, got it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
