@@ -82,6 +82,7 @@ export default function Dashboard() {
   const atDiagramLimit = billing ? billing.diagram_count >= billing.diagram_limit : false;
   const permissionsLoaded = !usersLoading && !tenantLoading;
   const userRole = currentUser?.role ?? null;
+  const isOwnerOrAdmin = userRole === "owner" || userRole === "admin";
   const canManageIntegrations =
     permissionsLoaded &&
     (userRole === "owner" || (userRole === "admin" && currentUser?.can_manage_integrations === true));
