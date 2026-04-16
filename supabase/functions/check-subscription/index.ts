@@ -131,7 +131,23 @@ Deno.serve(async (req) => {
       } catch (e) {
         console.error("[check-subscription] Error fetching Stripe sub:", e);
       }
-    }
+          } else if (["active", "trialing"].includes(sub.status)) {
+            // Always sync current_period_end from Stripe even when statuses match
+            const stripePeriodEnd = sub.current_period_end
+              ? new Date(sub.current_period_end * 1000).toISOString()
+              : null;
+            const stripePeriodStart = sub.current_period_start
+              ? new Date(sub.current_period_start * 1000).toISOString()
+              : null;
+
+            if (stripePeriodEnd && stripePeriodEnd !== tenant.current_period_end) {
+              await supabaseAdmin.from("tenants").update({
+                current_period_end: stripePeriodEnd,
+                current_period_start: stripePeriodStart,
+              }).eq("id", profile.tenant_id);
+              tenant.current_period_end = stripePeriodEnd;
+            }
+          }
 
     // Determine effective diagram_limit based on subscription_status
     let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
