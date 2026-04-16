@@ -2,12 +2,19 @@ import { useBilling } from "@/hooks/useBilling";
 import { CreditCard, Sparkles, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useTenantUsers } from "@/hooks/useTenantUsers";
 
 export default function BillingBanner() {
   const { billing, loading, openPortal } = useBilling();
+  const { currentUser } = useTenantUsers();
   const { toast } = useToast();
 
+  const isOwner = currentUser?.role === "owner";
+
   if (loading || !billing) return null;
+
+  // Only owners can see billing actions
+  if (!isOwner) return null;
 
   const handleManage = async () => {
     try {
