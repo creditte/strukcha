@@ -117,11 +117,15 @@ Deno.serve(async (req) => {
 
         let plan = "pro";
         let diagramLimit = 100;
+        let periodStart: string | null = null;
+        let periodEnd: string | null = null;
         if (session.subscription) {
           const sub = await stripe.subscriptions.retrieve(session.subscription as string);
           const resolved = resolvePlanFromSubscription(sub);
           plan = resolved.plan;
           diagramLimit = resolved.diagramLimit;
+          periodStart = toISO(sub.current_period_start);
+          periodEnd = toISO(sub.current_period_end);
         }
 
         await supabaseAdmin
@@ -136,9 +140,11 @@ Deno.serve(async (req) => {
             access_enabled: true,
             access_locked_reason: null,
             diagram_limit: diagramLimit,
+            current_period_start: periodStart,
+            current_period_end: periodEnd,
           })
           .eq("id", workspaceId);
-        console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, limit=${diagramLimit}`);
+        console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, limit=${diagramLimit}, period_end=${periodEnd}`);
         break;
       }
 
