@@ -354,17 +354,45 @@ export default function UsersPage() {
                             {isOwner && u.role === "admin" && u.status !== "deleted" && (
                               <DropdownMenuItem
                                 onClick={async () => {
-                                  const newVal = !u.can_manage_integrations;
-                                  try {
-                                    await callAction("toggle_integrations", { tenant_user_id: u.id, grant: newVal });
-                                    toast({ title: newVal ? "Integration access granted" : "Integration access revoked" });
-                                  } catch (e: any) {
-                                    toast({ title: "Failed", description: e.message, variant: "destructive" });
+                                  if (u.can_manage_integrations) {
+                                    // Revoke immediately
+                                    try {
+                                      await callAction("toggle_integrations", { tenant_user_id: u.id, grant: false });
+                                      toast({ title: "Integration access revoked" });
+                                    } catch (e: any) {
+                                      toast({ title: "Failed", description: e.message, variant: "destructive" });
+                                    }
+                                  } else {
+                                    // Show grant warning dialog
+                                    setGrantIntegrationTarget(u);
                                   }
                                 }}
                               >
                                 <Link2 className="h-4 w-4 mr-2" />
                                 {u.can_manage_integrations ? "Revoke Integration Access" : "Grant Integration Access"}
+                              </DropdownMenuItem>
+                            )}
+
+                            {/* Grant / Revoke Billing Access (admin only, owner action) */}
+                            {isOwner && u.role === "admin" && u.status !== "deleted" && (
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  if (u.can_manage_billing) {
+                                    // Revoke immediately
+                                    try {
+                                      await callAction("toggle_billing", { tenant_user_id: u.id, grant: false });
+                                      toast({ title: "Billing access revoked" });
+                                    } catch (e: any) {
+                                      toast({ title: "Failed", description: e.message, variant: "destructive" });
+                                    }
+                                  } else {
+                                    // Show grant warning dialog
+                                    setGrantBillingTarget(u);
+                                  }
+                                }}
+                              >
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                {u.can_manage_billing ? "Revoke Billing Access" : "Grant Billing Access"}
                               </DropdownMenuItem>
                             )}
 
