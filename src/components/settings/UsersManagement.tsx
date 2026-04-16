@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   UserPlus, MoreHorizontal, Ban, CheckCircle, RefreshCw, Loader2,
-  Mail, Shield, ShieldCheck, Crown, Trash2, RotateCcw, Info, Link2,
+  Mail, Shield, ShieldCheck, Crown, Trash2, RotateCcw, Info, Link2, CreditCard,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -88,6 +88,11 @@ export default function UsersPage() {
   // Change role dialog
   const [roleTarget, setRoleTarget] = useState<TenantUser | null>(null);
   const [roleValue, setRoleValue] = useState<"owner" | "admin" | "user">("user");
+
+  // Permission grant dialogs
+  const [grantIntegrationTarget, setGrantIntegrationTarget] = useState<TenantUser | null>(null);
+  const [grantBillingTarget, setGrantBillingTarget] = useState<TenantUser | null>(null);
+  const [conflictDialog, setConflictDialog] = useState<{ type: "integration" | "billing"; holderName: string } | null>(null);
 
   // ── derived ──────────────────────────────────────────────────────
   const activeOwnerCount = users.filter(
