@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const role = currentUser?.role ?? null;
   const status = currentUser?.status ?? null;
   const isOwnerOrAdmin = role === "owner" || role === "admin";
+  const isOwner = role === "owner";
 
   if (loading) {
     return (
