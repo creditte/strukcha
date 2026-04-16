@@ -9,12 +9,12 @@ export default function BillingBanner() {
   const { currentUser } = useTenantUsers();
   const { toast } = useToast();
 
-  const isOwner = currentUser?.role === "owner";
+  const canManageBilling = currentUser?.role === "owner" || (currentUser?.role === "admin" && currentUser?.can_manage_billing);
 
   if (loading || !billing) return null;
 
-  // Only owners can see billing actions
-  if (!isOwner) return null;
+  // Only owners and admins with billing access can see billing actions
+  if (!canManageBilling) return null;
 
   const handleManage = async () => {
     try {
