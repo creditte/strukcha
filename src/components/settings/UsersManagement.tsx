@@ -368,8 +368,13 @@ export default function UsersPage() {
                                       toast({ title: "Failed", description: e.message, variant: "destructive" });
                                     }
                                   } else {
-                                    // Show grant warning dialog
-                                    setGrantIntegrationTarget(u);
+                                    // Pre-check: does another admin already hold this?
+                                    const existingHolder = users.find(x => x.can_manage_integrations && x.id !== u.id && x.status === "active");
+                                    if (existingHolder) {
+                                      setConflictDialog({ type: "integration", holderName: existingHolder.display_name || existingHolder.email });
+                                    } else {
+                                      setGrantIntegrationTarget(u);
+                                    }
                                   }
                                 }}
                               >
@@ -391,8 +396,13 @@ export default function UsersPage() {
                                       toast({ title: "Failed", description: e.message, variant: "destructive" });
                                     }
                                   } else {
-                                    // Show grant warning dialog
-                                    setGrantBillingTarget(u);
+                                    // Pre-check: does another admin already hold this?
+                                    const existingBillHolder = users.find(x => x.can_manage_billing && x.id !== u.id && x.status === "active");
+                                    if (existingBillHolder) {
+                                      setConflictDialog({ type: "billing", holderName: existingBillHolder.display_name || existingBillHolder.email });
+                                    } else {
+                                      setGrantBillingTarget(u);
+                                    }
                                   }
                                 }}
                               >
