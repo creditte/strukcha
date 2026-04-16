@@ -561,6 +561,119 @@ export default function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Grant Integration Access warning dialog */}
+      <AlertDialog open={!!grantIntegrationTarget} onOpenChange={(o) => !o && setGrantIntegrationTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Grant integration access</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <span className="block">
+                You are about to give this person full access to connect and manage third-party integrations for your firm, including XPM and any other connected platforms. This means they will be able to link accounts, configure sync settings, and manage data flowing between strukcha and your external tools.
+              </span>
+              <span className="block font-medium">
+                Only grant this to someone you fully trust with your firm's integration settings.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!grantIntegrationTarget) return;
+                try {
+                  await callAction("toggle_integrations", { tenant_user_id: grantIntegrationTarget.id, grant: true });
+                  toast({ title: "Integration access granted" });
+                } catch (e: any) {
+                  if (e.message?.includes("integration_already_granted")) {
+                    // Parse the holder name from the error response
+                    try {
+                      const parsed = JSON.parse(e.message.replace("Request failed", "").trim());
+                      setConflictDialog({ type: "integration", holderName: parsed.holder_name });
+                    } catch {
+                      // Fallback: try to get from the users list
+                      const holder = users.find(u => u.can_manage_integrations && u.id !== grantIntegrationTarget.id);
+                      setConflictDialog({ type: "integration", holderName: holder?.display_name || holder?.email || "another admin" });
+                    }
+                  } else {
+                    toast({ title: "Failed", description: e.message, variant: "destructive" });
+                  }
+                }
+                setGrantIntegrationTarget(null);
+              }}
+            >
+              Yes, grant access
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Grant Billing Access warning dialog */}
+      <AlertDialog open={!!grantBillingTarget} onOpenChange={(o) => !o && setGrantBillingTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Grant plan & billing access</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <span className="block">
+                You are about to give this person the ability to manage your strukcha subscription on your behalf. This includes upgrading or downgrading your plan, updating payment details, and cancelling your subscription entirely.
+              </span>
+              <span className="block">
+                This action cannot be undone by the admin themselves. Only you as the account owner can revoke this permission.
+              </span>
+              <span className="block font-medium">
+                Only grant this to someone you fully trust with your firm's billing and subscription decisions.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={async () => {
+                if (!grantBillingTarget) return;
+                try {
+                  await callAction("toggle_billing", { tenant_user_id: grantBillingTarget.id, grant: true });
+                  toast({ title: "Billing access granted" });
+                } catch (e: any) {
+                  if (e.message?.includes("billing_already_granted")) {
+                    const holder = users.find(u => u.can_manage_billing && u.id !== grantBillingTarget.id);
+                    setConflictDialog({ type: "billing", holderName: holder?.display_name || holder?.email || "another admin" });
+                  } else {
+                    toast({ title: "Failed", description: e.message, variant: "destructive" });
+                  }
+                }
+                setGrantBillingTarget(null);
+              }}
+            >
+              Yes, grant access
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Conflict dialog — permission already granted to someone else */}
+      <AlertDialog open={!!conflictDialog} onOpenChange={(o) => !o && setConflictDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {conflictDialog?.type === "integration" ? "Integration access already granted" : "Billing access already granted"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                You have already granted {conflictDialog?.type === "integration" ? "integration" : "plan & billing"} access to <strong>{conflictDialog?.holderName}</strong>. For security reasons, only one person can hold this permission at a time.
+              </span>
+              <span className="block">
+                To give this person {conflictDialog?.type === "integration" ? "integration" : "billing"} access, you must first remove it from <strong>{conflictDialog?.holderName}</strong>.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setConflictDialog(null)}>
+              OK, got it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
