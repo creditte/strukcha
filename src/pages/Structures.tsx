@@ -10,8 +10,12 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import {
   Search, Users, RefreshCw, AlertCircle, Plus, Settings, FileBox,
   Calendar, Trash2, Waypoints, Network, Loader2, ChevronRight, PenLine, Star, Clock, Copy,
+  Archive, ArchiveRestore, MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
@@ -26,6 +30,9 @@ import {
   BreadcrumbSeparator, BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { useAuth } from "@/hooks/useAuth";
+import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
+import { useBilling } from "@/hooks/useBilling";
+import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 
 interface XpmGroup {
   xpm_uuid: string;
@@ -40,6 +47,7 @@ interface ManualStructure {
   is_scenario?: boolean;
   scenario_label?: string | null;
   parent_structure_id?: string | null;
+  archived_at?: string | null;
 }
 
 type Tab = "xpm" | "manual";
@@ -48,6 +56,20 @@ const MAX_FAVOURITES = 10;
 export default function Structures() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { tenant } = useSharedTenantSettings();
+  const { billing } = useBilling();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Fetch current user's tenant role
+  useEffect(() => {
+    supabase.rpc("get_my_tenant_user").then(({ data }) => {
+      if (data && typeof data === "object" && "role" in data) {
+        setUserRole((data as any).role);
+      }
+    });
+  }, []);
+
+  const canManageStructures = userRole === "owner" || userRole === "admin";
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem("structures_active_tab");
@@ -74,9 +96,21 @@ export default function Structures() {
   const [manualLoading, setManualLoading] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const limitReached = billing ? billing.diagram_count >= billing.diagram_limit : false;
+
+  const handleCreateClick = () => {
+    if (limitReached) {
+      setShowLimitDialog(true);
+    } else {
+      setShowCreateModal(true);
+    }
+  };
 
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
@@ -199,7 +233,7 @@ export default function Structures() {
       const [manualRes, scenarioRes] = await Promise.all([
         supabase
           .from("structures")
-          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
           .eq("tenant_id", tenantId)
           .eq("is_scenario", false)
           .eq("source", "manual")
@@ -207,7 +241,7 @@ export default function Structures() {
           .order("created_at", { ascending: false }),
         supabase
           .from("structures")
-          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id")
+          .select("id, name, created_at, is_scenario, scenario_label, parent_structure_id, archived_at")
           .eq("tenant_id", tenantId)
           .eq("is_scenario", true)
           .is("deleted_at", null)
@@ -236,6 +270,7 @@ export default function Structures() {
           is_scenario: s.is_scenario,
           scenario_label: s.scenario_label,
           parent_structure_id: s.parent_structure_id,
+          archived_at: s.archived_at,
         }))
       );
     } catch (err) {
@@ -245,9 +280,20 @@ export default function Structures() {
     }
   }
 
+  const activeManualStructures = useMemo(
+    () => manualStructures.filter((s) => !s.archived_at),
+    [manualStructures],
+  );
+
+  const archivedManualStructures = useMemo(
+    () => manualStructures.filter((s) => !!s.archived_at),
+    [manualStructures],
+  );
+
   const filteredManual = useMemo(
-    () => manualStructures.filter((s) => s.name.toLowerCase().includes(manualSearch.toLowerCase())),
-    [manualStructures, manualSearch],
+    () => (showArchived ? archivedManualStructures : activeManualStructures)
+      .filter((s) => s.name.toLowerCase().includes(manualSearch.toLowerCase())),
+    [activeManualStructures, archivedManualStructures, showArchived, manualSearch],
   );
 
   const filteredXpmGroups = useMemo(
@@ -308,6 +354,46 @@ export default function Structures() {
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
+    }
+  }
+
+  async function handleArchiveStructure(structure: ManualStructure) {
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ archived_at: new Date().toISOString() } as any)
+        .eq("id", structure.id);
+      if (error) throw error;
+      setManualStructures((prev) =>
+        prev.map((s) => s.id === structure.id ? { ...s, archived_at: new Date().toISOString() } : s)
+      );
+      toast.success("Structure archived");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to archive structure");
+    }
+  }
+
+  async function handleUnarchiveStructure(structure: ManualStructure) {
+    // Check plan limit before unarchiving
+    if (tenant && tenant.diagram_limit > 0) {
+      const activeCount = manualStructures.filter((s) => !s.archived_at && !s.is_scenario).length;
+      if (activeCount >= tenant.diagram_limit) {
+        toast.error(`You've reached your limit of ${tenant.diagram_limit} active structures. Archive an existing structure first to make room.`);
+        return;
+      }
+    }
+    try {
+      const { error } = await supabase
+        .from("structures")
+        .update({ archived_at: null } as any)
+        .eq("id", structure.id);
+      if (error) throw error;
+      setManualStructures((prev) =>
+        prev.map((s) => s.id === structure.id ? { ...s, archived_at: null } : s)
+      );
+      toast.success("Structure unarchived");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to unarchive structure");
     }
   }
 
@@ -638,10 +724,12 @@ export default function Structures() {
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-foreground">My Structures</h2>
-                {manualStructures.length > 0 && (
+                <h2 className="text-sm font-semibold text-foreground">
+                  {showArchived ? "Archived Structures" : "My Structures"}
+                </h2>
+                {(showArchived ? archivedManualStructures : activeManualStructures).length > 0 && (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                    {manualStructures.length}
+                    {(showArchived ? archivedManualStructures : activeManualStructures).length}
                   </Badge>
                 )}
               </div>
@@ -651,6 +739,17 @@ export default function Structures() {
             </div>
             <div className="flex items-center gap-2">
               {manualStructures.length > 0 && (
+                <Button
+                  variant={showArchived ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => setShowArchived(!showArchived)}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  {showArchived ? "View Active" : `Archived (${archivedManualStructures.length})`}
+                </Button>
+              )}
+              {manualStructures.length > 0 && !showArchived && (
                 <div className="relative w-48">
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -661,14 +760,27 @@ export default function Structures() {
                   />
                 </div>
               )}
-              <Button
-                size="sm"
-                className="h-8 text-xs gap-1.5"
-                onClick={() => setShowCreateModal(true)}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Create Structure
-              </Button>
+              {showArchived && archivedManualStructures.length > 0 && (
+                <div className="relative w-48">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Filter archived..."
+                    className="h-8 pl-8 text-xs"
+                    value={manualSearch}
+                    onChange={(e) => setManualSearch(e.target.value)}
+                  />
+                </div>
+              )}
+              {canManageStructures && !showArchived && (
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={handleCreateClick}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Create Structure
+                </Button>
+              )}
             </div>
           </div>
 
@@ -680,21 +792,23 @@ export default function Structures() {
             </div>
           )}
 
-          {!manualLoading && manualStructures.length === 0 && (
+          {!manualLoading && !showArchived && activeManualStructures.length === 0 && (
             <div className="text-center py-16 text-muted-foreground">
               <FileBox className="h-10 w-10 mx-auto mb-3 opacity-40" />
               <p className="text-sm font-medium text-foreground">No structures yet</p>
               <p className="text-xs mt-1.5 max-w-md mx-auto leading-relaxed">
                 Create structures independently of XPM — ideal for prospective clients, restructure scenarios, or standalone planning work.
               </p>
-              <Button
-                size="sm"
-                className="mt-5 gap-1.5"
-                onClick={() => setShowCreateModal(true)}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Create Structure
-              </Button>
+              {canManageStructures && (
+                <Button
+                  size="sm"
+                  className="mt-5 gap-1.5"
+                  onClick={handleCreateClick}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Create Structure
+                </Button>
+              )}
             </div>
           )}
 
@@ -706,12 +820,44 @@ export default function Structures() {
                   className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30 relative group hover:bg-accent/30"
                   onClick={() => navigate(`/structures/${s.id}`)}
                 >
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
-                    className="absolute top-3 right-3 p-1 rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all z-10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {canManageStructures && (
+                    <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          {showArchived ? (
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleUnarchiveStructure(s); }}
+                            >
+                              <ArchiveRestore className="h-3.5 w-3.5 mr-2" />
+                              Unarchive
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleArchiveStructure(s); }}
+                            >
+                              <Archive className="h-3.5 w-3.5 mr-2" />
+                              Archive
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shrink-0">
@@ -755,6 +901,11 @@ export default function Structures() {
                           </TooltipContent>
                         </Tooltip>
                       )}
+                      {s.archived_at && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium gap-1">
+                          <Archive className="h-2.5 w-2.5" /> Archived
+                        </Badge>
+                      )}
                       {s.scenario_label && (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium">
                           {s.scenario_label}
@@ -767,8 +918,18 @@ export default function Structures() {
             </div>
           )}
 
-          {!manualLoading && filteredManual.length === 0 && manualStructures.length > 0 && (
+          {!manualLoading && filteredManual.length === 0 && (showArchived ? archivedManualStructures : activeManualStructures).length > 0 && (
             <p className="text-xs text-muted-foreground py-4 text-center">No structures match your search.</p>
+          )}
+
+          {!manualLoading && showArchived && archivedManualStructures.length === 0 && (
+            <div className="text-center py-16 text-muted-foreground">
+              <Archive className="h-10 w-10 mx-auto mb-3 opacity-40" />
+              <p className="text-sm font-medium text-foreground">No archived structures</p>
+              <p className="text-xs mt-1.5 max-w-md mx-auto leading-relaxed">
+                When you archive a structure, it will appear here. Archived structures don't count toward your plan limit.
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -798,6 +959,8 @@ export default function Structures() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
     </div>
     </TooltipProvider>
   );

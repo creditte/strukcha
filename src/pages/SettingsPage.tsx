@@ -14,6 +14,8 @@ export default function SettingsPage() {
   const role = currentUser?.role ?? null;
   const status = currentUser?.status ?? null;
   const isOwnerOrAdmin = role === "owner" || role === "admin";
+  const isOwner = role === "owner";
+  const canSeeBilling = isOwner || (role === "admin" && currentUser?.can_manage_billing === true);
 
   if (loading) {
     return (
@@ -67,7 +69,7 @@ export default function SettingsPage() {
           <TabsTrigger value="security" className="gap-1.5">
             <Lock className="h-3.5 w-3.5" /> Security
           </TabsTrigger>
-          {isOwnerOrAdmin && (
+          {canSeeBilling && (
             <TabsTrigger value="billing" className="gap-1.5">
               <CreditCard className="h-3.5 w-3.5" /> Billing
             </TabsTrigger>
@@ -93,7 +95,7 @@ export default function SettingsPage() {
           <MfaSettings />
         </TabsContent>
 
-        {isOwnerOrAdmin && (
+        {canSeeBilling && (
           <TabsContent value="billing" className="mt-4">
             <BillingSettings />
           </TabsContent>

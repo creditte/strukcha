@@ -4,6 +4,7 @@ import autoTable from "jspdf-autotable";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { HealthScoreV2 } from "@/lib/structureScoring";
 import { getEntityLabel } from "@/lib/entityTypes";
+import { isDiscretionaryTrustBeneficiary } from "@/lib/relationshipRules";
 import { EDGE_COLORS } from "@/components/structure/StructureGraph";
 
 /* ── Helpers ── */
@@ -102,15 +103,16 @@ export function exportRelationshipsCsv(
   const rows = relationships.map((r) => {
     const from = entityMap.get(r.from_entity_id);
     const to = entityMap.get(r.to_entity_id);
+    const hideOwnership = to && isDiscretionaryTrustBeneficiary(r.relationship_type, to.entity_type);
     return [
       escapeCsv(from?.name ?? r.from_entity_id),
       escapeCsv(getEntityLabel(from?.entity_type ?? "Unclassified")),
-      r.relationship_type,
+      escapeCsv(r.relationship_type),
       escapeCsv(to?.name ?? r.to_entity_id),
       escapeCsv(getEntityLabel(to?.entity_type ?? "Unclassified")),
-      r.ownership_percent ?? "",
-      r.ownership_units ?? "",
-      escapeCsv(r.ownership_class ?? ""),
+      hideOwnership ? "" : (r.ownership_percent ?? ""),
+      hideOwnership ? "" : (r.ownership_units ?? ""),
+      hideOwnership ? "" : escapeCsv(r.ownership_class ?? ""),
       r.created_at,
     ].join(",");
   });
@@ -596,11 +598,12 @@ export async function exportPdf(
   const relRows = relationships.map((r) => {
     const from = entityMap.get(r.from_entity_id);
     const to = entityMap.get(r.to_entity_id);
+    const hideOwnership = to && isDiscretionaryTrustBeneficiary(r.relationship_type, to.entity_type);
     return {
       fromName: sanitise(from?.name ?? r.from_entity_id),
       relType: r.relationship_type,
       toName: sanitise(to?.name ?? r.to_entity_id),
-      pct: r.ownership_percent,
+      pct: hideOwnership ? null : r.ownership_percent,
     };
   });
   relRows.sort((a, b) => relSortKey(a).localeCompare(relSortKey(b)));

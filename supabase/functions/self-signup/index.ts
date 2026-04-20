@@ -6,7 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PRICE_ID = "price_1TDLyr03zgsCflnsVAheazkG";
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
@@ -53,10 +52,12 @@ Deno.serve(async (req) => {
     });
 
   try {
-    const { fullName, email, password, firmName } = await req.json();
+    const { fullName, email, password, firmName, selectedPlan, selectedBilling } = await req.json();
     if (!email || !password || !firmName || !fullName) {
       return json({ error: "Missing required fields" }, 400);
     }
+    const plan = selectedPlan || "pro";
+    const billing = selectedBilling || "monthly";
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -82,8 +83,12 @@ Deno.serve(async (req) => {
 
     // 2. Create the tenant
     const now = new Date();
-    // TODO: Change back to 7 days for production: 7 * 24 * 60 * 60 * 1000
-    const trialEnd = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes for testing
+    // 10-minute trial for testing
+    const trialEnd = new Date(now.getTime() + 10 * 60 * 1000);
+
+    // Determine plan limits
+    const planLimits: Record<string, number> = { starter: 15, pro: 50 };
+    const diagramLimit = planLimits[plan] || 50;
 
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from("tenants")
@@ -93,13 +98,15 @@ Deno.serve(async (req) => {
         trial_starts_at: now.toISOString(),
         trial_ends_at: trialEnd.toISOString(),
         subscription_status: "trialing",
+        subscription_plan: plan,
+        diagram_limit: diagramLimit,
       })
       .select("id")
       .single();
 
     if (tenantError) throw tenantError;
 
-    // 2b. Create Stripe customer + subscription with 7-day trial
+    // 2b. Create Stripe customer only (NO subscription yet — subscription created via Checkout after trial)
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
@@ -109,23 +116,12 @@ Deno.serve(async (req) => {
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
         });
 
-        // TODO: Change back to trial_period_days: 7 for production
-        const trialEndUnix = Math.floor(trialEnd.getTime() / 1000);
-        const subscription = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{ price: PRICE_ID }],
-          trial_end: trialEndUnix,
-          metadata: { workspace_id: tenant.id },
-        });
-
         await supabaseAdmin.from("tenants").update({
           stripe_customer_id: customer.id,
-          stripe_subscription_id: subscription.id,
-          subscription_status: "trialing",
           trial_used_at: now.toISOString(),
         }).eq("id", tenant.id);
 
-        console.log(`[Signup] Stripe customer ${customer.id} and subscription ${subscription.id} created with 7-day trial`);
+        console.log(`[Signup] Stripe customer ${customer.id} created (no subscription — trial only)`);
       } catch (stripeErr: any) {
         console.error("[Signup] Stripe setup failed:", stripeErr.message);
       }
@@ -153,6 +149,8 @@ Deno.serve(async (req) => {
         full_name: fullName,
         status: "active",
         onboarding_complete: true,
+        selected_plan: plan,
+        selected_billing: billing,
       }, { onConflict: "user_id" });
     if (profileError) throw profileError;
 

@@ -119,6 +119,16 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
     metadataFields: ["ownership_percent", "ownership_units", "ownership_class"],
   },
   {
+    type: "unit_holder",
+    label: "Unit Holder",
+    allowedSourceTypes: ["individual", "company", "discretionary_trust", "unit_trust", "smsf"],
+    allowedTargetTypes: ["unit_trust"],
+    allowReverse: false,
+    validationMessage: "Unit holders can only be linked to unit trusts.",
+    category: "ownership",
+    metadataFields: ["ownership_percent", "ownership_units", "ownership_class"],
+  },
+  {
     type: "trustee",
     label: "Trustee",
     allowedSourceTypes: ["individual", "company"],
@@ -131,7 +141,7 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
   {
     type: "beneficiary",
     label: "Beneficiary",
-    allowedSourceTypes: ["individual", "company", "discretionary_trust"],
+    allowedSourceTypes: ["individual", "company", "discretionary_trust", "smsf"],
     allowedTargetTypes: ["discretionary_trust", "hybrid_trust", "other_trust"],
     allowReverse: false,
     validationMessage: "Beneficiaries can only be linked to eligible trust entities.",
@@ -140,11 +150,11 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
   },
   {
     type: "member",
-    label: "Unitholder / Member",
+    label: "Member",
     allowedSourceTypes: ["individual", "company", "discretionary_trust", "smsf"],
-    allowedTargetTypes: ["unit_trust"],
+    allowedTargetTypes: ["unit_trust", "smsf"],
     allowReverse: false,
-    validationMessage: "Unitholders can only be linked to unit trusts.",
+    validationMessage: "Members can only be linked to unit trusts or SMSFs.",
     category: "ownership",
     metadataFields: ["ownership_percent", "ownership_units"],
   },
@@ -152,7 +162,7 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
     type: "appointer",
     label: "Appointor",
     allowedSourceTypes: ["individual", "company"],
-    allowedTargetTypes: ["discretionary_trust", "hybrid_trust", "other_trust"],
+    allowedTargetTypes: ["discretionary_trust", "unit_trust", "hybrid_trust", "other_trust"],
     allowReverse: false,
     validationMessage: "Appointors must be individuals or companies and can only be linked to trusts.",
     category: "governance",
@@ -225,6 +235,24 @@ export function getRelationshipLabel(relationshipType: string): string {
     ?? relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
 }
 
+// ── Bare trust beneficiary restriction ────────────────────────────
+
+/** Bare trusts only allow Individual, Company, SMSF as beneficiaries */
+const BARE_TRUST_TYPES = new Set(["trust_bare"]);
+
+const BARE_TRUST_ALLOWED_BENEFICIARY_SOURCES: readonly CanonicalEntityCategory[] = [
+  "individual",
+  "company",
+  "smsf",
+];
+
+export function isBareTrustBeneficiary(
+  relationshipType: string,
+  targetEntityType: string,
+): boolean {
+  return relationshipType === "beneficiary" && BARE_TRUST_TYPES.has(targetEntityType);
+}
+
 // ── Validation functions ─────────────────────────────────────────
 
 /**
@@ -241,7 +269,14 @@ export function isDirectionValid(
 
   const sourceOk = matchesCategories(fromEntityType, rule.allowedSourceTypes);
   const targetOk = matchesCategories(toEntityType, rule.allowedTargetTypes);
-  return sourceOk && targetOk;
+  if (!sourceOk || !targetOk) return false;
+
+  // Bare trusts restrict beneficiary source types
+  if (isBareTrustBeneficiary(relationshipType, toEntityType)) {
+    return matchesCategories(fromEntityType, BARE_TRUST_ALLOWED_BENEFICIARY_SOURCES);
+  }
+
+  return true;
 }
 
 /**

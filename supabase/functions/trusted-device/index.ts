@@ -92,8 +92,6 @@ Deno.serve(async (req) => {
       }
 
       const tokenHash = await sha256(deviceToken);
-      const clientIp = getClientIp(req);
-      const userAgent = req.headers.get("user-agent") || "";
 
       const { data: device } = await supabaseAdmin
         .from("trusted_devices")
@@ -110,28 +108,17 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Check IP match
-      if (device.ip_address !== clientIp) {
-        return new Response(
-          JSON.stringify({ trusted: false, reason: "ip_mismatch" }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Check user agent match (normalize whitespace for comparison)
-      const storedUA = (device.user_agent || "").trim().toLowerCase();
-      const currentUA = userAgent.trim().toLowerCase();
-      if (storedUA !== currentUA) {
-        return new Response(
-          JSON.stringify({ trusted: false, reason: "ua_mismatch" }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Valid! Update last_used_at
+      // Valid! Update last_used_at and current IP/UA for display purposes
+      const clientIp = getClientIp(req);
+      const userAgent = req.headers.get("user-agent") || "";
       await supabaseAdmin
         .from("trusted_devices")
-        .update({ last_used_at: new Date().toISOString() })
+        .update({
+          last_used_at: new Date().toISOString(),
+          ip_address: clientIp,
+          user_agent: userAgent,
+          device_label: parseUserAgent(userAgent),
+        })
         .eq("id", device.id);
 
       return new Response(

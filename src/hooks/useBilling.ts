@@ -5,6 +5,8 @@ import { useAuth } from "@/hooks/useAuth";
 export interface BillingStatus {
   subscription_status: string;
   subscription_plan: string | null;
+  selected_plan: string | null;
+  pending_downgrade: string | null;
   access_enabled: boolean;
   access_locked_reason: string | null;
   trial_ends_at: string | null;
@@ -12,6 +14,9 @@ export interface BillingStatus {
   diagram_limit: number;
   diagram_count: number;
   cancel_at_period_end: boolean;
+  billing_interval: string | null;
+  price_amount: number | null;
+  last_plan_switch_at: string | null;
 }
 
 export function useBilling() {
@@ -80,5 +85,21 @@ export function useBilling() {
     if (data.url) window.location.href = data.url;
   };
 
-  return { billing, loading, error, reload: load, openPortal, startCheckout };
+  const switchBillingInterval = async () => {
+    const { data, error } = await supabase.functions.invoke("switch-billing-interval");
+    if (error || data?.error) throw new Error(data?.error || error?.message);
+    await load({ background: true });
+    return data;
+  };
+
+  const changePlan = async (targetPlan: "starter" | "pro") => {
+    const { data, error } = await supabase.functions.invoke("change-plan", {
+      body: { target_plan: targetPlan },
+    });
+    if (error || data?.error) throw new Error(data?.error || error?.message);
+    await load({ background: true });
+    return data;
+  };
+
+  return { billing, loading, error, reload: load, openPortal, startCheckout, switchBillingInterval, changePlan };
 }

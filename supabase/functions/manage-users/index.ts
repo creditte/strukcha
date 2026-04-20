@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
       if (!tenant_user_id || !tenant_id || grant === undefined) return json({ error: "tenant_user_id, tenant_id and grant required" }, 400);
 
       // Verify caller is owner
-      const { data: callerTu } = await adminClient
+      const { data: callerTuInt } = await adminClient
         .from("tenant_users")
         .select("role")
         .eq("tenant_id", tenant_id)
@@ -191,25 +191,102 @@ Deno.serve(async (req) => {
         .eq("status", "active")
         .single();
 
-      if (callerTu?.role !== "owner") return json({ error: "Only owners can manage integration access" }, 403);
+      if (callerTuInt?.role !== "owner") return json({ error: "Only owners can manage integration access" }, 403);
 
       // Verify target is an admin
-      const { data: targetTu } = await adminClient
+      const { data: targetTuInt } = await adminClient
         .from("tenant_users")
         .select("role")
         .eq("id", tenant_user_id)
         .eq("tenant_id", tenant_id)
         .single();
 
-      if (targetTu?.role !== "admin") return json({ error: "Integration access can only be granted to admin users" }, 400);
+      if (targetTuInt?.role !== "admin") return json({ error: "Integration access can only be granted to admin users" }, 400);
 
-      const { error: updateErr } = await adminClient
+      // If granting, check exclusivity — only one admin can hold this at a time
+      if (grant) {
+        const { data: existingHolder } = await adminClient
+          .from("tenant_users")
+          .select("id, display_name, email")
+          .eq("tenant_id", tenant_id)
+          .eq("can_manage_integrations", true)
+          .eq("status", "active")
+          .neq("id", tenant_user_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingHolder) {
+          return json({
+            error: "integration_already_granted",
+            holder_name: existingHolder.display_name || existingHolder.email,
+          }, 409);
+        }
+      }
+
+      const { error: updateErrInt } = await adminClient
         .from("tenant_users")
         .update({ can_manage_integrations: !!grant })
         .eq("id", tenant_user_id)
         .eq("tenant_id", tenant_id);
 
-      if (updateErr) return json({ error: updateErr.message }, 400);
+      if (updateErrInt) return json({ error: updateErrInt.message }, 400);
+
+      return json({ success: true });
+    }
+
+    // ── toggle_billing ──────────────────────────────────────────────
+    if (action === "toggle_billing") {
+      const { tenant_user_id, grant } = body;
+      if (!tenant_user_id || !tenant_id || grant === undefined) return json({ error: "tenant_user_id, tenant_id and grant required" }, 400);
+
+      // Verify caller is owner
+      const { data: callerTuBill } = await adminClient
+        .from("tenant_users")
+        .select("role")
+        .eq("tenant_id", tenant_id)
+        .eq("auth_user_id", callingUser.id)
+        .eq("status", "active")
+        .single();
+
+      if (callerTuBill?.role !== "owner") return json({ error: "Only owners can manage billing access" }, 403);
+
+      // Verify target is an admin
+      const { data: targetTuBill } = await adminClient
+        .from("tenant_users")
+        .select("role")
+        .eq("id", tenant_user_id)
+        .eq("tenant_id", tenant_id)
+        .single();
+
+      if (targetTuBill?.role !== "admin") return json({ error: "Billing access can only be granted to admin users" }, 400);
+
+      // If granting, check exclusivity
+      if (grant) {
+        const { data: existingBillHolder } = await adminClient
+          .from("tenant_users")
+          .select("id, display_name, email")
+          .eq("tenant_id", tenant_id)
+          .eq("can_manage_billing", true)
+          .eq("status", "active")
+          .neq("id", tenant_user_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingBillHolder) {
+          return json({
+            error: "billing_already_granted",
+            holder_name: existingBillHolder.display_name || existingBillHolder.email,
+          }, 409);
+        }
+      }
+
+      const { error: updateErrBill } = await adminClient
+        .from("tenant_users")
+        .update({ can_manage_billing: !!grant })
+        .eq("id", tenant_user_id)
+        .eq("tenant_id", tenant_id);
+
+      if (updateErrBill) return json({ error: updateErrBill.message }, 400);
 
       return json({ success: true });
     }

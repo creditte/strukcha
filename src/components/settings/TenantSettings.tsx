@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Building2, Upload, Trash2, Loader2, Palette, FileText, Save, ChevronDown, X } from "lucide-react";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
+import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 
 interface Props {
   isAdmin?: boolean;
@@ -21,6 +22,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const { currentUser } = useTenantUsers();
+  const { reload: reloadTenant } = useSharedTenantSettings();
   const isOwner = currentUser?.role === "owner";
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +118,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     } else {
       toast({ title: "Settings saved" });
       setInitial({ ...currentState });
+      reloadTenant();
     }
     setSaving(false);
   }, [tenantId, firmName, brandColor, exportFooter, exportDisclaimer, showDisclaimer, blockOnCritical, defaultViewMode, allowAdminIntegrations, isOwner, toast]);
@@ -159,6 +162,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     } else {
       setLogoUrl(publicUrl);
       toast({ title: "Logo uploaded" });
+      reloadTenant();
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = "";
@@ -174,6 +178,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
     await supabase.from("tenants").update({ logo_url: null }).eq("id", tenantId);
     setLogoUrl(null);
     toast({ title: "Logo removed" });
+    reloadTenant();
     setUploading(false);
   };
 
@@ -257,15 +262,25 @@ export default function TenantSettings({ isAdmin = false }: Props) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">Used as subtle accent in exports (lines, borders).</p>
             <div className="flex items-center gap-3">
-              <input
-                type="color"
+              <label className="relative h-10 w-12 cursor-pointer rounded-md border border-input overflow-hidden shrink-0">
+                <span
+                  className="absolute inset-0"
+                  style={{ backgroundColor: brandColor }}
+                />
+                <input
+                  type="color"
+                  value={brandColor}
+                  onChange={(e) => setBrandColor(e.target.value)}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                />
+              </label>
+              <Input
                 value={brandColor}
                 onChange={(e) => setBrandColor(e.target.value)}
-                className="h-9 w-12 cursor-pointer rounded border border-input"
+                className="w-28 font-mono text-xs"
+                placeholder="#0F172A"
               />
-              <Input value={brandColor} onChange={(e) => setBrandColor(e.target.value)} className="w-28 font-mono text-xs" placeholder="#0F172A" />
             </div>
             <p className="text-xs text-muted-foreground">Used as accent colour in exported PDFs and reports.</p>
           </CardContent>

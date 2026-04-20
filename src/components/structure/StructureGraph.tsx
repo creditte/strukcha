@@ -29,6 +29,7 @@ const nodeTypes = { entity: EntityNodeComponent };
 export const EDGE_COLORS: Record<string, string> = {
   director: "#3b82f6",
   shareholder: "#10b981",
+  unit_holder: "#22c55e",
   beneficiary: "#f59e0b",
   trustee: "#8b5cf6",
   appointer: "#ec4899",
@@ -134,13 +135,16 @@ function buildEdges(
       }
     }
 
+    const edgeLabel = invalid ? `⚠ ${buildEdgeLabel(r, entityMap)}` : buildEdgeLabel(r, entityMap);
+
     return {
       id: r.id,
       source: r.from_entity_id,
       target: r.to_entity_id,
-      label: invalid ? `⚠ ${buildEdgeLabel(r, entityMap)}` : buildEdgeLabel(r, entityMap),
+      label: edgeLabel,
       type: "default",
       animated: false,
+      className: invalid ? "react-flow__edge--invalid" : "",
       style: {
         stroke: invalid ? "#ef4444" : (EDGE_COLORS[r.relationship_type] ?? "#94a3b8"),
         strokeWidth: deEmphasize ? 1 : 2,
@@ -208,6 +212,7 @@ function StructureGraphInner({
 }: Props) {
   const { fitView, screenToFlowPosition } = useReactFlow();
   const prevLayoutTrigger = useRef(0);
+  const initialFitDone = useRef(false);
   const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   const getPinnedPositions = useCallback(() => {
@@ -277,7 +282,13 @@ function StructureGraphInner({
       }
     }
     setEdges(buildEdges(relationships, viewMode, entityMap));
-  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions]);
+
+    // Auto-fit on initial data load
+    if (!initialFitDone.current && entities.length > 0) {
+      initialFitDone.current = true;
+      setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 80);
+    }
+  }, [entities, relationships, layoutMode, viewMode, setNodes, setEdges, getPinnedPositions, layoutStrategy, dbPositions, fitView]);
 
   // Auto-layout button trigger
   useEffect(() => {

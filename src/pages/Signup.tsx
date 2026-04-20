@@ -33,6 +33,22 @@ export default function Signup() {
   const navigate = useNavigate();
   const autoSubmitTriggered = useRef(false);
 
+  // Read plan/billing from URL
+  const [selectedPlan, setSelectedPlan] = useState("pro");
+  const [selectedBilling, setSelectedBilling] = useState("monthly");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get("plan");
+    const billing = params.get("billing");
+    const p = plan && ["starter", "pro", "enterprise"].includes(plan) ? plan : "pro";
+    const b = billing && ["monthly", "annual"].includes(billing) ? billing : "monthly";
+    setSelectedPlan(p);
+    setSelectedBilling(b);
+    localStorage.setItem("selectedPlan", p);
+    localStorage.setItem("selectedBilling", b);
+  }, []);
+
   // Auto-submit when 6 digits entered
   useEffect(() => {
     if (verifyCode.length === 6 && !verifying && !autoSubmitTriggered.current && needsVerification) {
@@ -53,12 +69,16 @@ export default function Signup() {
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke("self-signup", {
-        body: { fullName, email, password, firmName },
+        body: { fullName, email, password, firmName, selectedPlan, selectedBilling },
       });
       if (error || data?.error) {
         const msg = data?.error || error?.message || "Signup failed";
         if (msg.includes("already exists")) {
-          toast({ title: "Account exists", description: "An account with this email already exists. Please log in instead.", variant: "destructive" });
+          toast({
+            title: "Account exists",
+            description: "An account with this email already exists. Please log in instead.",
+            variant: "destructive",
+          });
         } else {
           throw new Error(msg);
         }
@@ -142,23 +162,16 @@ export default function Signup() {
             <ShieldCheck className="h-8 w-8 text-primary" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
-          <p className="mt-3 text-muted-foreground">
-            Your 7-day free trial is ready. Let's get started!
-          </p>
-          <Button
-            className="mt-8 w-full h-11 font-semibold"
-            onClick={handleStartTrial}
-            disabled={startingCheckout}
-          >
+          <p className="mt-3 text-muted-foreground">Your 7-day free trial is ready. Let's get started!</p>
+          <Button className="mt-8 w-full h-11 font-semibold" onClick={handleStartTrial} disabled={startingCheckout}>
             {startingCheckout ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…</>
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…
+              </>
             ) : (
               "Get Started"
             )}
           </Button>
-          <p className="mt-3 text-xs text-muted-foreground">
-            7-day free trial · Then A$149/month
-          </p>
         </div>
       </div>
     );
@@ -174,16 +187,11 @@ export default function Signup() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Verify your email</h1>
           <p className="mt-3 text-muted-foreground">
-            We've sent a 6-digit code to{" "}
-            <span className="font-medium text-foreground">{email}</span>.
+            We've sent a 6-digit code to <span className="font-medium text-foreground">{email}</span>.
           </p>
 
           <div className="mt-8 flex justify-center">
-            <InputOTP
-              maxLength={6}
-              value={verifyCode}
-              onChange={setVerifyCode}
-            >
+            <InputOTP maxLength={6} value={verifyCode} onChange={setVerifyCode}>
               <InputOTPGroup>
                 <InputOTPSlot index={0} />
                 <InputOTPSlot index={1} />
@@ -201,7 +209,9 @@ export default function Signup() {
             onClick={handleVerify}
           >
             {verifying ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying...</>
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying...
+              </>
             ) : (
               "Verify & Continue"
             )}
@@ -233,11 +243,11 @@ export default function Signup() {
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary text-primary-foreground flex-col justify-center px-16 xl:px-24">
         <h1 className="text-4xl xl:text-5xl font-bold tracking-tight leading-tight">
-          Start your 7-day<br />free trial
+          Start your 7-day
+          <br />
+          free trial
         </h1>
-        <p className="mt-4 text-lg opacity-90 max-w-md">
-          Create your strukcha workspace and start in minutes.
-        </p>
+        <p className="mt-4 text-lg opacity-90 max-w-md">Create your strukcha workspace and start in minutes.</p>
         <ul className="mt-10 space-y-4">
           {TRUST_POINTS.map((point) => (
             <li key={point} className="flex items-start gap-3">
@@ -254,9 +264,7 @@ export default function Signup() {
           {/* Mobile-only header */}
           <div className="lg:hidden mb-8 text-center">
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Start your 7-day free trial</h1>
-            <p className="mt-2 text-muted-foreground">
-              Create your strukcha workspace and start in minutes.
-            </p>
+            <p className="mt-2 text-muted-foreground">Create your strukcha workspace and start in minutes.</p>
           </div>
 
           <Card className="border-border/50 shadow-lg">
@@ -314,15 +322,13 @@ export default function Signup() {
 
                 <Button type="submit" className="w-full h-11 text-base font-semibold" disabled={submitting}>
                   {submitting ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating workspace...</>
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating workspace...
+                    </>
                   ) : (
                     "Start Free Trial"
                   )}
                 </Button>
-
-                <p className="text-center text-xs text-muted-foreground">
-                  7-day free trial · Then A$149/month · No credit card required
-                </p>
               </form>
             </CardContent>
           </Card>

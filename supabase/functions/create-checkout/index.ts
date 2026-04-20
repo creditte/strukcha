@@ -6,7 +6,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PRICE_ID = "price_1TDLyr03zgsCflnsVAheazkG";
+const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
+  starter: {
+    monthly: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    annual: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+  },
+  pro: {
+    monthly: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    annual: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+  },
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -29,12 +38,30 @@ Deno.serve(async (req) => {
     const user = userData.user;
 
     // Get user's tenant
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("tenant_id")
-      .eq("user_id", user.id)
+     const { data: profile } = await supabaseAdmin
+       .from("profiles")
+       .select("tenant_id, selected_plan, selected_billing")
+       .eq("user_id", user.id)
+       .single();
+     if (!profile) throw new Error("No profile found");
+
+    // Owner-only check
+    const { data: tenantUser } = await supabaseAdmin
+      .from("tenant_users")
+      .select("role")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("auth_user_id", user.id)
+      .eq("status", "active")
       .single();
-    if (!profile) throw new Error("No profile found");
+    if (!tenantUser || tenantUser.role !== "owner") {
+      throw new Error("Only the firm owner can manage billing");
+    }
+
+     const selectedPlan = profile.selected_plan || "pro";
+     const selectedBilling = profile.selected_billing || "monthly";
+     const planPrices = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
+     const priceId = planPrices?.[selectedBilling] || planPrices?.monthly;
+     if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}, billing: ${selectedBilling}`);
 
     // Get tenant
     const { data: tenant } = await supabaseAdmin
@@ -44,12 +71,21 @@ Deno.serve(async (req) => {
       .single();
     if (!tenant) throw new Error("No tenant found");
 
-    // Check if already active/trialing
-    if (["active", "trialing"].includes(tenant.subscription_status) && tenant.subscription_status !== "trial_expired") {
-      return new Response(JSON.stringify({ error: "Workspace already has an active subscription" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Only block if there's a real active Stripe subscription
+    if (tenant.stripe_subscription_id && ["active"].includes(tenant.subscription_status)) {
+      // Double-check with Stripe that the subscription is genuinely active
+      const stripe2 = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+      try {
+        const existingSub = await stripe2.subscriptions.retrieve(tenant.stripe_subscription_id);
+        if (existingSub.status === "active" || existingSub.status === "trialing") {
+          return new Response(JSON.stringify({ error: "Workspace already has an active subscription" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch {
+        // Subscription doesn't exist in Stripe, allow checkout
+      }
     }
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
@@ -68,26 +104,19 @@ Deno.serve(async (req) => {
         .eq("id", tenant.id);
     }
 
-    // Determine if trial is allowed (not if already expired or used)
-    const trialAllowed = !tenant.trial_used_at && tenant.subscription_status !== "trial_expired";
-
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
     const sessionParams: any = {
       customer: customerId,
-      line_items: [{ price: PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/signup`,
       metadata: { workspace_id: tenant.id, owner_user_id: user.id },
-    };
-
-    if (trialAllowed) {
-      sessionParams.subscription_data = {
-        trial_period_days: 7,
+      subscription_data: {
         metadata: { workspace_id: tenant.id },
-      };
-    }
+      },
+    };
 
     const session = await stripe.checkout.sessions.create(sessionParams);
 

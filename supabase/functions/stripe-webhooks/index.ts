@@ -6,6 +6,57 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Plan configuration mapped by Stripe Product ID
+const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
+
+const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
+  starter: {
+    month: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    year: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+  },
+  pro: {
+    month: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    year: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+  },
+};
+
+function initPlanConfig() {
+  const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
+  const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
+
+  if (starterProductId) {
+    PLAN_CONFIG[starterProductId] = { plan: "starter", diagramLimit: 15 };
+  }
+  if (proProductId) {
+    PLAN_CONFIG[proProductId] = { plan: "pro", diagramLimit: 50 };
+  }
+}
+
+function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
+  const productId = subscription.items?.data?.[0]?.price?.product as string;
+  if (productId && PLAN_CONFIG[productId]) {
+    return PLAN_CONFIG[productId];
+  }
+  console.warn(`Unknown product ID: ${productId}, defaulting to pro`);
+  return { plan: "pro", diagramLimit: 50 };
+}
+
+async function findTenantByCustomer(supabaseAdmin: any, customerId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("tenants")
+    .select("id")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+const toISO = (val: any): string | null => {
+  if (!val) return null;
+  if (typeof val === "number") return new Date(val * 1000).toISOString();
+  if (typeof val === "string") return new Date(val).toISOString();
+  return null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -15,6 +66,8 @@ Deno.serve(async (req) => {
     console.error("Missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET");
     return new Response("Server misconfigured", { status: 500 });
   }
+
+  initPlanConfig();
 
   const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
   const supabaseAdmin = createClient(
@@ -62,7 +115,19 @@ Deno.serve(async (req) => {
         const workspaceId = session.metadata?.workspace_id;
         if (!workspaceId) break;
 
-        // Activate subscription immediately on checkout completion
+        let plan = "pro";
+        let diagramLimit = 100;
+        let periodStart: string | null = null;
+        let periodEnd: string | null = null;
+        if (session.subscription) {
+          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+          const resolved = resolvePlanFromSubscription(sub);
+          plan = resolved.plan;
+          diagramLimit = resolved.diagramLimit;
+          periodStart = toISO(sub.current_period_start);
+          periodEnd = toISO(sub.current_period_end);
+        }
+
         await supabaseAdmin
           .from("tenants")
           .update({
@@ -70,13 +135,16 @@ Deno.serve(async (req) => {
             stripe_customer_id: session.customer as string,
             trial_used_at: new Date().toISOString(),
             subscription_status: "active",
-            subscription_plan: "pro",
+            subscription_plan: plan,
+            selected_plan: plan,
             access_enabled: true,
             access_locked_reason: null,
-            diagram_limit: 50,
+            diagram_limit: diagramLimit,
+            current_period_start: periodStart,
+            current_period_end: periodEnd,
           })
           .eq("id", workspaceId);
-        console.log(`Tenant ${workspaceId} checkout completed, subscription activated`);
+        console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, limit=${diagramLimit}, period_end=${periodEnd}`);
         break;
       }
 
@@ -84,63 +152,50 @@ Deno.serve(async (req) => {
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
         const workspaceId = subscription.metadata?.workspace_id;
-        
-        // Try metadata first, then look up by customer ID
+
         let tenantId = workspaceId;
         if (!tenantId) {
-          const { data: t } = await supabaseAdmin
-            .from("tenants")
-            .select("id")
-            .eq("stripe_customer_id", subscription.customer as string)
-            .maybeSingle();
-          tenantId = t?.id;
+          tenantId = await findTenantByCustomer(supabaseAdmin, subscription.customer as string);
         }
         if (!tenantId) {
           console.error("No tenant found for subscription", subscription.id);
           break;
         }
 
+        const { plan, diagramLimit } = resolvePlanFromSubscription(subscription);
         const status = subscription.status;
         const accessEnabled = status === "active" || status === "trialing";
 
         const updateData: Record<string, any> = {
           subscription_status: status,
-          subscription_plan: "pro",
+          subscription_plan: plan,
+          selected_plan: plan, // Sync selected_plan to actual plan on Stripe changes
           stripe_subscription_id: subscription.id,
-          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          current_period_start: toISO(subscription.current_period_start),
+          current_period_end: toISO(subscription.current_period_end),
           cancel_at_period_end: subscription.cancel_at_period_end,
           canceled_at: subscription.canceled_at
-            ? new Date(subscription.canceled_at * 1000).toISOString()
+            ? toISO(subscription.canceled_at)
             : null,
           access_enabled: accessEnabled,
-          diagram_limit: accessEnabled ? 50 : 3,
+          access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
+          diagram_limit: accessEnabled ? diagramLimit : 50,
         };
-
-        if (!accessEnabled) {
-          updateData.access_locked_reason = status === "canceled" ? "subscription_canceled" : "subscription_" + status;
-        } else {
-          updateData.access_locked_reason = null;
-        }
 
         if (subscription.trial_end) {
           updateData.trial_ends_at = new Date(subscription.trial_end * 1000).toISOString();
         }
 
         await supabaseAdmin.from("tenants").update(updateData).eq("id", tenantId);
-        console.log(`Updated tenant ${tenantId}: status=${status}, access=${accessEnabled}`);
+        console.log(`Updated tenant ${tenantId}: plan=${plan}, status=${status}, limit=${accessEnabled ? diagramLimit : 3}`);
         break;
       }
 
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
-        const { data: t } = await supabaseAdmin
-          .from("tenants")
-          .select("id")
-          .eq("stripe_customer_id", subscription.customer as string)
-          .maybeSingle();
+        const tenantId = await findTenantByCustomer(supabaseAdmin, subscription.customer as string);
 
-        if (t) {
+        if (tenantId) {
           await supabaseAdmin
             .from("tenants")
             .update({
@@ -149,57 +204,95 @@ Deno.serve(async (req) => {
               access_locked_reason: "subscription_canceled",
               canceled_at: new Date().toISOString(),
             })
-            .eq("id", t.id);
-          console.log(`Tenant ${t.id} subscription deleted, access locked`);
+            .eq("id", tenantId);
+          console.log(`Tenant ${tenantId} subscription deleted, access locked`);
         }
         break;
       }
 
       case "invoice.paid": {
         const invoice = event.data.object as Stripe.Invoice;
-        const { data: t } = await supabaseAdmin
-          .from("tenants")
-          .select("id")
-          .eq("stripe_customer_id", invoice.customer as string)
-          .maybeSingle();
+        const tenantId = await findTenantByCustomer(supabaseAdmin, invoice.customer as string);
 
-        if (t) {
+        if (tenantId) {
+          // Restore access
           await supabaseAdmin
             .from("tenants")
             .update({
               access_enabled: true,
               access_locked_reason: null,
             })
-            .eq("id", t.id);
-          console.log(`Tenant ${t.id} invoice paid, access restored`);
+            .eq("id", tenantId);
+
+          // Check for pending downgrade: if selected_plan differs from subscription_plan,
+          // apply the plan change in Stripe now that the new period has started
+          const { data: tenant } = await supabaseAdmin
+            .from("tenants")
+            .select("subscription_plan, selected_plan, stripe_subscription_id")
+            .eq("id", tenantId)
+            .single();
+
+          if (
+            tenant &&
+            tenant.selected_plan &&
+            tenant.selected_plan !== tenant.subscription_plan &&
+            tenant.stripe_subscription_id
+          ) {
+            console.log(`Tenant ${tenantId}: applying deferred plan change ${tenant.subscription_plan} → ${tenant.selected_plan}`);
+
+            try {
+              const sub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+              const currentItem = sub.items.data[0];
+              if (currentItem) {
+                const currentInterval = currentItem.price.recurring?.interval || "month";
+                const targetPriceId = PRICE_MAP[tenant.selected_plan]?.[currentInterval];
+
+                if (targetPriceId) {
+                  await stripe.subscriptions.update(tenant.stripe_subscription_id, {
+                    items: [{ id: currentItem.id, price: targetPriceId }],
+                    proration_behavior: "none",
+                  });
+
+                  const newLimit = tenant.selected_plan === "starter" ? 15 : 50;
+                  await supabaseAdmin.from("tenants").update({
+                    subscription_plan: tenant.selected_plan,
+                    diagram_limit: newLimit,
+                  }).eq("id", tenantId);
+
+                  console.log(`Tenant ${tenantId}: deferred plan change applied to ${tenant.selected_plan}`);
+                } else {
+                  console.error(`No price ID for plan=${tenant.selected_plan}, interval=${currentInterval}`);
+                }
+              }
+            } catch (e: any) {
+              console.error(`Failed to apply deferred plan change for tenant ${tenantId}:`, e.message);
+            }
+          }
+
+          console.log(`Tenant ${tenantId} invoice paid, access restored`);
         }
         break;
       }
 
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
-        const { data: t } = await supabaseAdmin
-          .from("tenants")
-          .select("id")
-          .eq("stripe_customer_id", invoice.customer as string)
-          .maybeSingle();
+        const tenantId = await findTenantByCustomer(supabaseAdmin, invoice.customer as string);
 
-        if (t) {
+        if (tenantId) {
           await supabaseAdmin
             .from("tenants")
             .update({
               access_enabled: false,
               access_locked_reason: "payment_failed",
             })
-            .eq("id", t.id);
-          console.log(`Tenant ${t.id} payment failed, access locked`);
+            .eq("id", tenantId);
+          console.log(`Tenant ${tenantId} payment failed, access locked`);
         }
         break;
       }
     }
   } catch (err: any) {
     console.error(`Error processing ${event.type}:`, err);
-    // Still return 200 to avoid Stripe retries for processing errors
   }
 
   return new Response(JSON.stringify({ received: true }), {

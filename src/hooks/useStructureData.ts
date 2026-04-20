@@ -56,7 +56,7 @@ export interface StructureHealth {
 // ── Constants ──────────────────────────────────────────────────────
 
 const FAMILY_TYPES = new Set(["spouse", "parent", "child"]);
-const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "beneficiary", "partner", "member"]);
+const OWNERSHIP_VIEW_TYPES = new Set(["shareholder", "unit_holder", "beneficiary", "partner", "member"]);
 const CONTROL_VIEW_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
 
 // ── Hook: useStructureData ─────────────────────────────────────────
@@ -247,7 +247,7 @@ export function useStructureData(structureId: string | undefined) {
     // --- A) Ownership % checks ---
     const byCompany = new Map<string, RelationshipEdge[]>();
     for (const rel of relationships) {
-      if (rel.relationship_type !== "shareholder") continue;
+      if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
       const arr = byCompany.get(rel.to_entity_id) ?? [];
       arr.push(rel);
       byCompany.set(rel.to_entity_id, arr);
@@ -334,7 +334,6 @@ export function useStructureData(structureId: string | undefined) {
       }
 
       if (t === "Company" && !inbound.has("shareholder")) {
-        // Only flag as warning; not error unless ownership data exists and is inconsistent
         const hasOwnershipData = byCompany.has(entity.id);
         if (!hasOwnershipData) {
           warnings.push({
@@ -346,12 +345,22 @@ export function useStructureData(structureId: string | undefined) {
           });
         }
       }
+
+      if (t === "trust_unit" && !inbound.has("unit_holder")) {
+        warnings.push({
+          code: "missing_unit_holder",
+          severity: "warning",
+          message: `Unit Trust "${entity.name}" has no unit holders`,
+          entity_id: entity.id,
+          entity_name: entity.name,
+        });
+      }
     }
 
     // --- C) Circular ownership ---
     const adj = new Map<string, string[]>();
     for (const rel of relationships) {
-      if (rel.relationship_type !== "shareholder") continue;
+      if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
       const arr = adj.get(rel.from_entity_id) ?? [];
       arr.push(rel.to_entity_id);
       adj.set(rel.from_entity_id, arr);
@@ -545,7 +554,7 @@ export function computeStructureHealth(
   // Ownership checks
   const byCompany = new Map<string, RelationshipEdge[]>();
   for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder") continue;
+    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
     const arr = byCompany.get(rel.to_entity_id) ?? [];
     arr.push(rel);
     byCompany.set(rel.to_entity_id, arr);
@@ -576,13 +585,14 @@ export function computeStructureHealth(
       const hasOwnershipData = byCompany.has(entity.id);
       if (!hasOwnershipData) warningCount++;
     }
+    if (t === "trust_unit" && !inbound.has("unit_holder")) warningCount++;
     if (t === "Unclassified") unclassifiedCount++;
   }
 
   // Circular ownership (quick DFS)
   const adj = new Map<string, string[]>();
   for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder") continue;
+    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
     const arr = adj.get(rel.from_entity_id) ?? [];
     arr.push(rel.to_entity_id);
     adj.set(rel.from_entity_id, arr);
