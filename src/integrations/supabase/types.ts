@@ -533,6 +533,8 @@ export type Database = {
           id: string
           last_sign_in_at: string | null
           onboarding_complete: boolean
+          selected_billing: string | null
+          selected_plan: string | null
           status: string
           tenant_id: string
           updated_at: string
@@ -544,6 +546,8 @@ export type Database = {
           id?: string
           last_sign_in_at?: string | null
           onboarding_complete?: boolean
+          selected_billing?: string | null
+          selected_plan?: string | null
           status?: string
           tenant_id: string
           updated_at?: string
@@ -555,6 +559,8 @@ export type Database = {
           id?: string
           last_sign_in_at?: string | null
           onboarding_complete?: boolean
+          selected_billing?: string | null
+          selected_plan?: string | null
           status?: string
           tenant_id?: string
           updated_at?: string
@@ -936,6 +942,7 @@ export type Database = {
       }
       structures: {
         Row: {
+          archived_at: string | null
           created_at: string
           deleted_at: string | null
           id: string
@@ -949,6 +956,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -962,6 +970,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -1076,6 +1085,7 @@ export type Database = {
         Row: {
           accepted_at: string | null
           auth_user_id: string | null
+          can_manage_billing: boolean
           can_manage_integrations: boolean
           created_at: string
           deleted_at: string | null
@@ -1094,6 +1104,7 @@ export type Database = {
         Insert: {
           accepted_at?: string | null
           auth_user_id?: string | null
+          can_manage_billing?: boolean
           can_manage_integrations?: boolean
           created_at?: string
           deleted_at?: string | null
@@ -1112,6 +1123,7 @@ export type Database = {
         Update: {
           accepted_at?: string | null
           auth_user_id?: string | null
+          can_manage_billing?: boolean
           can_manage_integrations?: boolean
           created_at?: string
           deleted_at?: string | null
@@ -1157,8 +1169,10 @@ export type Database = {
           export_show_disclaimer: boolean
           firm_name: string
           id: string
+          last_plan_switch_at: string | null
           logo_url: string | null
           name: string
+          selected_plan: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
           subscription_plan: string | null
@@ -1187,8 +1201,10 @@ export type Database = {
           export_show_disclaimer?: boolean
           firm_name?: string
           id?: string
+          last_plan_switch_at?: string | null
           logo_url?: string | null
           name: string
+          selected_plan?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
@@ -1217,8 +1233,10 @@ export type Database = {
           export_show_disclaimer?: boolean
           firm_name?: string
           id?: string
+          last_plan_switch_at?: string | null
           logo_url?: string | null
           name?: string
+          selected_plan?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
@@ -1485,6 +1503,7 @@ export type Database = {
         }
         Returns: Json
       }
+      rpc_delete_tenant: { Args: { p_tenant_id: string }; Returns: Json }
       rpc_disable_tenant_user: {
         Args: { p_tenant_id: string; p_tenant_user_id: string }
         Returns: Json
@@ -1545,6 +1564,7 @@ export type Database = {
         | "parent"
         | "child"
         | "member"
+        | "unit_holder"
       trust_subtype:
         | "Discretionary"
         | "Unit"
@@ -1717,6 +1737,7 @@ export const Constants = {
         "parent",
         "child",
         "member",
+        "unit_holder",
       ],
       trust_subtype: [
         "Discretionary",
