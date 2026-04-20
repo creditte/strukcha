@@ -497,13 +497,20 @@ export default function Dashboard() {
                     {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                     {syncing ? "Syncing…" : "Sync"}
                   </Button>
-                  <button
-                    className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
-                    onClick={handleDisconnectXero}
-                    disabled={disconnecting}
-                  >
-                    <Unplug className="h-3 w-3" />
-                  </button>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
+                          onClick={handleDisconnectXero}
+                          disabled={disconnecting}
+                        >
+                          <Unplug className="h-3 w-3" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Disconnect from XPM</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               )}
             </div>
