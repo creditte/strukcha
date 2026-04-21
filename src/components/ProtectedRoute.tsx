@@ -9,38 +9,20 @@ import { Shield } from "lucide-react";
 import RecoveryScreen from "@/components/RecoveryScreen";
 import { trace, getTrace, TraceEntry } from "@/lib/bootTrace";
 
-type BootStep = "auth" | "firm" | "account" | "security" | "subscription";
-
-const STEP_LABELS: Record<BootStep, string> = {
-  auth: "Signing in",
-  firm: "Loading workspace",
-  account: "Setting up account",
-  security: "Verifying security",
-  subscription: "Checking plan",
-};
-
-function BootLoadingScreen({ currentStep }: { currentStep: BootStep }) {
-  const steps: BootStep[] = ["auth", "firm", "account", "security", "subscription"];
-  const currentIdx = steps.indexOf(currentStep);
-
+function BootLoadingScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-6 max-w-xs">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        <div className="space-y-2 w-full">
-          {steps.map((step, idx) => {
-            const isDone = idx < currentIdx;
-            const isActive = idx === currentIdx;
-            return (
-              <div key={step} className="flex items-center gap-2 text-sm">
-                <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${isDone ? "bg-primary" : isActive ? "bg-primary animate-pulse" : "bg-muted-foreground/30"}`} />
-                <span className={isDone ? "text-muted-foreground" : isActive ? "text-foreground font-medium" : "text-muted-foreground/40"}>
-                  {STEP_LABELS[step]}{isActive ? "…" : isDone ? " ✓" : ""}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+      <div className="flex flex-col items-center gap-5 max-w-xs px-4 text-center">
+        <img
+          src="/strukcha-icon-512x512.png"
+          alt="strukcha"
+          width={80}
+          height={80}
+          className="h-16 w-16 rounded-[22%] object-cover shadow-md ring-1 ring-border/60 animate-strukcha-boot motion-reduce:animate-none"
+        />
+        <p className="text-sm text-muted-foreground animate-pulse motion-reduce:animate-none">
+          Loading your workspace…
+        </p>
       </div>
     </div>
   );
@@ -241,7 +223,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // ── Still booting auth ────────────────────────────────────────
   if (bootStatus === "booting") {
     trace("ProtectedRoute", "decision: auth booting → loading spinner");
-    return <BootLoadingScreen currentStep="auth" />;
+    return <BootLoadingScreen />;
   }
 
   // ── Unauthenticated ───────────────────────────────────────────
@@ -265,7 +247,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   // ── Tenant still loading ──────────────────────────────────────
   if (tenantLoading) {
     trace("ProtectedRoute", "decision: tenant loading → spinner");
-    return <BootLoadingScreen currentStep="firm" />;
+    return <BootLoadingScreen />;
   }
 
   // ── No profile or no tenant row → TERMINAL, not loading ───────
@@ -289,7 +271,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   // ── Wait for onboarding check before allowing app access ──────
   if (bootStatus === "authenticated" && !onboardingChecked) {
-    return <BootLoadingScreen currentStep="account" />;
+    return <BootLoadingScreen />;
   }
 
   // ── Password setup required ────────────────────────────────────
@@ -306,7 +288,7 @@ function MfaGate({ children }: { children: React.ReactNode }) {
   const { status: mfaStatus, loading: mfaLoading } = useMfa();
 
   if (mfaLoading) {
-    return <BootLoadingScreen currentStep="security" />;
+    return <BootLoadingScreen />;
   }
 
   if (mfaStatus === "not-enrolled") {
@@ -325,7 +307,7 @@ function BillingGate({ children }: { children: React.ReactNode }) {
   const { billing, loading } = useBilling();
 
   if (loading) {
-    return <BootLoadingScreen currentStep="subscription" />;
+    return <BootLoadingScreen />;
   }
 
   return <>{children}</>;
