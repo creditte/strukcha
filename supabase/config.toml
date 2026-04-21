@@ -1,4 +1,4 @@
-project_id = "kdwmetjwxfzovdmarijl"
+project_id = "bzwppzihyktfewdfqiuo"
 
 [functions]
   [functions.analyse-structure]
@@ -48,4 +48,10 @@ project_id = "kdwmetjwxfzovdmarijl"
   [functions.verify-signup]
     verify_jwt = false
   [functions.mfa-email]
+    verify_jwt = false
+  [functions.bootstrap-super-admin]
+    verify_jwt = false
+  [functions.list-xpm-groups]
+    verify_jwt = false
+  [functions.admin-invite-user]
     verify_jwt = false
