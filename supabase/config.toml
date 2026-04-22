@@ -23,6 +23,8 @@ project_id = "bzwppzihyktfewdfqiuo"
     verify_jwt = false
   [functions.merge-entities]
     verify_jwt = false
+  [functions.review-structure]
+    verify_jwt = false
   [functions.process-email-queue]
     verify_jwt = true
   [functions.stripe-webhooks]
@@ -54,4 +56,20 @@ project_id = "bzwppzihyktfewdfqiuo"
   [functions.list-xpm-groups]
     verify_jwt = false
   [functions.admin-invite-user]
+    verify_jwt = false
+  [functions.change-plan]
+    verify_jwt = false
+  [functions.reset-totp]
+    verify_jwt = false
+  [functions.xpm-diagnostic]
+    verify_jwt = false
+  [functions.xero-debug]
+    verify_jwt = false
+  [functions.fetch-xpm-group]
+    verify_jwt = false
+  [functions.register-super-admin]
+    verify_jwt = false
+  [functions.switch-billing-interval]
+    verify_jwt = false
+  [functions.import-xpm-group]
     verify_jwt = false
