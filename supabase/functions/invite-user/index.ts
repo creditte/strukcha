@@ -8,6 +8,24 @@ const corsHeaders = {
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
+const PROD_FRONTEND_URL = "https://strukcha.app";
+
+function buildSetupPasswordRedirect(supabaseUrl: string): string {
+  const frontendUrl = PROD_FRONTEND_URL;
+  const isLocalRuntime = supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
+  try {
+    const url = new URL(frontendUrl);
+    if (!isLocalRuntime && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
+      return `${PROD_FRONTEND_URL}/setup-password`;
+    }
+    url.pathname = "/setup-password";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return `${PROD_FRONTEND_URL}/setup-password`;
+  }
+}
 
 function renderInviteHtml(actionLink: string): string {
   return `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:28px">
@@ -91,17 +109,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { action } = body;
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || supabaseUrl;
-    let setupPasswordRedirect = frontendUrl;
-    try {
-      const url = new URL(frontendUrl);
-      url.pathname = "/setup-password";
-      url.search = "";
-      url.hash = "";
-      setupPasswordRedirect = url.toString();
-    } catch {
-      // fallback
-    }
+    const setupPasswordRedirect = buildSetupPasswordRedirect(supabaseUrl);
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 

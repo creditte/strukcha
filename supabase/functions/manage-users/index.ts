@@ -8,18 +8,24 @@ const corsHeaders = {
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
+const PROD_FRONTEND_URL = "https://strukcha.app";
 
 function buildSetupPasswordRedirect(): string | null {
-  const frontendUrl = Deno.env.get("FRONTEND_URL");
-  if (!frontendUrl) return null;
+  const frontendUrl =  PROD_FRONTEND_URL;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const isLocalRuntime = supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
   try {
     const url = new URL(frontendUrl);
+    // Never leak localhost links in cloud emails.
+    if (!isLocalRuntime && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
+      return `${PROD_FRONTEND_URL}/setup-password`;
+    }
     url.pathname = "/setup-password";
     url.search = "";
     url.hash = "";
     return url.toString();
   } catch {
-    return null;
+    return `${PROD_FRONTEND_URL}/setup-password`;
   }
 }
 
