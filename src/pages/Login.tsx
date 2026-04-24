@@ -46,7 +46,9 @@ export default function Login() {
         .maybeSingle();
 
       if (cancelled) return;
-      if (profile?.onboarding_complete === false) {
+      const needsInvitePassword =
+        profile?.onboarding_complete === false && user.user_metadata?.signup_source !== "self_service";
+      if (needsInvitePassword) {
         navigate("/setup-password", { replace: true });
       } else {
         navigate("/", { replace: true });

@@ -354,7 +354,7 @@ export default function Dashboard() {
   const isStale = (updatedAt: string) => differenceInDays(new Date(), new Date(updatedAt)) > 14;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
+    <div className="mx-auto w-full max-w-6xl px-1 py-6 sm:px-2 sm:py-10 lg:py-14 space-y-10 sm:space-y-14">
       {/* ── Hero Section ── */}
       <section className="space-y-5">
         {dashboardLoading ? (
@@ -370,7 +370,7 @@ export default function Dashboard() {
         ) : hasStructures ? (
           <>
             <div className="space-y-1.5">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
                 You have {structureCount} structure{structureCount !== 1 ? "s" : ""} — last updated {lastUpdated}
               </h1>
               <p className="text-sm text-muted-foreground max-w-md">
@@ -385,12 +385,12 @@ export default function Dashboard() {
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <div className="flex items-center gap-2">
+                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
                   <Select
                     value={xeroConnectionType}
                     onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}
                   >
-                    <SelectTrigger className="h-9 w-[180px] rounded-xl text-xs">
+                    <SelectTrigger className="h-9 w-full sm:w-[180px] rounded-xl text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -422,7 +422,9 @@ export default function Dashboard() {
                     Connected
                   </Badge>
                   {xeroConnection.xero_org_name && (
-                    <span className="text-xs text-muted-foreground">{xeroConnection.xero_org_name}</span>
+                    <span className="max-w-[140px] truncate text-xs text-muted-foreground sm:max-w-[220px]">
+                      {xeroConnection.xero_org_name}
+                    </span>
                   )}
                   <Button
                     variant="ghost"
@@ -455,7 +457,7 @@ export default function Dashboard() {
         ) : (
           <>
             <div className="space-y-2">
-              <h1 className="text-4xl font-semibold tracking-tight text-foreground">Build a structure</h1>
+              <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-foreground">Build a structure</h1>
               <p className="text-base text-muted-foreground max-w-md">
                 Create a clean, visual structure for your client in minutes.
               </p>
@@ -473,12 +475,12 @@ export default function Dashboard() {
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <div className="flex items-center gap-2">
+                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
                   <Select
                     value={xeroConnectionType}
                     onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}
                   >
-                    <SelectTrigger className="h-10 w-[180px] rounded-xl text-xs">
+                    <SelectTrigger className="h-10 w-full sm:w-[180px] rounded-xl text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -511,7 +513,9 @@ export default function Dashboard() {
                     Connected
                   </Badge>
                   {xeroConnection.xero_org_name && (
-                    <span className="text-xs text-muted-foreground">{xeroConnection.xero_org_name}</span>
+                    <span className="max-w-[140px] truncate text-xs text-muted-foreground sm:max-w-[220px]">
+                      {xeroConnection.xero_org_name}
+                    </span>
                   )}
                   <Button
                     variant="ghost"
@@ -565,7 +569,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Metric Cards ── */}
-      <section className="grid gap-4 grid-cols-3">
+      <section className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {[
           {
             icon: <Network className="h-4 w-4 text-primary/70" />,
@@ -787,7 +791,7 @@ export default function Dashboard() {
                 key={i}
                 className="flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4"
               >
-                <div className="flex items-center gap-3.5">
+                <div className="flex min-w-0 items-center gap-3.5">
                   <Skeleton className="h-2.5 w-2.5 rounded-full" />
                   <Skeleton className="h-9 w-9 rounded-lg" />
                   <div className="space-y-1.5">
@@ -815,15 +819,15 @@ export default function Dashboard() {
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/8">
                       <Network className="h-4 w-4 text-primary" />
                     </div>
-                    <div>
-                      <span className={`text-sm font-medium ${stale ? "text-muted-foreground" : "text-foreground"}`}>
+                    <div className="min-w-0">
+                      <span className={`block truncate text-sm font-medium ${stale ? "text-muted-foreground" : "text-foreground"}`}>
                         {s.name}
                       </span>
                       {stale && <p className="text-[11px] text-muted-foreground/60 mt-0.5">Not recently updated</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">
+                    <span className="hidden sm:inline text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(s.updated_at), {
                         addSuffix: true,
                       })}

@@ -126,15 +126,32 @@ Deno.serve(async (req) => {
       .update({ used: true })
       .eq("id", codeRow.id);
 
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      codeRow.user_id,
-      { email_confirm: true }
-    );
+    const { data: existingUser, error: getUserErr } = await supabaseAdmin.auth.admin.getUserById(codeRow.user_id);
+    if (getUserErr || !existingUser.user) {
+      console.error("[VerifySignup] Failed to load user:", getUserErr);
+      return json({ error: "Failed to verify email" }, 500);
+    }
+
+    const mergedMeta = {
+      ...(existingUser.user.user_metadata ?? {}),
+      signup_source: "self_service",
+    };
+
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(codeRow.user_id, {
+      email_confirm: true,
+      user_metadata: mergedMeta,
+    });
 
     if (updateError) {
       console.error("[VerifySignup] Failed to confirm email:", updateError);
       return json({ error: "Failed to verify email" }, 500);
     }
+
+    // Self-signup users already chose a password; never send them to /setup-password.
+    await supabaseAdmin
+      .from("profiles")
+      .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
+      .eq("user_id", codeRow.user_id);
 
     return json({ ok: true, verified: true });
   } catch (err: any) {

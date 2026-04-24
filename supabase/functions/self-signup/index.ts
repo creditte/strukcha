@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: false,
-      user_metadata: { full_name: fullName },
+      user_metadata: { full_name: fullName, signup_source: "self_service" },
     });
 
     if (authError) {

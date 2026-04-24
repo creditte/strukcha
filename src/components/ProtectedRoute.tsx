@@ -274,8 +274,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return <BootLoadingScreen />;
   }
 
-  // ── Password setup required ────────────────────────────────────
-  if (onboardingComplete === false) {
+  // ── Invite / recovery: must set password on /setup-password ───
+  // Self-signup users set a password during signup; they are tagged with user_metadata.signup_source === "self_service".
+  const needsInvitePasswordSetup =
+    onboardingComplete === false && user?.user_metadata?.signup_source !== "self_service";
+  if (needsInvitePasswordSetup) {
     return <Navigate to="/setup-password" replace />;
   }
 

@@ -105,21 +105,21 @@ export default function Import() {
   };
 
   return (
-    <div className="space-y-6 mb-2">
-      <h1 className="text-2xl font-bold tracking-tight">Import</h1>
+    <div className="space-y-4 sm:space-y-6 mb-2 min-w-0">
+      <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Import</h1>
 
       {/* Step-by-step instructions */}
       <Card>
         <CardHeader className="cursor-pointer pb-3" onClick={() => setShowInstructions(!showInstructions)}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Info className="h-4 w-4 text-primary" />
-              <CardTitle className="text-base">How to export from XPM</CardTitle>
+          <div className="flex items-start justify-between gap-3 sm:items-center">
+            <div className="flex min-w-0 items-start gap-2 sm:items-center">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary sm:mt-0" />
+              <CardTitle className="text-base leading-snug">How to export from XPM</CardTitle>
             </div>
             {showInstructions ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
             ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
           </div>
         </CardHeader>
@@ -140,27 +140,31 @@ export default function Import() {
               </li>
               <li>Save the file to your computer, then upload it below.</li>
             </ol>
-            <div className="flex items-center gap-2 pt-1">
-              <Download className="h-4 w-4" />
-              <button onClick={handleDownloadSample} className="text-primary hover:underline font-medium">
-                Download sample CSV file
-              </button>
-              <span className="text-xs">— see the expected format before importing</span>
+            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex items-center gap-2">
+                <Download className="h-4 w-4 shrink-0" />
+                <button type="button" onClick={handleDownloadSample} className="text-left text-primary hover:underline font-medium">
+                  Download sample CSV file
+                </button>
+              </div>
+              <span className="text-xs sm:pl-0">See the expected format before importing.</span>
             </div>
           </CardContent>
         )}
       </Card>
 
       {/* Upload area */}
-      <Card className="max-w-lg">
+      <Card className="w-full max-w-lg">
         <CardHeader>
           <CardTitle className="text-base">Upload XPM Report</CardTitle>
           <CardDescription>Upload a Client Relationships Report from XPM in CSV or XML format.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-8 text-muted-foreground transition-colors hover:border-primary hover:text-foreground">
-            <Upload className="h-5 w-5" />
-            <span className="text-sm font-medium">{file ? file.name : "Choose CSV or XML file"}</span>
+          <label className="flex min-h-[5.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-4 text-muted-foreground transition-colors hover:border-primary hover:text-foreground sm:flex-row sm:p-8">
+            <Upload className="h-5 w-5 shrink-0" />
+            <span className="max-w-full min-w-0 break-words text-center text-sm font-medium sm:text-left">
+              {file ? file.name : "Choose CSV or XML file"}
+            </span>
             <input type="file" accept=".csv,.xml" className="hidden" onChange={handleFileChange} />
           </label>
 
@@ -192,41 +196,43 @@ export default function Import() {
 
       {/* Import result */}
       {result && (
-        <Card className="max-w-lg">
+        <Card className="w-full max-w-lg">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-start gap-2 text-base sm:items-center">
               {result.warnings?.length > 0 ? (
-                <AlertCircle className="h-5 w-5 text-destructive" />
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive sm:mt-0" />
               ) : (
-                <CheckCircle className="h-5 w-5 text-primary" />
+                <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary sm:mt-0" />
               )}
-              Import Results
+              <span className="leading-snug">Import Results</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>
+            <div className="flex gap-2">
+              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 break-words">
                 Rows parsed: <strong>{result.totalRowsParsed ?? 0}</strong>
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>
-                Entities created: <strong>{result.entitiesCreated ?? 0}</strong> | updated:{" "}
-                <strong>{result.entitiesUpdated ?? 0}</strong>
+            <div className="flex gap-2">
+              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 break-words">
+                Entities created: <strong>{result.entitiesCreated ?? 0}</strong>
+                <span className="text-muted-foreground"> · </span>
+                updated: <strong>{result.entitiesUpdated ?? 0}</strong>
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>
-                Relationships created: <strong>{result.relationshipsCreated ?? 0}</strong> | skipped:{" "}
-                <strong>{result.relationshipsSkipped ?? 0}</strong>
+            <div className="flex gap-2">
+              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 break-words">
+                Relationships created: <strong>{result.relationshipsCreated ?? 0}</strong>
+                <span className="text-muted-foreground"> · </span>
+                skipped: <strong>{result.relationshipsSkipped ?? 0}</strong>
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>
+            <div className="flex gap-2">
+              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 break-words">
                 Structures created: <strong>{result.structuresCreated ?? 0}</strong>
               </span>
             </div>
@@ -245,37 +251,43 @@ export default function Import() {
       )}
 
       {/* Import history */}
-      <Card className="mb-2">
+      <Card className="mb-2 min-w-0">
         <CardHeader>
           <CardTitle className="text-base">Import History</CardTitle>
           <CardDescription>Previous imports for your workspace.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0 p-3 pt-0 sm:p-6 sm:pt-0">
           {importLogs.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">No imports yet.</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Filename</TableHead>
-                  <TableHead>Records Imported</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {importLogs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell className="text-xs whitespace-nowrap">
-                      {format(new Date(log.created_at), "d MMM yyyy, h:mm a")}
-                    </TableCell>
-                    <TableCell className="text-xs font-medium truncate max-w-[200px]">{log.file_name || "—"}</TableCell>
-                    <TableCell className="text-xs">{getRecordCount(log)}</TableCell>
-                    <TableCell>{getStatusBadge(log.status)}</TableCell>
+            <div className="-mx-1 overflow-x-auto rounded-md border sm:mx-0">
+              <Table className="min-w-[36rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">Date</TableHead>
+                    <TableHead>Filename</TableHead>
+                    <TableHead className="min-w-[10rem]">Records Imported</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {importLogs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell className="text-xs whitespace-nowrap align-top">
+                        {format(new Date(log.created_at), "d MMM yyyy, h:mm a")}
+                      </TableCell>
+                      <TableCell className="max-w-[10rem] text-xs font-medium break-words align-top sm:max-w-[14rem]">
+                        {log.file_name || "—"}
+                      </TableCell>
+                      <TableCell className="max-w-[14rem] text-xs break-words align-top">
+                        {getRecordCount(log)}
+                      </TableCell>
+                      <TableCell className="align-top whitespace-nowrap">{getStatusBadge(log.status)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
