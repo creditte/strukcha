@@ -419,10 +419,10 @@ export default function Structures() {
 
   // ── Tab Bar ──
   const TabBar = () => (
-    <div className="flex items-center gap-1 border-b border-border/50 mb-4">
+    <div className="mb-4 grid grid-cols-1 gap-1 border-b border-border/50 sm:grid-cols-2">
       <button
         onClick={() => setActiveTab("xpm")}
-        className={`px-4 py-2.5 text-left transition-colors relative ${
+        className={`relative px-3 py-2.5 text-left transition-colors sm:px-4 ${
           activeTab === "xpm" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         }`}
       >
@@ -434,7 +434,7 @@ export default function Structures() {
       </button>
       <button
         onClick={() => setActiveTab("manual")}
-        className={`px-4 py-2.5 text-left transition-colors relative ${
+        className={`relative px-3 py-2.5 text-left transition-colors sm:px-4 ${
           activeTab === "manual" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         }`}
       >
@@ -512,8 +512,8 @@ export default function Structures() {
   // ═══════════════════════════════════════════════════
   return (
     <TooltipProvider delayDuration={200}>
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">Structures</h1>
+    <div className="space-y-4 min-w-0">
+      <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Structures</h1>
       <p className="text-sm text-muted-foreground">
         View your XPM client groups and manage your entity structures.
       </p>
@@ -543,7 +543,7 @@ export default function Structures() {
           ) : (
             <>
               {/* Searchable dropdown */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                <GroupSearchDropdown
                   groups={groups}
                   loading={loading || syncing}
@@ -556,7 +556,7 @@ export default function Structures() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-[42px] px-3 gap-1.5 shrink-0"
+                  className="h-[42px] w-full px-3 gap-1.5 shrink-0 sm:w-auto"
                   onClick={async () => {
                     setSyncing(true);
                     try {
@@ -611,7 +611,7 @@ export default function Structures() {
               )}
               {/* All groups list */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold text-foreground">All Groups</h3>
                     {groups.length > 0 && (
@@ -623,7 +623,7 @@ export default function Structures() {
                     )}
                   </div>
                   {groups.length > 0 && (
-                    <div className="relative w-48">
+                    <div className="relative w-full sm:w-48">
                       <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         placeholder="Filter groups..."
@@ -675,7 +675,7 @@ export default function Structures() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-all"
+                                      className="h-7 w-7 text-muted-foreground hover:text-primary transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleImportToEditor(g);
@@ -699,7 +699,7 @@ export default function Structures() {
                                   className={`p-1 rounded transition-colors ${
                                     isFav
                                       ? "text-amber-500 hover:text-amber-600"
-                                      : "text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-amber-500"
+                                      : "text-muted-foreground/40 opacity-100 hover:text-amber-500 md:opacity-0 md:group-hover:opacity-100"
                                   }`}
                                 >
                                   <Star className={`h-3.5 w-3.5 ${isFav ? "fill-current" : ""}`} />
@@ -737,7 +737,7 @@ export default function Structures() {
                 Create structures independently of XPM — ideal for prospective clients, restructure scenarios, or standalone planning work.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
               {manualStructures.length > 0 && (
                 <Button
                   variant={showArchived ? "secondary" : "outline"}
@@ -750,7 +750,7 @@ export default function Structures() {
                 </Button>
               )}
               {manualStructures.length > 0 && !showArchived && (
-                <div className="relative w-48">
+                <div className="relative min-w-0 flex-1 sm:w-48 sm:flex-none">
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder="Filter structures..."
@@ -761,7 +761,7 @@ export default function Structures() {
                 </div>
               )}
               {showArchived && archivedManualStructures.length > 0 && (
-                <div className="relative w-48">
+                <div className="relative min-w-0 flex-1 sm:w-48 sm:flex-none">
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder="Filter archived..."
@@ -774,7 +774,7 @@ export default function Structures() {
               {canManageStructures && !showArchived && (
                 <Button
                   size="sm"
-                  className="h-8 text-xs gap-1.5"
+                  className="h-8 text-xs gap-1.5 w-full sm:w-auto"
                   onClick={handleCreateClick}
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -821,7 +821,7 @@ export default function Structures() {
                   onClick={() => navigate(`/structures/${s.id}`)}
                 >
                   {canManageStructures && (
-                    <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-all">
+                    <div className="absolute top-3 right-3 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button

@@ -65,7 +65,7 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
   if (limitReached) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-w-[calc(100%-1.5rem)] sm:max-w-md">
           <DialogHeader>
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
               <AlertTriangle className="h-6 w-6 text-primary" />
@@ -119,14 +119,17 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-w-[calc(100%-1.5rem)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create New Structure</DialogTitle>
+            <DialogDescription className="text-left">
+              Choose whether to import from XPM or create a structure manually.
+            </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-4 pt-2">
+        <div className="grid grid-cols-1 gap-3 pt-2 sm:grid-cols-2 sm:gap-4">
           <button
             onClick={() => { onOpenChange(false); onImportXpm(); }}
-            className="group flex flex-col items-start gap-3 rounded-xl border-2 border-border/60 bg-card p-5 text-left transition-all hover:border-primary/40 hover:shadow-sm"
+            className="group flex flex-col items-start gap-3 rounded-xl border-2 border-border/60 bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-sm sm:p-5"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               <Upload className="h-5 w-5 text-primary" />
@@ -143,7 +146,7 @@ export default function CreateStructureModal({ open, onOpenChange, onImportXpm }
           <button
             onClick={handleDrawManually}
             disabled={creating}
-            className="group flex flex-col items-start gap-3 rounded-xl border-2 border-border/60 bg-card p-5 text-left transition-all hover:border-primary/40 hover:shadow-sm disabled:opacity-50"
+            className="group flex flex-col items-start gap-3 rounded-xl border-2 border-border/60 bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-sm disabled:opacity-50 sm:p-5"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
               {creating ? (
