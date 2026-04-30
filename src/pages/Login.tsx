@@ -18,6 +18,33 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get("xero_signup");
+    if (mode === "exists") {
+      const em = params.get("email");
+      toast({
+        title: "Account already exists",
+        description: em
+          ? `Log in with ${em}, then connect Xero from your dashboard if needed.`
+          : "Log in with your email and password.",
+        variant: "destructive",
+      });
+    } else if (mode === "done") {
+      toast({
+        title: "Almost there",
+        description:
+          "We could not open an automatic login link. Use “Forgot password?” to set a password for this email.",
+      });
+    }
+    if (mode) {
+      params.delete("xero_signup");
+      params.delete("email");
+      const q = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+    }
+  }, [toast]);
+
   // Redirect authenticated users
   useEffect(() => {
     if (bootStatus !== "authenticated" || !user) return;

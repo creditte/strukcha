@@ -35,6 +35,10 @@ project_id = "bzwppzihyktfewdfqiuo"
     verify_jwt = false
   [functions.xero-callback]
     verify_jwt = false
+  [functions.xero-signup-auth]
+    verify_jwt = false
+  [functions.xero-signup-callback]
+    verify_jwt = false
   [functions.send-transactional-email]
     verify_jwt = true
   [functions.preview-transactional-email]

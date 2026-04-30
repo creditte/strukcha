@@ -47,6 +47,7 @@ serve(async (req) => {
       .from("xero_oauth_states")
       .select("id, user_id, created_at")
       .eq("csrf_token", csrfToken)
+      .eq("flow", "link")
       .eq("user_id", userId)
       .eq("used", false)
       .maybeSingle();

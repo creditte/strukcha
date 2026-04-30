@@ -31,6 +31,7 @@ export default function Signup() {
   const [resending, setResending] = useState(false);
   const [verified, setVerified] = useState(false);
   const [startingCheckout, setStartingCheckout] = useState(false);
+  const [xeroLoading, setXeroLoading] = useState(false);
   const navigate = useNavigate();
   const autoSubmitTriggered = useRef(false);
 
@@ -49,6 +50,33 @@ export default function Signup() {
     localStorage.setItem("selectedPlan", p);
     localStorage.setItem("selectedBilling", b);
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("xero_signup") !== "error") return;
+    const reason = params.get("reason") || "unknown";
+    const messages: Record<string, string> = {
+      account_exists: "An account with this email already exists. Log in instead.",
+      invalid_csrf: "Session expired. Please try again.",
+      expired_csrf: "Session expired. Please try again.",
+      token_exchange_failed: "Could not complete Xero authorization.",
+      invalid_id_token: "Could not verify identity from Xero.",
+      no_email: "Xero did not return an email for this account.",
+      no_id_token: "Xero did not return an identity token.",
+      tenant_failed: "Could not create your workspace.",
+      create_user_failed: "Could not create your account.",
+      server_error: "Something went wrong. Please try again.",
+    };
+    toast({
+      title: "Xero signup failed",
+      description: messages[reason] || `Error: ${reason.replace(/_/g, " ")}`,
+      variant: "destructive",
+    });
+    params.delete("xero_signup");
+    params.delete("reason");
+    const q = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+  }, [toast]);
 
   // Auto-submit when 6 digits entered
   useEffect(() => {
@@ -92,6 +120,39 @@ export default function Signup() {
       toast({ title: "Signup failed", description: err.message, variant: "destructive" });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleXeroSignup = async () => {
+    if (!firmName.trim()) {
+      toast({
+        title: "Firm name required",
+        description: "Enter your firm name, then continue with Xero.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setXeroLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("xero-signup-auth", {
+        body: {
+          firmName: firmName.trim(),
+          origin: window.location.origin,
+          selectedPlan,
+          selectedBilling,
+        },
+      });
+      if (error) throw error;
+      const oauthUrl = (data as { url?: string })?.url;
+      if (!oauthUrl || (data as { error?: string })?.error) {
+        throw new Error((data as { error?: string })?.error || "Could not start Xero signup");
+      }
+      window.location.href = oauthUrl;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Could not start Xero signup";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    } finally {
+      setXeroLoading(false);
     }
   };
 
@@ -341,6 +402,34 @@ export default function Signup() {
                     "Start Free Trial"
                   )}
                 </Button>
+
+                <div className="relative py-2">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or</span>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-11 text-base font-semibold border-border"
+                  disabled={xeroLoading || submitting}
+                  onClick={handleXeroSignup}
+                >
+                  {xeroLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Redirecting to Xero…
+                    </>
+                  ) : (
+                    "Continue with Xero"
+                  )}
+                </Button>
+                <p className="text-xs text-center text-muted-foreground">
+                  Uses your Xero profile email. Your firm name above will be your workspace name.
+                </p>
               </form>
             </CardContent>
           </Card>
