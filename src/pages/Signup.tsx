@@ -414,17 +414,27 @@ export default function Signup() {
 
                 <Button
                   type="button"
-                  variant="outline"
-                  className="w-full h-11 text-base font-semibold border-border"
+                  variant="default"
+                  className="w-full h-11 border-0 bg-[#14B5EA] text-base font-semibold text-white hover:bg-[#14B5EA]/90 focus-visible:ring-white/40"
                   disabled={xeroLoading || submitting}
                   onClick={handleXeroSignup}
                 >
                   {xeroLoading ? (
                     <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Redirecting to Xero…
+                      <Loader2 className="h-4 w-4 animate-spin" /> Redirecting to Xero…
                     </>
                   ) : (
-                    "Continue with Xero"
+                    <>
+                      <img
+                        src="/Xero%20logo%201x1.png"
+                        alt=""
+                        width={32}
+                        height={32}
+                        className="h-8 w-8 shrink-0 object-contain mix-blend-screen"
+                        aria-hidden
+                      />
+                      Continue with Xero
+                    </>
                   )}
                 </Button>
                 <p className="text-xs text-center text-muted-foreground">
