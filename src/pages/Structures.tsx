@@ -81,6 +81,7 @@ export default function Structures() {
   const [groups, setGroups] = useState<XpmGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [groupsSyncedAt, setGroupsSyncedAt] = useState<string | null>(null);
 
 
   // Favourite groups (persisted)
@@ -115,42 +116,87 @@ export default function Structures() {
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
 
-  // ── Load groups ──
+  const loadCachedGroups = useCallback(async (): Promise<XpmGroup[]> => {
+    const { data } = await supabase
+      .from("xpm_groups")
+      .select("xpm_uuid, name, updated_at")
+      .order("name", { ascending: true });
+    const cached = (data as { xpm_uuid: string; name: string; updated_at: string }[]) ?? [];
+    if (cached.length > 0) {
+      const latest = cached.reduce(
+        (max, g) => (g.updated_at > max ? g.updated_at : max),
+        cached[0].updated_at,
+      );
+      setGroupsSyncedAt(latest);
+    }
+    return cached.map(({ xpm_uuid, name }) => ({ xpm_uuid, name }));
+  }, []);
+
+  /** Refresh group list from XPM via edge function. Keeps cached list visible while syncing. */
+  const refreshXpmGroups = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("list-xpm-groups", {
+        body: {},
+      });
+      if (error) throw error;
+      if (data?.error && !(data?.groups?.length)) throw new Error(data.error);
+
+      const fetchedGroups = (data?.groups ?? []) as XpmGroup[];
+      if (fetchedGroups.length > 0) {
+        setGroups(fetchedGroups);
+      }
+      if (data?.synced_at) {
+        setGroupsSyncedAt(data.synced_at);
+      } else if (data?.cached_at) {
+        setGroupsSyncedAt(data.cached_at);
+      }
+
+      if (!silent) {
+        if (data?.error) {
+          toast.warning(data.error + (fetchedGroups.length ? " — showing cached groups." : ""));
+        } else if (fetchedGroups.length > 0) {
+          toast.success(`${fetchedGroups.length} groups synced from XPM`);
+        }
+      }
+    } catch (err: unknown) {
+      if (!silent) {
+        const msg = err instanceof Error ? err.message : "Failed to fetch groups";
+        toast.error(msg + (groups.length ? " — showing cached groups." : ""));
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }, [groups.length]);
+
+  // ── Load groups: cache first, then refresh from XPM in background ──
   useEffect(() => {
     async function init() {
       setLoading(true);
+      let connected = false;
+      let cachedGroups: XpmGroup[] = [];
       try {
-        const { data: connInfo } = await supabase.rpc("get_xero_connection_info");
-        setXpmConnected(connInfo !== null && connInfo !== "null");
+        const [{ data: connInfo }, cached] = await Promise.all([
+          supabase.rpc("get_xero_connection_info"),
+          loadCachedGroups(),
+        ]);
+        cachedGroups = cached;
+        connected = connInfo !== null && connInfo !== "null";
+        setXpmConnected(connected);
+        setGroups(cached);
       } catch {
         setXpmConnected(false);
-      }
-      const { data } = await supabase
-        .from("xpm_groups")
-        .select("xpm_uuid, name")
-        .order("name", { ascending: true });
-      const cached = (data as XpmGroup[]) ?? [];
-      if (cached.length > 0) {
-        setGroups(cached);
-        setLoading(false);
-        return;
-      }
-      setLoading(false);
-      // Try fetching from XPM
-      setSyncing(true);
-      try {
-        const { data: xpmData, error } = await supabase.functions.invoke("list-xpm-groups");
-        if (error) throw error;
-        const fetchedGroups = (xpmData?.groups ?? []) as XpmGroup[];
-        setGroups(fetchedGroups);
-        if (fetchedGroups.length > 0) toast.success(`${fetchedGroups.length} groups loaded`);
-      } catch {
-        toast.error("Failed to fetch groups");
       } finally {
-        setSyncing(false);
+        setLoading(false);
+      }
+
+      if (connected) {
+        void refreshXpmGroups({ silent: cachedGroups.length > 0 });
       }
     }
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, []);
 
   // ── Load favourites ──
@@ -551,7 +597,7 @@ export default function Structures() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                <GroupSearchDropdown
                   groups={groups}
-                  loading={loading || syncing}
+                  loading={loading && groups.length === 0}
                   favouriteIds={favouriteIds}
                   onSelect={handleSelectGroup}
                   onToggleFavourite={handleToggleFavourite}
@@ -562,26 +608,23 @@ export default function Structures() {
                   variant="outline"
                   size="sm"
                   className="h-[42px] w-full px-3 gap-1.5 shrink-0 sm:w-auto"
-                  onClick={async () => {
-                    setSyncing(true);
-                    try {
-                      const { data, error } = await supabase.functions.invoke("list-xpm-groups");
-                      if (error) throw error;
-                      const fetchedGroups = (data?.groups ?? []) as XpmGroup[];
-                      setGroups(fetchedGroups);
-                      if (fetchedGroups.length > 0) toast.success(`${fetchedGroups.length} groups loaded`);
-                    } catch {
-                      toast.error("Failed to fetch groups");
-                    } finally {
-                      setSyncing(false);
-                    }
-                  }}
+                  onClick={() => refreshXpmGroups()}
                   disabled={syncing}
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
                   <span className="text-xs">{syncing ? "Syncing…" : "Refresh"}</span>
                 </Button>
               </div>
+              {syncing && groups.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Updating groups from XPM… you can keep browsing the cached list.
+                </p>
+              )}
+              {groupsSyncedAt && !syncing && (
+                <p className="text-[11px] text-muted-foreground">
+                  Last synced {format(new Date(groupsSyncedAt), "d MMM yyyy, h:mm a")}
+                </p>
+              )}
 
               {/* Favourite groups */}
               <FavouriteGroups
@@ -640,11 +683,16 @@ export default function Structures() {
                   )}
                 </div>
 
-                {loading || syncing ? (
+                {loading && groups.length === 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {Array.from({ length: 8 }).map((_, i) => (
                       <Skeleton key={i} className="h-20 rounded-xl" />
                     ))}
+                  </div>
+                ) : syncing && groups.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin opacity-60" />
+                    <p className="text-xs">Loading groups from XPM…</p>
                   </div>
                 ) : filteredXpmGroups.length === 0 && groups.length > 0 ? (
                   <p className="text-xs text-muted-foreground py-4 text-center">No groups match your search.</p>
