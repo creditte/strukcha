@@ -46,8 +46,18 @@ const TRUST_TYPES = new Set([
   "trust_testamentary", "trust_deceased_estate", "trust_family",
 ]);
 
+const DISCRETIONARY_TRUST_TYPES = new Set(["Trust", "trust_discretionary", "trust_family"]);
+
 function isTrustType(t: string): boolean {
   return TRUST_TYPES.has(t) || t === "smsf";
+}
+
+function isDiscretionaryTrust(t: string): boolean {
+  return DISCRETIONARY_TRUST_TYPES.has(t);
+}
+
+function isEligibleOwnershipSource(t: string): boolean {
+  return t === "Individual" || t === "Company" || t === "smsf" || isTrustType(t);
 }
 
 /** Lightweight direction check aligned with validate_relationship_rules trigger. */
@@ -60,13 +70,9 @@ export function isRelationshipDirectionValid(
     case "director":
       return fromType === "Individual" && toType === "Company";
     case "shareholder":
-      return toType === "Company" &&
-        (fromType === "Individual" || fromType === "Company" || fromType === "smsf" ||
-          fromType === "trust_discretionary" || fromType === "trust_family" || fromType === "trust_unit");
+      return toType === "Company" && isEligibleOwnershipSource(fromType);
     case "unit_holder":
-      return toType === "trust_unit" &&
-        (fromType === "Individual" || fromType === "Company" || fromType === "smsf" ||
-          fromType === "trust_discretionary" || fromType === "trust_unit");
+      return toType === "trust_unit" && isEligibleOwnershipSource(fromType);
     case "trustee":
       return (fromType === "Individual" || fromType === "Company") && isTrustType(toType);
     case "beneficiary":
@@ -74,17 +80,17 @@ export function isRelationshipDirectionValid(
         return fromType === "Individual" || fromType === "Company" || fromType === "smsf";
       }
       return (fromType === "Individual" || fromType === "Company" || fromType === "smsf" ||
-          fromType === "trust_discretionary" || fromType === "trust_family") &&
-        (TRUST_TYPES.has(toType) && toType !== "trust_unit");
+          isDiscretionaryTrust(fromType)) &&
+        isTrustType(toType) && toType !== "trust_unit";
     case "member":
       return (fromType === "Individual" || fromType === "Company" || fromType === "smsf" ||
-          fromType === "trust_discretionary") &&
+          isDiscretionaryTrust(fromType)) &&
         (toType === "trust_unit" || toType === "smsf");
     case "appointer":
       return (fromType === "Individual" || fromType === "Company") &&
-        TRUST_TYPES.has(toType) && toType !== "smsf";
+        isTrustType(toType) && toType !== "smsf";
     case "settlor":
-      return (fromType === "Individual" || fromType === "Company") && TRUST_TYPES.has(toType);
+      return (fromType === "Individual" || fromType === "Company") && isTrustType(toType);
     case "partner":
       return (fromType === "Individual" || fromType === "Company") &&
         (toType === "Individual" || toType === "Company");
@@ -98,40 +104,89 @@ export function isRelationshipDirectionValid(
   }
 }
 
+/**
+ * Pick valid from/to endpoints. Tries both orientations so XPM's ambiguous
+ * "Trustee"/"Shareholder" labels on either client record resolve correctly.
+ */
 export function resolveRelationshipEndpoints(
   relType: string,
   clientEntityId: string,
   relatedEntityId: string,
   entityTypes: Map<string, string>,
-  reverseFromXpm: boolean,
+  _reverseFromXpm?: boolean,
 ): { fromId: string; toId: string } | null {
-  let fromId = clientEntityId;
-  let toId = relatedEntityId;
+  const orientations: [string, string][] = [
+    [clientEntityId, relatedEntityId],
+    [relatedEntityId, clientEntityId],
+  ];
 
-  if (reverseFromXpm) {
-    [fromId, toId] = [toId, fromId];
-  }
+  for (const [fromId, toId] of orientations) {
+    const fromType = entityTypes.get(fromId) ?? "Unclassified";
+    const toType = entityTypes.get(toId) ?? "Unclassified";
 
-  if (relType === "spouse" || relType === "partner") {
-    if (fromId > toId) [fromId, toId] = [toId, fromId];
-  }
+    if (relType === "member" && fromType === "smsf" && toType === "Individual") {
+      if (isRelationshipDirectionValid(relType, toType, fromType)) {
+        return { fromId: toId, toId: fromId };
+      }
+      continue;
+    }
 
-  const fromType = entityTypes.get(fromId) ?? "Unclassified";
-  const toType = entityTypes.get(toId) ?? "Unclassified";
+    if (!isRelationshipDirectionValid(relType, fromType, toType)) continue;
 
-  if (relType === "member" && fromType === "smsf" && toType === "Individual") {
-    [fromId, toId] = [toId, fromId];
-  }
-
-  const aFrom = entityTypes.get(fromId) ?? "Unclassified";
-  const aTo = entityTypes.get(toId) ?? "Unclassified";
-
-  if (isRelationshipDirectionValid(relType, aFrom, aTo)) {
+    if (relType === "spouse" || relType === "partner") {
+      return fromId > toId ? { fromId: toId, toId: fromId } : { fromId, toId };
+    }
     return { fromId, toId };
-  }
-  if (isRelationshipDirectionValid(relType, aTo, aFrom)) {
-    return { fromId: toId, toId: fromId };
   }
 
   return null;
+}
+
+/** Build deduped edges for preview/import from XPM client relationship rows. */
+export function buildXpmEdges(
+  nodes: Array<{
+    id: string;
+    entityType: string;
+    relationships: Array<{ typeRaw: string; relatedClientUuid: string; percentage: number | null }>;
+  }>,
+  memberIds?: Set<string>,
+): Array<{ id: string; source: string; target: string; type: string; percentage: number | null }> {
+  const entityTypes = new Map(nodes.map((n) => [n.id, n.entityType]));
+  const edges: Array<{ id: string; source: string; target: string; type: string; percentage: number | null }> = [];
+  const edgeDedupeSet = new Set<string>();
+
+  for (const node of nodes) {
+    for (const rel of node.relationships) {
+      const targetId = rel.relatedClientUuid;
+      if (!targetId) continue;
+      if (memberIds && !memberIds.has(targetId)) continue;
+
+      const rule = parseXpmRelationshipType(rel.typeRaw);
+      if (!rule) continue;
+
+      const endpoints = resolveRelationshipEndpoints(
+        rule.type,
+        node.id,
+        targetId,
+        entityTypes,
+      );
+      if (!endpoints) continue;
+
+      const { fromId: source, toId: target } = endpoints;
+      const dedupeKey = `${rule.type}:${source}:${target}`;
+      const reverseDedupe = `${rule.type}:${target}:${source}`;
+      if (edgeDedupeSet.has(dedupeKey) || edgeDedupeSet.has(reverseDedupe)) continue;
+      edgeDedupeSet.add(dedupeKey);
+
+      edges.push({
+        id: `${source}-${rule.type}-${target}`,
+        source,
+        target,
+        type: rule.type,
+        percentage: rel.percentage,
+      });
+    }
+  }
+
+  return edges;
 }
