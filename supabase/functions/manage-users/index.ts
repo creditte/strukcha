@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { queueTransactionalEmail } from "../_shared/queue-transactional-email.ts";
+import { getTenantUserRecipient } from "../_shared/tenant-recipients.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -76,6 +78,80 @@ async function sendViaSmtp2go(to: string, subject: string, html: string, text?: 
 
 function isRateLimitError(message?: string): boolean {
   return (message ?? "").toLowerCase().includes("email rate limit exceeded");
+}
+
+async function getActorContext(
+  adminClient: ReturnType<typeof createClient>,
+  tenantId: string,
+  authUserId: string,
+) {
+  const [{ data: actor }, { data: tenant }] = await Promise.all([
+    adminClient
+      .from("tenant_users")
+      .select("display_name, email")
+      .eq("tenant_id", tenantId)
+      .eq("auth_user_id", authUserId)
+      .eq("status", "active")
+      .maybeSingle(),
+    adminClient.from("tenants").select("firm_name").eq("id", tenantId).maybeSingle(),
+  ]);
+  return {
+    changedBy: actor?.display_name || actor?.email || "A workspace administrator",
+    firmName: tenant?.firm_name,
+  };
+}
+
+async function emailTargetUser(
+  adminClient: ReturnType<typeof createClient>,
+  tenantUserId: string,
+  templateName: string,
+  templateData: Record<string, unknown>,
+  idempotencyKey: string,
+) {
+  const target = await getTenantUserRecipient(adminClient, tenantUserId);
+  if (!target?.email) {
+    console.warn("[manage-users] skip email: no recipient email", { tenantUserId, templateName });
+    await adminClient.from("email_send_log").insert({
+      template_name: templateName,
+      recipient_email: "unknown",
+      status: "failed",
+      error_message: `No email on tenant_user ${tenantUserId}`,
+    });
+    return;
+  }
+
+  const result = await queueTransactionalEmail(adminClient, {
+    templateName,
+    recipientEmail: target.email,
+    templateData: { name: target.name, ...templateData },
+    idempotencyKey,
+  });
+
+  if (!result.ok) {
+    console.error("[manage-users] transactional email failed", { templateName, error: result.error });
+    await adminClient.from("email_send_log").insert({
+      template_name: templateName,
+      recipient_email: target.email,
+      status: "failed",
+      error_message: result.error?.slice(0, 1000) ?? "queue failed",
+      metadata: { idempotency_key: idempotencyKey },
+    });
+  }
+}
+
+/** Must await before returning — Edge Functions stop background work after the response. */
+async function notifyTargetUser(
+  adminClient: ReturnType<typeof createClient>,
+  tenantUserId: string,
+  templateName: string,
+  templateData: Record<string, unknown>,
+  idempotencyKey: string,
+): Promise<void> {
+  try {
+    await emailTargetUser(adminClient, tenantUserId, templateName, templateData, idempotencyKey);
+  } catch (e) {
+    console.error(`[manage-users] ${templateName} email:`, e);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -218,6 +294,8 @@ Deno.serve(async (req) => {
       const { tenant_user_id } = body;
       if (!tenant_user_id || !tenant_id) return json({ error: "tenant_user_id and tenant_id required" }, 400);
 
+      const actor = await getActorContext(adminClient, tenant_id, callingUser.id);
+
       const { error: rpcErr } = await userClient.rpc("rpc_disable_tenant_user", {
         p_tenant_id: tenant_id, p_tenant_user_id: tenant_user_id,
       });
@@ -230,6 +308,11 @@ Deno.serve(async (req) => {
         await adminClient.auth.admin.updateUserById(tu.auth_user_id, { ban_duration: "876600h" });
       }
 
+      await notifyTargetUser(adminClient, tenant_user_id, "user-deactivated", {
+        firmName: actor.firmName,
+        deactivatedBy: actor.changedBy,
+      }, `user-deactivated:${tenant_id}:${tenant_user_id}`);
+
       return json({ success: true });
     }
 
@@ -237,6 +320,8 @@ Deno.serve(async (req) => {
     if (action === "enable") {
       const { tenant_user_id } = body;
       if (!tenant_user_id || !tenant_id) return json({ error: "tenant_user_id and tenant_id required" }, 400);
+
+      const actor = await getActorContext(adminClient, tenant_id, callingUser.id);
 
       const { error: rpcErr } = await userClient.rpc("rpc_enable_tenant_user", {
         p_tenant_id: tenant_id, p_tenant_user_id: tenant_user_id,
@@ -250,6 +335,12 @@ Deno.serve(async (req) => {
         await adminClient.auth.admin.updateUserById(tu.auth_user_id, { ban_duration: "none" });
       }
 
+      await notifyTargetUser(adminClient, tenant_user_id, "account-access-updated", {
+        firmName: actor.firmName,
+        summary: "Your account has been re-enabled and you can sign in again.",
+        changedBy: actor.changedBy,
+      }, `account-enabled:${tenant_id}:${tenant_user_id}`);
+
       return json({ success: true });
     }
 
@@ -257,6 +348,8 @@ Deno.serve(async (req) => {
     if (action === "soft_delete") {
       const { tenant_user_id } = body;
       if (!tenant_user_id || !tenant_id) return json({ error: "tenant_user_id and tenant_id required" }, 400);
+
+      const actor = await getActorContext(adminClient, tenant_id, callingUser.id);
 
       const { error: rpcErr } = await userClient.rpc("rpc_soft_delete_tenant_user", {
         p_tenant_id: tenant_id, p_tenant_user_id: tenant_user_id,
@@ -269,6 +362,11 @@ Deno.serve(async (req) => {
       if (tu?.auth_user_id) {
         await adminClient.auth.admin.updateUserById(tu.auth_user_id, { ban_duration: "876600h" });
       }
+
+      await notifyTargetUser(adminClient, tenant_user_id, "user-deactivated", {
+        firmName: actor.firmName,
+        deactivatedBy: actor.changedBy,
+      }, `user-deleted:${tenant_id}:${tenant_user_id}`);
 
       return json({ success: true });
     }
@@ -312,6 +410,13 @@ Deno.serve(async (req) => {
         } catch (smtpErr: any) {
           return json({ error: smtpErr?.message || "Failed to send invitation email" }, 500);
         }
+
+        const actor = await getActorContext(adminClient, tenant_id, callingUser.id);
+        await notifyTargetUser(adminClient, tenant_user_id, "account-access-updated", {
+          firmName: actor.firmName,
+          summary: "Your account has been restored and you can sign in again.",
+          changedBy: actor.changedBy,
+        }, `account-restored:${tenant_id}:${tenant_user_id}`);
       }
 
       return json({ success: true });
@@ -322,10 +427,26 @@ Deno.serve(async (req) => {
       const { tenant_user_id, new_role } = body;
       if (!tenant_user_id || !new_role || !tenant_id) return json({ error: "tenant_user_id, new_role and tenant_id required" }, 400);
 
+      const { data: targetBefore } = await adminClient
+        .from("tenant_users")
+        .select("role")
+        .eq("id", tenant_user_id)
+        .eq("tenant_id", tenant_id)
+        .maybeSingle();
+
+      const actor = await getActorContext(adminClient, tenant_id, callingUser.id);
+
       const { error: rpcErr } = await userClient.rpc("rpc_change_tenant_user_role", {
         p_tenant_id: tenant_id, p_tenant_user_id: tenant_user_id, p_new_role: new_role,
       });
       if (rpcErr) return json({ error: rpcErr.message }, 400);
+
+      await notifyTargetUser(adminClient, tenant_user_id, "role-changed", {
+        firmName: actor.firmName,
+        newRole: new_role,
+        previousRole: targetBefore?.role,
+        changedBy: actor.changedBy,
+      }, `role-changed:${tenant_id}:${tenant_user_id}:${new_role}`);
 
       return json({ success: true });
     }
@@ -384,6 +505,15 @@ Deno.serve(async (req) => {
 
       if (updateErrInt) return json({ error: updateErrInt.message }, 400);
 
+      const actorInt = await getActorContext(adminClient, tenant_id, callingUser.id);
+      await notifyTargetUser(adminClient, tenant_user_id, "account-access-updated", {
+        firmName: actorInt.firmName,
+        summary: grant
+          ? "You can now manage integrations for this workspace."
+          : "Integration management access has been removed from your account.",
+        changedBy: actorInt.changedBy,
+      }, `integrations-access:${tenant_id}:${tenant_user_id}:${grant}`);
+
       return json({ success: true });
     }
 
@@ -440,6 +570,15 @@ Deno.serve(async (req) => {
         .eq("tenant_id", tenant_id);
 
       if (updateErrBill) return json({ error: updateErrBill.message }, 400);
+
+      const actorBill = await getActorContext(adminClient, tenant_id, callingUser.id);
+      await notifyTargetUser(adminClient, tenant_user_id, "account-access-updated", {
+        firmName: actorBill.firmName,
+        summary: grant
+          ? "You can now manage billing for this workspace."
+          : "Billing management access has been removed from your account.",
+        changedBy: actorBill.changedBy,
+      }, `billing-access:${tenant_id}:${tenant_user_id}:${grant}`);
 
       return json({ success: true });
     }

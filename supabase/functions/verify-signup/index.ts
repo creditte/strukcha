@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -152,6 +153,27 @@ Deno.serve(async (req) => {
       .from("profiles")
       .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
       .eq("user_id", codeRow.user_id);
+
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("full_name")
+      .eq("user_id", codeRow.user_id)
+      .maybeSingle();
+
+    const displayName =
+      (existingUser.user.user_metadata?.full_name as string | undefined) ||
+      profile?.full_name;
+
+    try {
+      await invokeTransactionalEmail({
+        templateName: "welcome",
+        recipientEmail: email.toLowerCase(),
+        templateData: { name: displayName || undefined },
+        idempotencyKey: `welcome:${codeRow.user_id}`,
+      });
+    } catch (err) {
+      console.error("[VerifySignup] welcome email:", err);
+    }
 
     return json({ ok: true, verified: true });
   } catch (err: any) {

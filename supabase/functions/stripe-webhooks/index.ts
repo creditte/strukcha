@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
+import { getTenantBillingRecipients } from "../_shared/tenant-recipients.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,6 +50,35 @@ async function findTenantByCustomer(supabaseAdmin: any, customerId: string): Pro
     .eq("stripe_customer_id", customerId)
     .maybeSingle();
   return data?.id ?? null;
+}
+
+async function notifyTenantBilling(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  tenantId: string,
+  templateName: string,
+  templateData: Record<string, unknown>,
+  idempotencyKey: string,
+): Promise<void> {
+  const { data: tenant } = await supabaseAdmin
+    .from("tenants")
+    .select("firm_name, subscription_plan")
+    .eq("id", tenantId)
+    .maybeSingle();
+
+  const recipients = await getTenantBillingRecipients(supabaseAdmin, tenantId);
+  for (const recipient of recipients) {
+    await invokeTransactionalEmail({
+      templateName,
+      recipientEmail: recipient.email,
+      templateData: {
+        name: recipient.name,
+        firmName: tenant?.firm_name,
+        plan: tenant?.subscription_plan,
+        ...templateData,
+      },
+      idempotencyKey: `${idempotencyKey}:${recipient.email}`,
+    });
+  }
 }
 
 const toISO = (val: any): string | null => {
@@ -196,6 +227,14 @@ Deno.serve(async (req) => {
         const tenantId = await findTenantByCustomer(supabaseAdmin, subscription.customer as string);
 
         if (tenantId) {
+          const { data: tenantBefore } = await supabaseAdmin
+            .from("tenants")
+            .select("access_locked_reason")
+            .eq("id", tenantId)
+            .maybeSingle();
+
+          const paymentFailed = tenantBefore?.access_locked_reason === "payment_failed";
+
           await supabaseAdmin
             .from("tenants")
             .update({
@@ -206,6 +245,17 @@ Deno.serve(async (req) => {
             })
             .eq("id", tenantId);
           console.log(`Tenant ${tenantId} subscription deleted, access locked`);
+
+          await notifyTenantBilling(
+            supabaseAdmin,
+            tenantId,
+            "subscription-canceled",
+            {
+              reason: paymentFailed ? "payment_failed" : "canceled",
+              accessEndsAt: new Date().toISOString(),
+            },
+            `stripe:${event.id}:subscription-canceled`,
+          );
         }
         break;
       }
@@ -287,6 +337,61 @@ Deno.serve(async (req) => {
             })
             .eq("id", tenantId);
           console.log(`Tenant ${tenantId} payment failed, access locked`);
+
+          await notifyTenantBilling(
+            supabaseAdmin,
+            tenantId,
+            "payment-failed",
+            {},
+            `stripe:${event.id}:payment-failed`,
+          );
+        }
+        break;
+      }
+
+      case "customer.subscription.trial_will_end": {
+        const subscription = event.data.object as Stripe.Subscription;
+        let tenantId = subscription.metadata?.workspace_id as string | undefined;
+        if (!tenantId) {
+          tenantId = await findTenantByCustomer(supabaseAdmin, subscription.customer as string) ?? undefined;
+        }
+        if (tenantId && subscription.trial_end) {
+          const trialEndIso = new Date(subscription.trial_end * 1000).toISOString();
+          const daysRemaining = Math.max(
+            1,
+            Math.ceil((subscription.trial_end * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
+          );
+          await notifyTenantBilling(
+            supabaseAdmin,
+            tenantId,
+            "trial-ending",
+            { trialEndsAt: trialEndIso, daysRemaining },
+            `stripe:${event.id}:trial-ending`,
+          );
+        }
+        break;
+      }
+
+      case "invoice.upcoming": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const tenantId = await findTenantByCustomer(supabaseAdmin, invoice.customer as string);
+        if (tenantId) {
+          const renewalDate = invoice.period_end
+            ? new Date(invoice.period_end * 1000).toISOString()
+            : undefined;
+          const amount = invoice.amount_due != null
+            ? new Intl.NumberFormat("en-AU", {
+              style: "currency",
+              currency: (invoice.currency || "aud").toUpperCase(),
+            }).format(invoice.amount_due / 100)
+            : undefined;
+          await notifyTenantBilling(
+            supabaseAdmin,
+            tenantId,
+            "renewal-reminder",
+            { renewalDate, amount },
+            `stripe:${event.id}:renewal-reminder`,
+          );
         }
         break;
       }

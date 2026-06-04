@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { encryptToken } from "../_shared/crypto.ts";
+import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
 
 type PendingSignup = {
@@ -297,6 +298,17 @@ Deno.serve(async (req) => {
     }
 
     await supabase.from("xero_oauth_states").delete().eq("id", csrfRecord.id);
+
+    try {
+      await invokeTransactionalEmail({
+        templateName: "welcome",
+        recipientEmail: email,
+        templateData: { name: fullName },
+        idempotencyKey: `welcome:${userId}`,
+      });
+    } catch (err) {
+      console.error("[xero-signup-callback] welcome email:", err);
+    }
 
     const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
       type: "magiclink",

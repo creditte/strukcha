@@ -52,7 +52,7 @@ export default function StructureView() {
   const { snapshots, reload: reloadSnapshots } = useSnapshots(id);
   const { tenant } = useSharedTenantSettings();
 
-  const tenantDefaultView = (tenant?.export_default_view_mode as ViewMode) || "ownership";
+  const tenantDefaultView = (tenant?.export_default_view_mode as ViewMode) || "full";
   const [filterRelType, setFilterRelType] = useState("all");
   const [showFamily, setShowFamily] = useState(false);
   const [depth, setDepth] = useState(2);

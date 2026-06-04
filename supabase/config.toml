@@ -45,6 +45,8 @@ project_id = "bzwppzihyktfewdfqiuo"
     verify_jwt = false
   [functions.send-transactional-email]
     verify_jwt = true
+  [functions.send-billing-reminders]
+    verify_jwt = false
   [functions.preview-transactional-email]
     verify_jwt = false
   [functions.handle-email-unsubscribe]

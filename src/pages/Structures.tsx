@@ -408,7 +408,12 @@ export default function Structures() {
         throw new Error(msg);
       }
       if (data?.error) throw new Error(data.detail || data.error);
-      toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
+      const relCount = data.relationships_count ?? 0;
+      if (relCount === 0) {
+        toast.warning(`Imported ${data.entities_count} entities but no relationships were saved. Try opening the group preview and contact support if this persists.`);
+      } else {
+        toast.success(`Imported ${data.entities_count} entities and ${relCount} relationships`);
+      }
       navigate(`/structures/${data.structure_id}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to import group");
