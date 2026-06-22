@@ -229,6 +229,22 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Require owner/admin role for destructive sync (overwrites tenant data)
+    const { data: callerRole } = await supabase
+      .from("tenant_users")
+      .select("role")
+      .eq("tenant_id", tenantId)
+      .eq("auth_user_id", user.id)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!callerRole || !["owner", "admin"].includes(callerRole.role)) {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Load Xero connection
     const { data: connections } = await supabase
       .from("xero_connections")
