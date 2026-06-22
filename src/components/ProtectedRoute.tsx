@@ -5,6 +5,7 @@ import { useTenantSettings, TenantLoadStatus } from "@/hooks/useTenantSettings";
 import { useMfa } from "@/hooks/useMfa";
 import { useBilling } from "@/hooks/useBilling";
 import { supabase } from "@/integrations/supabase/client";
+import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { Shield } from "lucide-react";
 import RecoveryScreen from "@/components/RecoveryScreen";
 import { trace, getTrace, TraceEntry } from "@/lib/bootTrace";
