@@ -169,7 +169,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const { bootStatus, bootError, user } = useAuth();
   const { tenant, loading: tenantLoading, status: tenantStatus, error: tenantError } = useTenantSettings();
   const [searchParams] = useSearchParams();
-  const showDebug = searchParams.get("debug") === "boot";
+  const { isSuperAdmin } = useSuperAdmin();
+  const showDebug = isSuperAdmin && searchParams.get("debug") === "boot";
 
   // Check onboarding_complete for password setup redirect
   // IMPORTANT: query AFTER tenant loading completes so link_tenant_user_on_login has run first
