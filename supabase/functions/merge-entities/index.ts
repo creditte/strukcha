@@ -70,6 +70,22 @@ Deno.serve(async (req) => {
 
     const tenantId = profile.tenant_id;
 
+    // Require owner/admin role for destructive merge operation
+    const { data: callerRole } = await admin
+      .from("tenant_users")
+      .select("role")
+      .eq("tenant_id", tenantId)
+      .eq("auth_user_id", user.id)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!callerRole || !["owner", "admin"].includes(callerRole.role)) {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Verify all entities belong to this tenant and same type
     const allIds = [primary_entity_id, ...merged_entity_ids];
     const { data: entities } = await admin
