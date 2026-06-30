@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Info } from "lucide-react";
 import {
   RELATIONSHIP_RULES,
-  getValidRelationshipTypes,
+  getValidRelationshipOptions,
   getDirectionError,
   getMetadataFields,
   getEffectiveMetadataFields,
