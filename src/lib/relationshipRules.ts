@@ -181,10 +181,10 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
   {
     type: "partner",
     label: "Partner",
-    allowedSourceTypes: ["individual", "company"],
-    allowedTargetTypes: ["individual", "company"], // Partnerships are entity-to-entity
+    allowedSourceTypes: ["individual"],
+    allowedTargetTypes: ["individual"], // Partner relationships are between individuals only
     allowReverse: true,
-    validationMessage: "Partners must be individuals or companies.",
+    validationMessage: "Partner relationships can only be between individuals.",
     category: "ownership",
     metadataFields: ["ownership_percent"],
   },
@@ -301,7 +301,40 @@ export function getValidRelationshipTypes(
   fromEntityType: string,
   toEntityType: string,
 ): string[] {
-  return allTypes.filter((t) => isDirectionValid(t, fromEntityType, toEntityType));
+  return getValidRelationshipOptions(allTypes, fromEntityType, toEntityType).map((o) => o.type);
+}
+
+/**
+ * A relationship type valid for the given entity pair, possibly only
+ * after swapping source/target. Callers should flip from/to when
+ * `needsReversal` is true before persisting.
+ */
+export interface ValidRelationshipOption {
+  type: string;
+  needsReversal: boolean;
+}
+
+/**
+ * Return relationship types valid for the (from, to) pair. If a type is
+ * only valid in the reverse direction, it is still included with
+ * `needsReversal: true` so the UI can offer it and flip the direction
+ * at insert time. This keeps the picker symmetric regardless of which
+ * entity the user starts from.
+ */
+export function getValidRelationshipOptions(
+  allTypes: readonly string[],
+  fromEntityType: string,
+  toEntityType: string,
+): ValidRelationshipOption[] {
+  const out: ValidRelationshipOption[] = [];
+  for (const t of allTypes) {
+    if (isDirectionValid(t, fromEntityType, toEntityType)) {
+      out.push({ type: t, needsReversal: false });
+    } else if (isDirectionValid(t, toEntityType, fromEntityType)) {
+      out.push({ type: t, needsReversal: true });
+    }
+  }
+  return out;
 }
 
 /**
