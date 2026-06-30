@@ -340,6 +340,31 @@ function StructureGraphInner({
     );
   }, [selectedEntityId, pinnedNodeIds, searchHighlightId, setNodes, issueMap]);
 
+  // Dynamically pick the closest handles based on relative node positions,
+  // so arrows always connect via the nearest sides (top/bottom).
+  const positionsKey = useMemo(
+    () => nodes.map((n) => `${n.id}:${Math.round(n.position.y)}`).join("|"),
+    [nodes]
+  );
+  useEffect(() => {
+    const posMap = new Map(nodes.map((n) => [n.id, n.position]));
+    setEdges((eds) => {
+      let changed = false;
+      const next = eds.map((e) => {
+        const s = posMap.get(e.source);
+        const t = posMap.get(e.target);
+        if (!s || !t) return e;
+        const sourceAbove = s.y < t.y;
+        const sh = sourceAbove ? "bottom" : "top";
+        const th = sourceAbove ? "top-target" : "bottom-target";
+        if (e.sourceHandle === sh && e.targetHandle === th) return e;
+        changed = true;
+        return { ...e, sourceHandle: sh, targetHandle: th };
+      });
+      return changed ? next : eds;
+    });
+  }, [positionsKey, setEdges, nodes]);
+
   useEffect(() => {
     if (searchHighlightId) {
       setTimeout(() => fitView({ padding: 0.5, nodes: [{ id: searchHighlightId }], duration: 300 }), 50);
