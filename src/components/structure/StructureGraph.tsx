@@ -141,6 +141,8 @@ function buildEdges(
       id: r.id,
       source: r.to_entity_id,
       target: r.from_entity_id,
+      sourceHandle: "top",
+      targetHandle: "bottom-target",
       label: edgeLabel,
       type: "default",
       animated: false,
