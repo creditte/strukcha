@@ -181,10 +181,10 @@ export const RELATIONSHIP_RULES: readonly RelationshipRule[] = [
   {
     type: "partner",
     label: "Partner",
-    allowedSourceTypes: ["individual", "company"],
-    allowedTargetTypes: ["individual", "company"], // Partnerships are entity-to-entity
+    allowedSourceTypes: ["individual"],
+    allowedTargetTypes: ["individual"], // Partner relationships are between individuals only
     allowReverse: true,
-    validationMessage: "Partners must be individuals or companies.",
+    validationMessage: "Partner relationships can only be between individuals.",
     category: "ownership",
     metadataFields: ["ownership_percent"],
   },
