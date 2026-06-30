@@ -139,8 +139,8 @@ function buildEdges(
 
     return {
       id: r.id,
-      source: r.from_entity_id,
-      target: r.to_entity_id,
+      source: r.to_entity_id,
+      target: r.from_entity_id,
       label: edgeLabel,
       type: "default",
       animated: false,
@@ -160,7 +160,7 @@ function buildEdges(
       },
       labelBgStyle: { fill: "hsl(var(--card))", fillOpacity: 0.9 },
       labelBgPadding: [4, 2] as [number, number],
-      markerStart: {
+      markerEnd: {
         type: MarkerType.ArrowClosed,
         width: 14,
         height: 14,
