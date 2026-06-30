@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { X, Info } from "lucide-react";
 import {
   RELATIONSHIP_RULES,
-  getValidRelationshipTypes,
+  getValidRelationshipOptions,
   getRelationshipLabel,
 } from "@/lib/relationshipRules";
 
