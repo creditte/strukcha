@@ -71,7 +71,7 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
       )}
       <div className="flex justify-end gap-2 mt-3">
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" className="h-7 text-xs" disabled={!selected} onClick={() => onConfirm(selected)}>
+        <Button size="sm" className="h-7 text-xs" disabled={!selected} onClick={() => onConfirm(selected, !!selectedOption?.needsReversal)}>
           Add
         </Button>
       </div>
