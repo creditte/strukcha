@@ -77,8 +77,8 @@ export default function EntityDetailPanel({
     }
 
     const fullData = {
-      ...insertData,
       from_entity_id: entity.id,
+      ...insertData,
       tenant_id: entityData.tenant_id,
       source: "manual",
     };
