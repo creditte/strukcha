@@ -39,12 +39,17 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
   const otherEntities = allEntities.filter((e) => e.id !== currentEntityId);
 
   const targetEntity = allEntities.find((e) => e.id === target);
-  const validTypes = useMemo(() => {
-    if (!currentEntity || !targetEntity) return [...ALL_TYPES];
-    return getValidRelationshipTypes(ALL_TYPES, currentEntity.entity_type, targetEntity.entity_type);
+  const validOptions = useMemo(() => {
+    if (!currentEntity || !targetEntity) {
+      return ALL_TYPES.map((t) => ({ type: t, needsReversal: false }));
+    }
+    return getValidRelationshipOptions(ALL_TYPES, currentEntity.entity_type, targetEntity.entity_type);
   }, [currentEntity, targetEntity]);
+  const validTypes = validOptions.map((o) => o.type);
 
   const effectiveType = validTypes.includes(type) ? type : "";
+  const selectedOption = validOptions.find((o) => o.type === effectiveType);
+  const needsReversal = !!selectedOption?.needsReversal;
 
   const meta = useMemo(() => {
     if (targetEntity && isDiscretionaryTrustBeneficiary(effectiveType, targetEntity.entity_type)) return [] as const;
@@ -55,14 +60,15 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
   const showClass = meta.includes("ownership_class");
 
   const handleSubmit = async () => {
-    if (!target || !effectiveType) return;
+    if (!target || !effectiveType || !currentEntity || !targetEntity) return;
 
-    if (currentEntity && targetEntity) {
-      const error = getDirectionError(effectiveType, currentEntity.entity_type, targetEntity.entity_type);
-      if (error) {
-        toast({ title: "Invalid relationship", description: error, variant: "destructive" });
-        return;
-      }
+    // Validate in the effective (possibly reversed) direction.
+    const fromType = needsReversal ? targetEntity.entity_type : currentEntity.entity_type;
+    const toType = needsReversal ? currentEntity.entity_type : targetEntity.entity_type;
+    const error = getDirectionError(effectiveType, fromType, toType);
+    if (error) {
+      toast({ title: "Invalid relationship", description: error, variant: "destructive" });
+      return;
     }
 
     const pct = ownershipPercent ? parseFloat(ownershipPercent) : null;
@@ -73,7 +79,8 @@ export default function EntityAddRelationshipForm({ allEntities, currentEntityId
     setAdding(true);
 
     const data: Record<string, unknown> = {
-      to_entity_id: target,
+      from_entity_id: needsReversal ? target : currentEntityId,
+      to_entity_id: needsReversal ? currentEntityId : target,
       relationship_type: effectiveType,
     };
 
