@@ -160,12 +160,13 @@ function buildEdges(
       },
       labelBgStyle: { fill: "hsl(var(--card))", fillOpacity: 0.9 },
       labelBgPadding: [4, 2] as [number, number],
-      markerEnd: {
+      markerStart: {
         type: MarkerType.ArrowClosed,
         width: 14,
         height: 14,
         color: invalid ? "#ef4444" : (EDGE_COLORS[r.relationship_type] ?? "#94a3b8"),
       },
+
     };
   });
 }
