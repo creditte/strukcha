@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode } fro
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { trace } from "@/lib/bootTrace";
+import { clearAllTrustedDeviceTokens, clearTrustedTokensForUser } from "@/hooks/useTrustedDevice";
 
 // ── Boot state machine ──────────────────────────────────────────────
 export type BootStatus = "booting" | "authenticated" | "unauthenticated" | "error" | "timeout";
@@ -42,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         bootResolved.current = true;
         trace("useAuth", "TIMEOUT – clearing session", { ms: BOOT_TIMEOUT_MS });
         console.error("[Auth] Boot timeout after", BOOT_TIMEOUT_MS, "ms – signing out");
-        try { localStorage.removeItem("td_token"); } catch { /* noop */ }
+        clearAllTrustedDeviceTokens();
         await supabase.auth.signOut().catch(() => {});
         setSession(null);
         setUser(null);
@@ -104,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             trace("useAuth", "getUser failed – stale session, signing out", { error: userError?.message });
             console.warn("[Auth] Stale session detected, clearing and redirecting to login");
             await supabase.auth.signOut();
-            try { localStorage.removeItem("td_token"); } catch { /* noop */ }
+            clearAllTrustedDeviceTokens();
             finishBoot(null);
             return;
           }
@@ -125,7 +126,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     trace("useAuth", "signOut called");
-    try { localStorage.removeItem("td_token"); } catch { /* noop */ }
+    try {
+      const {
+        data: { session: s },
+      } = await supabase.auth.getSession();
+      const uid = s?.user?.id;
+      if (uid) clearTrustedTokensForUser(uid);
+      else clearAllTrustedDeviceTokens();
+    } catch {
+      clearAllTrustedDeviceTokens();
+    }
     await supabase.auth.signOut();
     setBootStatus("unauthenticated");
   };

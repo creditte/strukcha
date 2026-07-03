@@ -486,7 +486,8 @@ export function useFilteredGraph(
     let filteredRels = relationships.filter((r) => {
       if (viewMode === "ownership" && !OWNERSHIP_VIEW_TYPES.has(r.relationship_type)) return false;
       if (viewMode === "control" && !CONTROL_VIEW_TYPES.has(r.relationship_type)) return false;
-      if (!showFamily && FAMILY_TYPES.has(r.relationship_type)) return false;
+      // Full view always shows family links (spouse/parent/child)
+      if (!showFamily && viewMode !== "full" && FAMILY_TYPES.has(r.relationship_type)) return false;
       if (filterRelType && r.relationship_type !== filterRelType) return false;
       return true;
     });

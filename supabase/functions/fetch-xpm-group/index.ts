@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decryptToken, encryptToken } from "../_shared/crypto.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+import { buildXpmEdges, parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -152,33 +153,6 @@ function resolveEntityType(businessStructure?: string): string {
   return "Unclassified";
 }
 
-const REL_TYPE_MAP: Record<string, string> = {
-  "director of": "director",
-  director: "director",
-  "trustee of": "trustee",
-  trustee: "trustee",
-  "shareholder of": "shareholder",
-  shareholder: "shareholder",
-  "beneficiary of": "beneficiary",
-  beneficiary: "beneficiary",
-  "partner of": "partner",
-  partner: "partner",
-  "appointer of": "appointer",
-  "appointor of": "appointer",
-  appointer: "appointer",
-  appointor: "appointer",
-  "settlor of": "settlor",
-  settlor: "settlor",
-  "member of": "member",
-  member: "member",
-  "spouse of": "spouse",
-  spouse: "spouse",
-  "parent of": "parent",
-  parent: "parent",
-  "child of": "child",
-  child: "child",
-};
-
 // ── Main ────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -271,6 +245,7 @@ Deno.serve(async (req) => {
       businessStructure: string;
       relationships: Array<{
         type: string;
+        typeRaw: string;
         relatedClientUuid: string;
         relatedClientName: string;
         percentage: number | null;
@@ -301,18 +276,18 @@ Deno.serve(async (req) => {
           const rels: NodeData["relationships"] = [];
 
           for (const rel of relList) {
-            const relTypeRaw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim().toLowerCase();
+            const typeRaw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim();
             const relatedClient = rel?.RelatedClient;
             const relatedUuid = xmlText(relatedClient, "UUID") || xmlText(rel, "RelatedClientUUID");
             const relatedName = xmlText(relatedClient, "Name") || xmlText(rel, "RelatedClientName");
             const percentStr = xmlText(rel, "Percentage") || xmlText(rel, "OwnershipPercentage");
             const percentage = percentStr ? parseFloat(percentStr) : null;
+            const rule = parseXpmRelationshipType(typeRaw);
 
-            const mappedType = REL_TYPE_MAP[relTypeRaw] || relTypeRaw;
-
-            if (relatedUuid || relatedName) {
+            if ((relatedUuid || relatedName) && rule) {
               rels.push({
-                type: mappedType,
+                type: rule.type,
+                typeRaw,
                 relatedClientUuid: relatedUuid,
                 relatedClientName: relatedName,
                 percentage: percentage && !isNaN(percentage) ? percentage : null,
@@ -337,41 +312,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Build edges from relationships (deduped)
     const memberUuidSet = new Set(memberUuids);
-    const edges: Array<{
-      id: string;
-      source: string;
-      target: string;
-      type: string;
-      percentage: number | null;
-    }> = [];
-    const edgeDedupeSet = new Set<string>();
-
-    for (const node of nodes) {
-      for (const rel of node.relationships) {
-        // Only include edges where both ends are in the group
-        const targetId = rel.relatedClientUuid;
-        if (!targetId) continue;
-
-        // Determine direction based on relationship type
-        let source = node.id;
-        let target = targetId;
-
-        const dedupeKey = `${rel.type}:${source}:${target}`;
-        const reverseDedupe = `${rel.type}:${target}:${source}`;
-        if (edgeDedupeSet.has(dedupeKey) || edgeDedupeSet.has(reverseDedupe)) continue;
-        edgeDedupeSet.add(dedupeKey);
-
-        edges.push({
-          id: `${source}-${rel.type}-${target}`,
-          source,
-          target,
-          type: rel.type,
-          percentage: rel.percentage,
-        });
-      }
-    }
+    const edges = buildXpmEdges(
+      nodes.map((n) => ({
+        id: n.id,
+        entityType: n.entityType,
+        relationships: n.relationships.map((r) => ({
+          typeRaw: r.typeRaw,
+          relatedClientUuid: r.relatedClientUuid,
+          percentage: r.percentage,
+        })),
+      })),
+      memberUuidSet,
+    );
 
     return new Response(JSON.stringify({
       groupName,

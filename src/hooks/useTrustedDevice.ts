@@ -1,59 +1,121 @@
 import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-const TRUSTED_DEVICE_KEY = "td_token";
+const LEGACY_TRUSTED_DEVICE_KEY = "td_token";
 
-function getStoredToken(): string | null {
+function scopedKey(userId: string) {
+  return `td_token:${userId}`;
+}
+
+export function getStoredTrustedToken(userId: string): string | null {
   try {
-    return localStorage.getItem(TRUSTED_DEVICE_KEY);
+    const scoped = localStorage.getItem(scopedKey(userId));
+    if (scoped) return scoped;
+    return localStorage.getItem(LEGACY_TRUSTED_DEVICE_KEY);
   } catch {
     return null;
   }
 }
 
-function storeToken(token: string) {
+export function storeTrustedToken(userId: string, token: string) {
   try {
-    localStorage.setItem(TRUSTED_DEVICE_KEY, token);
+    localStorage.setItem(scopedKey(userId), token);
+    localStorage.removeItem(LEGACY_TRUSTED_DEVICE_KEY);
   } catch {
     // noop
   }
 }
 
-function clearToken() {
+/** Remove stored trust token for one user (and legacy key). */
+export function clearTrustedTokensForUser(userId: string) {
   try {
-    localStorage.removeItem(TRUSTED_DEVICE_KEY);
+    localStorage.removeItem(scopedKey(userId));
+    localStorage.removeItem(LEGACY_TRUSTED_DEVICE_KEY);
   } catch {
     // noop
   }
+}
+
+/** Sign-out / security reset: remove every td_token:* plus legacy key. */
+export function clearAllTrustedDeviceTokens() {
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k === LEGACY_TRUSTED_DEVICE_KEY || k.startsWith("td_token:")) {
+        toRemove.push(k);
+      }
+    }
+    toRemove.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // noop
+  }
+}
+
+/**
+ * Server confirms the device token is invalid/expired — safe to drop local storage.
+ * Do NOT clear on network errors or 401/500; that wipes a valid trust after a flaky request.
+ */
+export async function validateStoredTrustedDevice(userId: string): Promise<boolean> {
+  const token = getStoredTrustedToken(userId);
+  if (!token) return false;
+
+  const { data, error } = await supabase.functions.invoke("trusted-device", {
+    body: { action: "validate", device_token: token },
+  });
+
+  if (error) {
+    console.warn("[useTrustedDevice] validate invoke error (keeping stored token):", error.message);
+    return false;
+  }
+
+  if (data?.trusted === true) {
+    try {
+      if (localStorage.getItem(LEGACY_TRUSTED_DEVICE_KEY) === token) {
+        storeTrustedToken(userId, token);
+      }
+    } catch {
+      // noop
+    }
+    return true;
+  }
+
+  if (data?.trusted === false && data?.reason === "not_found_or_expired") {
+    clearTrustedTokensForUser(userId);
+    return false;
+  }
+
+  if (data?.error) {
+    console.warn("[useTrustedDevice] validate response error (keeping token):", data.error);
+    return false;
+  }
+
+  return false;
 }
 
 export function useTrustedDevice() {
   const registerDevice = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error("Not signed in");
+
     const { data, error } = await supabase.functions.invoke("trusted-device", {
       body: { action: "register" },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
-    storeToken(data.trusted_device_token);
+    storeTrustedToken(user.id, data.trusted_device_token);
     return data;
   }, []);
 
   const validateDevice = useCallback(async (): Promise<boolean> => {
-    const token = getStoredToken();
-    if (!token) return false;
-
-    try {
-      const { data, error } = await supabase.functions.invoke("trusted-device", {
-        body: { action: "validate", device_token: token },
-      });
-      if (error || data?.error) {
-        clearToken();
-        return false;
-      }
-      return data?.trusted === true;
-    } catch {
-      return false;
-    }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user?.id) return false;
+    return validateStoredTrustedDevice(user.id);
   }, []);
 
   const revokeAllDevices = useCallback(async () => {
@@ -62,7 +124,11 @@ export function useTrustedDevice() {
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
-    clearToken();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.id) clearTrustedTokensForUser(user.id);
+    else clearAllTrustedDeviceTokens();
     return data;
   }, []);
 
@@ -97,7 +163,24 @@ export function useTrustedDevice() {
     revokeAllDevices,
     revokeDevice,
     listDevices,
-    clearToken,
-    hasStoredToken: () => !!getStoredToken(),
+    clearToken: () => {
+      void supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user?.id) clearTrustedTokensForUser(user.id);
+        else clearAllTrustedDeviceTokens();
+      });
+    },
+    hasStoredToken: () => {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k === LEGACY_TRUSTED_DEVICE_KEY || k.startsWith("td_token:"))) {
+            return !!localStorage.getItem(k);
+          }
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
   };
 }

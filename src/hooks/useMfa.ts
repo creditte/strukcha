@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { validateStoredTrustedDevice } from "./useTrustedDevice";
 
 export type MfaStatus = "loading" | "not-enrolled" | "needs-verification" | "verified";
 export type MfaMethod = "totp" | "email" | null;
@@ -27,6 +28,15 @@ export function useMfa() {
 
     setLoading(true);
     try {
+      const bypassIfTrusted = async (mfaMethod: MfaMethod): Promise<boolean> => {
+        const ok = await validateStoredTrustedDevice(user.id);
+        if (!ok) return false;
+        setStatus("verified");
+        setMethod(mfaMethod);
+        setLoading(false);
+        return true;
+      };
+
       // 1. Check user's explicit MFA preference first
       const { data: settings } = await (supabase as any)
         .from("mfa_settings")
@@ -68,6 +78,7 @@ export function useMfa() {
         }
 
         if (aalData?.nextLevel === "aal2") {
+          if (await bypassIfTrusted("totp")) return;
           setStatus("needs-verification");
           setMethod("totp");
           setLoading(false);
@@ -75,6 +86,7 @@ export function useMfa() {
         }
 
         // TOTP preference set but no active factor — treat as needs setup
+        if (await bypassIfTrusted("totp")) return;
         setStatus("needs-verification");
         setMethod("totp");
         setLoading(false);
@@ -98,15 +110,27 @@ export function useMfa() {
           .maybeSingle();
 
         setMethod("email");
-        setStatus(verif ? "verified" : "needs-verification");
+        if (verif) {
+          setStatus("verified");
+        } else {
+          if (await bypassIfTrusted("email")) return;
+          setStatus("needs-verification");
+        }
         setLoading(false);
         return;
       }
 
       // 2. No explicit preference — check if TOTP is enrolled natively
       const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (aalData?.currentLevel === "aal2" || aalData?.nextLevel === "aal2") {
-        setStatus(aalData.currentLevel === "aal2" ? "verified" : "needs-verification");
+      if (aalData?.currentLevel === "aal2") {
+        setStatus("verified");
+        setMethod("totp");
+        setLoading(false);
+        return;
+      }
+      if (aalData?.nextLevel === "aal2") {
+        if (await bypassIfTrusted("totp")) return;
+        setStatus("needs-verification");
         setMethod("totp");
         setLoading(false);
         return;

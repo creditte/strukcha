@@ -1351,23 +1351,29 @@ export type Database = {
         Row: {
           created_at: string
           csrf_token: string
+          flow: string
           id: string
+          pending_signup: Json | null
           used: boolean
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
           csrf_token: string
+          flow?: string
           id?: string
+          pending_signup?: Json | null
           used?: boolean
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
           csrf_token?: string
+          flow?: string
           id?: string
+          pending_signup?: Json | null
           used?: boolean
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: []
       }

@@ -6,6 +6,72 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const SITE_NAME = "strukcha";
+const FROM_DOMAIN = "strukcha.app";
+const PROD_FRONTEND_URL = "https://strukcha.app";
+
+function buildSetupPasswordRedirect(supabaseUrl: string): string {
+  const frontendUrl = PROD_FRONTEND_URL;
+  const isLocalRuntime = supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
+  try {
+    const url = new URL(frontendUrl);
+    if (!isLocalRuntime && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
+      return `${PROD_FRONTEND_URL}/setup-password`;
+    }
+    url.pathname = "/setup-password";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return `${PROD_FRONTEND_URL}/setup-password`;
+  }
+}
+
+function forceRedirectOnActionLink(actionLink: string, redirectTo: string): string {
+  try {
+    const url = new URL(actionLink);
+    url.searchParams.set("redirect_to", redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
+}
+
+function renderInviteHtml(actionLink: string): string {
+  return `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:28px">
+<h2 style="margin-bottom:12px;color:#18181b">You've been invited to ${SITE_NAME}</h2>
+<p style="color:#52525b;font-size:15px;line-height:1.5">Click below to accept your invitation and set your password.</p>
+<div style="margin:24px 0;text-align:center">
+  <a href="${actionLink}" style="background:#111827;color:#ffffff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">Accept invitation</a>
+</div>
+<p style="color:#71717a;font-size:13px;line-height:1.5">If the button does not work, copy and paste this URL into your browser:</p>
+<p style="word-break:break-all;color:#334155;font-size:12px">${actionLink}</p>
+</div>`;
+}
+
+async function sendViaSmtp2go(to: string, subject: string, html: string, text?: string): Promise<void> {
+  const apiKey = Deno.env.get("SMTP2GO_API_KEY");
+  if (!apiKey) throw new Error("SMTP2GO_API_KEY not configured");
+
+  const response = await fetch("https://api.smtp2go.com/v3/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: apiKey,
+      sender: `${SITE_NAME} <no-reply@${FROM_DOMAIN}>`,
+      to: [to],
+      subject,
+      html_body: html,
+      text_body: text || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`smtp2go error ${response.status}: ${body}`);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -53,6 +119,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { action } = body;
+    const setupPasswordRedirect = buildSetupPasswordRedirect(supabaseUrl);
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
@@ -89,16 +156,37 @@ Deno.serve(async (req) => {
         throw invError;
       }
 
-      // Use Supabase admin API to invite user by email
+      // Generate invite link and send via SMTP2GO
       const { data: inviteData, error: authError } =
-        await adminClient.auth.admin.inviteUserByEmail(email, {
-          data: { full_name: full_name || "" },
+        await adminClient.auth.admin.generateLink({
+          type: "invite",
+          email,
+          options: { redirectTo: setupPasswordRedirect },
         });
 
       if (authError) {
         // Clean up invitation if auth invite fails
         await userClient.from("invitations").delete().eq("id", invitation.id);
         throw authError;
+      }
+
+      const inviteLink = inviteData?.properties?.action_link;
+      if (!inviteLink) {
+        await userClient.from("invitations").delete().eq("id", invitation.id);
+        throw new Error("Failed to generate invitation link");
+      }
+
+      try {
+        const safeInviteLink = forceRedirectOnActionLink(inviteLink, setupPasswordRedirect);
+        await sendViaSmtp2go(
+          email,
+          "You're invited to strukcha",
+          renderInviteHtml(safeInviteLink),
+          `Accept your invitation and set your password: ${safeInviteLink}`
+        );
+      } catch (smtpErr) {
+        await userClient.from("invitations").delete().eq("id", invitation.id);
+        throw smtpErr;
       }
 
       // Log to audit
@@ -128,10 +216,23 @@ Deno.serve(async (req) => {
     if (action === "resend_invite") {
       const { email } = body;
 
-      const { error: authError } =
-        await adminClient.auth.admin.inviteUserByEmail(email);
+      const { data: linkData, error: authError } =
+        await adminClient.auth.admin.generateLink({
+          type: "magiclink",
+          email,
+          options: { redirectTo: setupPasswordRedirect },
+        });
 
       if (authError) throw authError;
+      const actionLink = linkData?.properties?.action_link;
+      if (!actionLink) throw new Error("Failed to generate invitation link");
+      const safeActionLink = forceRedirectOnActionLink(actionLink, setupPasswordRedirect);
+      await sendViaSmtp2go(
+        email,
+        "Your strukcha sign-in link",
+        renderInviteHtml(safeActionLink),
+        `Use this secure link to continue: ${safeActionLink}`
+      );
 
       return new Response(
         JSON.stringify({ success: true }),

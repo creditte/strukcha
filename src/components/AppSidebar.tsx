@@ -33,7 +33,7 @@ export default function AppSidebar() {
   const logoUrl = tenant?.logo_url;
 
   return (
-    <aside className="flex h-screen w-[220px] flex-col border-r border-border/50 bg-card/50">
+    <aside className="hidden h-screen w-[220px] shrink-0 md:flex md:w-[200px] lg:w-[220px] flex-col border-r border-border/50 bg-card/50">
       {/* Logo */}
       <div className="flex h-16 items-center gap-2.5 px-5">
         {logoUrl ? (

@@ -138,16 +138,63 @@ Deno.serve(async (req) => {
     }
 
     const connection = connections[0];
+    const startedAt = Date.now();
+
+    // Optional: return cached groups only (fast path for UI)
+    const body = await req.json().catch(() => ({}));
+    const cacheOnly = body?.cache_only === true;
+
+    const { data: cachedRows } = await supabase
+      .from("xpm_groups")
+      .select("xpm_uuid, name, updated_at")
+      .eq("tenant_id", tenantId)
+      .order("name", { ascending: true });
+
+    const cachedGroups = (cachedRows ?? []).map((g) => ({
+      xpm_uuid: g.xpm_uuid,
+      name: g.name,
+    }));
+    const cachedAt = cachedRows?.length
+      ? cachedRows.reduce((latest, g) => (g.updated_at > latest ? g.updated_at : latest), cachedRows[0].updated_at)
+      : null;
+
+    if (cacheOnly) {
+      return new Response(JSON.stringify({
+        groups: cachedGroups,
+        count: cachedGroups.length,
+        cached: true,
+        cached_at: cachedAt,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const accessToken = await refreshAccessToken(supabase, connection);
 
-    const xeroTenantId = await discoverPmTenantId(accessToken, connection.xero_tenant_id);
+    // Prefer stored PM tenant id — avoids an extra round-trip to api.xero.com/connections
+    let xeroTenantId = connection.xero_tenant_id as string | null;
     if (!xeroTenantId) {
-      return new Response(JSON.stringify({ error: "Practice Manager tenant not found", groups: [] }), {
+      xeroTenantId = await discoverPmTenantId(accessToken, null);
+      if (xeroTenantId) {
+        await supabase
+          .from("xero_connections")
+          .update({ xero_tenant_id: xeroTenantId, updated_at: new Date().toISOString() })
+          .eq("id", connection.id);
+      }
+    }
+
+    if (!xeroTenantId) {
+      return new Response(JSON.stringify({
+        error: "Practice Manager tenant not found",
+        groups: cachedGroups,
+        cached: cachedGroups.length > 0,
+        cached_at: cachedAt,
+      }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fetch groups from XPM API
+    // Fetch groups from XPM API (dominant latency — typically several seconds)
     console.log("[list-xpm-groups] Fetching clientgroup.api/list...");
     const url = `${XPM_BASE}/clientgroup.api/list`;
     const res = await fetch(url, {
@@ -161,7 +208,12 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       const errText = await res.text();
       console.error(`[list-xpm-groups] XPM returned ${res.status}: ${errText.substring(0, 300)}`);
-      return new Response(JSON.stringify({ error: `XPM API error: ${res.status}`, groups: [] }), {
+      return new Response(JSON.stringify({
+        error: `XPM API error: ${res.status}`,
+        groups: cachedGroups,
+        cached: cachedGroups.length > 0,
+        cached_at: cachedAt,
+      }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -172,31 +224,53 @@ Deno.serve(async (req) => {
       parsed = parseXml(xmlText2);
     } catch (e) {
       console.error("[list-xpm-groups] XML parse error:", e);
-      return new Response(JSON.stringify({ error: "Failed to parse XPM response", groups: [] }), {
+      return new Response(JSON.stringify({
+        error: "Failed to parse XPM response",
+        groups: cachedGroups,
+        cached: cachedGroups.length > 0,
+        cached_at: cachedAt,
+      }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const groupsContainer = parsed?.Response?.Groups;
     const groupsArray = xmlArray(groupsContainer, "Group");
-    console.log(`[list-xpm-groups] Found ${groupsArray.length} groups`);
+    console.log(`[list-xpm-groups] Found ${groupsArray.length} groups from XPM in ${Date.now() - startedAt}ms`);
 
     const groups = groupsArray.map((g: any) => ({
       xpm_uuid: xmlText(g, "UUID"),
       name: xmlText(g, "Name"),
     })).filter((g: any) => g.xpm_uuid && g.name);
 
-    // Cache groups to xpm_groups table
-    for (const g of groups) {
-      await supabase
+    // Batch cache — one upsert per chunk instead of one round-trip per group
+    const now = new Date().toISOString();
+    const upsertRows = groups.map((g) => ({
+      tenant_id: tenantId,
+      xpm_uuid: g.xpm_uuid,
+      name: g.name,
+      updated_at: now,
+    }));
+
+    const CHUNK = 200;
+    for (let i = 0; i < upsertRows.length; i += CHUNK) {
+      const chunk = upsertRows.slice(i, i + CHUNK);
+      const { error: upsertErr } = await supabase
         .from("xpm_groups")
-        .upsert(
-          { tenant_id: tenantId, xpm_uuid: g.xpm_uuid, name: g.name, updated_at: new Date().toISOString() },
-          { onConflict: "tenant_id,xpm_uuid" },
-        );
+        .upsert(chunk, { onConflict: "tenant_id,xpm_uuid" });
+      if (upsertErr) {
+        console.error("[list-xpm-groups] Batch upsert error:", upsertErr.message);
+      }
     }
 
-    return new Response(JSON.stringify({ groups, count: groups.length }), {
+    console.log(`[list-xpm-groups] Done in ${Date.now() - startedAt}ms`);
+
+    return new Response(JSON.stringify({
+      groups,
+      count: groups.length,
+      cached: false,
+      synced_at: now,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

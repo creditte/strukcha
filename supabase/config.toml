@@ -1,4 +1,4 @@
-project_id = "kdwmetjwxfzovdmarijl"
+project_id = "bzwppzihyktfewdfqiuo"
 
 [functions]
   [functions.analyse-structure]
@@ -23,6 +23,8 @@ project_id = "kdwmetjwxfzovdmarijl"
     verify_jwt = false
   [functions.merge-entities]
     verify_jwt = false
+  [functions.review-structure]
+    verify_jwt = false
   [functions.process-email-queue]
     verify_jwt = true
   [functions.stripe-webhooks]
@@ -33,8 +35,18 @@ project_id = "kdwmetjwxfzovdmarijl"
     verify_jwt = false
   [functions.xero-callback]
     verify_jwt = false
+  [functions.xero-signup-auth]
+    verify_jwt = false
+  [functions.xero-signup-callback]
+    verify_jwt = false
+  [functions.xero-login-auth]
+    verify_jwt = false
+  [functions.xero-login-callback]
+    verify_jwt = false
   [functions.send-transactional-email]
     verify_jwt = true
+  [functions.send-billing-reminders]
+    verify_jwt = false
   [functions.preview-transactional-email]
     verify_jwt = false
   [functions.handle-email-unsubscribe]
@@ -48,4 +60,28 @@ project_id = "kdwmetjwxfzovdmarijl"
   [functions.verify-signup]
     verify_jwt = false
   [functions.mfa-email]
+    verify_jwt = false
+  [functions.bootstrap-super-admin]
+    verify_jwt = false
+  [functions.list-xpm-groups]
+    verify_jwt = false
+  [functions.admin-invite-user]
+    verify_jwt = false
+  [functions.change-plan]
+    verify_jwt = false
+  [functions.reset-totp]
+    verify_jwt = false
+  [functions.xpm-diagnostic]
+    verify_jwt = false
+  [functions.xero-debug]
+    verify_jwt = false
+  [functions.fetch-xpm-group]
+    verify_jwt = false
+  [functions.register-super-admin]
+    verify_jwt = false
+  [functions.switch-billing-interval]
+    verify_jwt = false
+  [functions.import-xpm-group]
+    verify_jwt = false
+  [functions.send-password-reset]
     verify_jwt = false

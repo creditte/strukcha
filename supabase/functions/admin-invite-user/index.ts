@@ -6,6 +6,72 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const SITE_NAME = "strukcha";
+const FROM_DOMAIN = "strukcha.app";
+const PROD_FRONTEND_URL = "https://strukcha.app";
+
+function buildSetupPasswordRedirect(supabaseUrl: string): string {
+  const frontendUrl = PROD_FRONTEND_URL;
+  const isLocalRuntime = supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
+  try {
+    const url = new URL(frontendUrl);
+    if (!isLocalRuntime && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
+      return `${PROD_FRONTEND_URL}/setup-password`;
+    }
+    url.pathname = "/setup-password";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return `${PROD_FRONTEND_URL}/setup-password`;
+  }
+}
+
+function forceRedirectOnActionLink(actionLink: string, redirectTo: string): string {
+  try {
+    const url = new URL(actionLink);
+    url.searchParams.set("redirect_to", redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
+}
+
+function renderInviteHtml(actionLink: string): string {
+  return `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:28px">
+<h2 style="margin-bottom:12px;color:#18181b">You've been invited to ${SITE_NAME}</h2>
+<p style="color:#52525b;font-size:15px;line-height:1.5">Click below to accept your invitation and set your password.</p>
+<div style="margin:24px 0;text-align:center">
+  <a href="${actionLink}" style="background:#111827;color:#ffffff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">Accept invitation</a>
+</div>
+<p style="color:#71717a;font-size:13px;line-height:1.5">If the button does not work, copy and paste this URL into your browser:</p>
+<p style="word-break:break-all;color:#334155;font-size:12px">${actionLink}</p>
+</div>`;
+}
+
+async function sendViaSmtp2go(to: string, subject: string, html: string, text?: string): Promise<void> {
+  const apiKey = Deno.env.get("SMTP2GO_API_KEY");
+  if (!apiKey) throw new Error("SMTP2GO_API_KEY not configured");
+
+  const response = await fetch("https://api.smtp2go.com/v3/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: apiKey,
+      sender: `${SITE_NAME} <no-reply@${FROM_DOMAIN}>`,
+      to: [to],
+      subject,
+      html_body: html,
+      text_body: text || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`smtp2go error ${response.status}: ${body}`);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -15,18 +81,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || supabaseUrl;
-
-    let setupPasswordRedirect = frontendUrl;
-    try {
-      const url = new URL(frontendUrl);
-      url.pathname = "/setup-password";
-      url.search = "";
-      url.hash = "";
-      setupPasswordRedirect = url.toString();
-    } catch {
-      // fallback to FRONTEND_URL as-is if parsing fails
-    }
+    const setupPasswordRedirect = buildSetupPasswordRedirect(supabaseUrl);
 
     // Verify caller is a super admin
     const authHeader = req.headers.get("Authorization");
@@ -103,11 +158,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Send invite email via Supabase Auth admin API
+    // 2. Generate invite/recovery link and send via SMTP2GO
     const { data: inviteData, error: inviteError } =
-      await adminClient.auth.admin.inviteUserByEmail(_email, {
-        data: { full_name: display_name || "" },
-        redirectTo: setupPasswordRedirect,
+      await adminClient.auth.admin.generateLink({
+        type: "invite",
+        email: _email,
+        options: { redirectTo: setupPasswordRedirect },
       });
 
     if (inviteError) {
@@ -162,12 +218,39 @@ Deno.serve(async (req) => {
             );
         }
 
-        // Send a password recovery email so user can set password for new tenant
-        const { error: _resetError } = await adminClient.auth.admin.generateLink({
+        // Send a password recovery link so user can set password for new tenant
+        const { data: recoveryData, error: _resetError } = await adminClient.auth.admin.generateLink({
           type: "recovery",
           email: _email,
           options: { redirectTo: setupPasswordRedirect },
         });
+        if (_resetError) {
+          return new Response(JSON.stringify({ error: _resetError.message }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const recoveryLink = recoveryData?.properties?.action_link;
+        if (!recoveryLink) {
+          return new Response(JSON.stringify({ error: "Failed to generate recovery link" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        try {
+          const safeRecoveryLink = forceRedirectOnActionLink(recoveryLink, setupPasswordRedirect);
+          await sendViaSmtp2go(
+            _email,
+            "You're invited to strukcha",
+            renderInviteHtml(safeRecoveryLink),
+            `Accept your invitation and set your password: ${safeRecoveryLink}`
+          );
+        } catch (smtpErr: any) {
+          return new Response(JSON.stringify({ error: smtpErr?.message || "Failed to send invitation email" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         return new Response(
           JSON.stringify({
@@ -181,6 +264,28 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ error: inviteError.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const inviteLink = inviteData?.properties?.action_link;
+    if (!inviteLink) {
+      return new Response(JSON.stringify({ error: "Failed to generate invitation link" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    try {
+      const safeInviteLink = forceRedirectOnActionLink(inviteLink, setupPasswordRedirect);
+      await sendViaSmtp2go(
+        _email,
+        "You're invited to strukcha",
+        renderInviteHtml(safeInviteLink),
+        `Accept your invitation and set your password: ${safeInviteLink}`
+      );
+    } catch (smtpErr: any) {
+      return new Response(JSON.stringify({ error: smtpErr?.message || "Failed to send invitation email" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

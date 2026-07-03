@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { decryptToken } from "../_shared/crypto.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+import { parseXpmRelationshipType, resolveRelationshipEndpoints } from "../_shared/xpm-relationships.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -102,16 +103,6 @@ function resolveEntityType(bs?: string): string {
   return "Unclassified";
 }
 
-const REL_TYPE_MAP: Record<string, string> = {
-  "director of": "director", director: "director", "trustee of": "trustee", trustee: "trustee",
-  "shareholder of": "shareholder", shareholder: "shareholder", "beneficiary of": "beneficiary",
-  beneficiary: "beneficiary", "partner of": "partner", partner: "partner",
-  "appointer of": "appointer", "appointor of": "appointer", appointer: "appointer", appointor: "appointer",
-  "settlor of": "settlor", settlor: "settlor", "member of": "member", member: "member",
-  "spouse of": "spouse", spouse: "spouse", "parent of": "parent", parent: "parent",
-  "child of": "child", child: "child",
-};
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -167,7 +158,7 @@ Deno.serve(async (req) => {
     interface ClientData {
       uuid: string; name: string; entityType: string; abn: string | null; acn: string | null;
       businessStructure: string;
-      relationships: Array<{ type: string; relatedUuid: string; relatedName: string; percentage: number | null; shares: number | null }>;
+      relationships: Array<{ typeRaw: string; relatedUuid: string; relatedName: string; percentage: number | null; shares: number | null }>;
     }
 
     const clients: ClientData[] = [];
@@ -186,16 +177,21 @@ Deno.serve(async (req) => {
         const rels: ClientData["relationships"] = [];
 
         for (const rel of xmlArray(c?.Relationships, "Relationship")) {
-          const typeRaw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim().toLowerCase();
+          const typeRaw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim();
           const rc = rel?.RelatedClient;
           const relUuid = xmlText(rc, "UUID") || xmlText(rel, "RelatedClientUUID");
           const relName = xmlText(rc, "Name") || xmlText(rel, "RelatedClientName");
           const pct = parseFloat(xmlText(rel, "Percentage") || xmlText(rel, "OwnershipPercentage"));
           const shares = parseFloat(xmlText(rel, "NumberOfShares"));
-          const mapped = REL_TYPE_MAP[typeRaw] || typeRaw;
 
-          if (relUuid) {
-            rels.push({ type: mapped, relatedUuid: relUuid, relatedName: relName, percentage: isNaN(pct) ? null : pct, shares: isNaN(shares) ? null : shares });
+          if (relUuid && typeRaw) {
+            rels.push({
+              typeRaw,
+              relatedUuid: relUuid,
+              relatedName: relName,
+              percentage: isNaN(pct) ? null : pct,
+              shares: isNaN(shares) ? null : shares,
+            });
           }
         }
 
@@ -204,19 +200,36 @@ Deno.serve(async (req) => {
       for (const r of results) if (r) clients.push(r);
     }
 
-    // Create structure
-    const { data: structure, error: structErr } = await supabase.from("structures").insert({
-      name: groupName,
-      tenant_id: tenantId,
-      layout_mode: "auto",
-      source: "xpm",
-    }).select("id").single();
+    // Reuse existing XPM structure for this group name when re-opening in editor
+    const { data: existingStruct } = await supabase
+      .from("structures")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("name", groupName)
+      .eq("source", "xpm")
+      .is("deleted_at", null)
+      .maybeSingle();
 
-    if (structErr || !structure) {
-      return new Response(JSON.stringify({ error: "Failed to create structure", detail: structErr?.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    let structureId: string;
+
+    if (existingStruct) {
+      structureId = existingStruct.id;
+      // Clear prior links so re-import reflects latest XPM data
+      await supabase.from("structure_relationships").delete().eq("structure_id", structureId);
+      await supabase.from("structure_entities").delete().eq("structure_id", structureId);
+    } else {
+      const { data: structure, error: structErr } = await supabase.from("structures").insert({
+        name: groupName,
+        tenant_id: tenantId,
+        layout_mode: "auto",
+        source: "xpm",
+      }).select("id").single();
+
+      if (structErr || !structure) {
+        return new Response(JSON.stringify({ error: "Failed to create structure", detail: structErr?.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      structureId = structure.id;
     }
-
-    const structureId = structure.id;
 
     // Upsert entities (keyed by xpm_uuid to avoid duplicates)
     const xpmUuidToEntityId: Record<string, string> = {};
@@ -261,60 +274,132 @@ Deno.serve(async (req) => {
       await supabase.from("structure_entities").insert(structureEntities);
     }
 
-    // Create relationships
-    const memberSet = new Set(clients.map(c => c.uuid));
-    const relDedupeSet = new Set<string>();
-    const relsToInsert: Array<{
-      from_entity_id: string; to_entity_id: string; relationship_type: string;
-      tenant_id: string; source: string; ownership_percent: number | null; ownership_units: number | null;
-    }> = [];
+    // Create relationships (one at a time — bulk insert fails entirely if any row violates DB rules)
+    const memberSet = new Set(clients.map((c) => c.uuid));
+    const entityTypes = new Map<string, string>();
+    for (const c of clients) {
+      const id = xpmUuidToEntityId[c.uuid];
+      if (id) entityTypes.set(id, c.entityType);
+    }
 
-    for (const client of clients) {
-      const fromEntityId = xpmUuidToEntityId[client.uuid];
-      if (!fromEntityId) continue;
-
-      for (const rel of client.relationships) {
-        if (!memberSet.has(rel.relatedUuid)) continue;
-        const toEntityId = xpmUuidToEntityId[rel.relatedUuid];
-        if (!toEntityId) continue;
-
-        const dedupeKey = `${rel.type}:${fromEntityId}:${toEntityId}`;
-        const reverseKey = `${rel.type}:${toEntityId}:${fromEntityId}`;
-        if (relDedupeSet.has(dedupeKey) || relDedupeSet.has(reverseKey)) continue;
-        relDedupeSet.add(dedupeKey);
-
-        relsToInsert.push({
-          from_entity_id: fromEntityId,
-          to_entity_id: toEntityId,
-          relationship_type: rel.type,
-          tenant_id: tenantId,
-          source: "imported",
-          ownership_percent: rel.percentage,
-          ownership_units: rel.shares,
-        });
+    // Load entity types for reused entities that may not be in this fetch batch
+    const allEntityIds = Object.values(xpmUuidToEntityId);
+    if (allEntityIds.length > 0) {
+      const { data: typeRows } = await supabase
+        .from("entities")
+        .select("id, entity_type")
+        .in("id", allEntityIds);
+      for (const row of typeRows ?? []) {
+        entityTypes.set(row.id, row.entity_type);
       }
     }
 
-    const insertedRelIds: string[] = [];
-    if (relsToInsert.length > 0) {
-      const { data: insertedRels, error: relErr } = await supabase.from("relationships").insert(relsToInsert).select("id");
-      if (relErr) console.error("[import-xpm-group] Relationship insert error:", relErr);
-      for (const r of insertedRels ?? []) insertedRelIds.push(r.id);
+    const relDedupeSet = new Set<string>();
+    const linkedRelIds = new Set<string>();
+    let relationshipsCreated = 0;
+    let relationshipsLinked = 0;
+    let relationshipsSkipped = 0;
+
+    for (const client of clients) {
+      const clientEntityId = xpmUuidToEntityId[client.uuid];
+      if (!clientEntityId) continue;
+
+      for (const rel of client.relationships) {
+        if (!memberSet.has(rel.relatedUuid)) continue;
+        const relatedEntityId = xpmUuidToEntityId[rel.relatedUuid];
+        if (!relatedEntityId) continue;
+
+        const rule = parseXpmRelationshipType(rel.typeRaw);
+        if (!rule) {
+          relationshipsSkipped++;
+          continue;
+        }
+
+        const endpoints = resolveRelationshipEndpoints(
+          rule.type,
+          clientEntityId,
+          relatedEntityId,
+          entityTypes,
+          rule.reverse,
+        );
+        if (!endpoints) {
+          console.warn(`[import-xpm-group] Skipped invalid direction: ${rel.typeRaw} ${client.uuid} → ${rel.relatedUuid}`);
+          relationshipsSkipped++;
+          continue;
+        }
+
+        const { fromId, toId } = endpoints;
+        const dedupeKey = `${rule.type}:${fromId}:${toId}`;
+        const reverseKey = `${rule.type}:${toId}:${fromId}`;
+        if (relDedupeSet.has(dedupeKey) || relDedupeSet.has(reverseKey)) continue;
+        relDedupeSet.add(dedupeKey);
+
+        let relationshipId: string | null = null;
+
+        const { data: existingRel } = await supabase
+          .from("relationships")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("from_entity_id", fromId)
+          .eq("to_entity_id", toId)
+          .eq("relationship_type", rule.type)
+          .is("deleted_at", null)
+          .maybeSingle();
+
+        if (existingRel) {
+          relationshipId = existingRel.id;
+        } else {
+          const { data: insertedRel, error: relErr } = await supabase
+            .from("relationships")
+            .insert({
+              from_entity_id: fromId,
+              to_entity_id: toId,
+              relationship_type: rule.type,
+              tenant_id: tenantId,
+              source: "imported",
+              ownership_percent: rel.percentage,
+              ownership_units: rel.shares,
+            })
+            .select("id")
+            .single();
+
+          if (relErr || !insertedRel) {
+            console.error("[import-xpm-group] Relationship insert error:", relErr?.message, { type: rule.type, fromId, toId });
+            relationshipsSkipped++;
+            continue;
+          }
+          relationshipId = insertedRel.id;
+          relationshipsCreated++;
+        }
+
+        if (!relationshipId || linkedRelIds.has(relationshipId)) continue;
+
+        const { error: linkErr } = await supabase
+          .from("structure_relationships")
+          .upsert(
+            { structure_id: structureId, relationship_id: relationshipId },
+            { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
+          );
+
+        if (linkErr) {
+          console.error("[import-xpm-group] structure_relationships link error:", linkErr.message);
+          relationshipsSkipped++;
+          continue;
+        }
+
+        linkedRelIds.add(relationshipId);
+        relationshipsLinked++;
+      }
     }
 
-    // Link relationships to structure
-    if (insertedRelIds.length > 0) {
-      await supabase.from("structure_relationships").insert(
-        insertedRelIds.map(relId => ({ structure_id: structureId, relationship_id: relId }))
-      );
-    }
-
-    console.log(`[import-xpm-group] Created structure ${structureId} with ${Object.keys(xpmUuidToEntityId).length} entities and ${insertedRelIds.length} relationships`);
+    console.log(`[import-xpm-group] Structure ${structureId}: ${Object.keys(xpmUuidToEntityId).length} entities, ${relationshipsLinked} relationships linked (${relationshipsCreated} new, ${relationshipsSkipped} skipped)`);
 
     return new Response(JSON.stringify({
       structure_id: structureId,
       entities_count: Object.keys(xpmUuidToEntityId).length,
-      relationships_count: insertedRelIds.length,
+      relationships_count: relationshipsLinked,
+      relationships_created: relationshipsCreated,
+      relationships_skipped: relationshipsSkipped,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (err) {

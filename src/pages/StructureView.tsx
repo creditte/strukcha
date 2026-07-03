@@ -52,7 +52,7 @@ export default function StructureView() {
   const { snapshots, reload: reloadSnapshots } = useSnapshots(id);
   const { tenant } = useSharedTenantSettings();
 
-  const tenantDefaultView = (tenant?.export_default_view_mode as ViewMode) || "ownership";
+  const tenantDefaultView = (tenant?.export_default_view_mode as ViewMode) || "full";
   const [filterRelType, setFilterRelType] = useState("all");
   const [showFamily, setShowFamily] = useState(false);
   const [depth, setDepth] = useState(2);
@@ -658,9 +658,9 @@ export default function StructureView() {
 
       {/* Naming dialog for new manual structures */}
       <Dialog open={showNamingDialog} onOpenChange={setShowNamingDialog}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="max-w-[calc(100%-1.5rem)] p-4 sm:max-w-sm sm:p-6">
           <DialogHeader>
-            <DialogTitle>Name your structure</DialogTitle>
+            <DialogTitle className="text-center sm:text-left">Name your structure</DialogTitle>
           </DialogHeader>
           <Input
             value={newStructureName}
@@ -669,9 +669,17 @@ export default function StructureView() {
             autoFocus
             onKeyDown={(e) => e.key === "Enter" && newStructureName.trim() && handleSaveStructureName()}
           />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowNamingDialog(false); setSearchParams({}, { replace: true }); }}>Skip</Button>
-            <Button onClick={handleSaveStructureName} disabled={!newStructureName.trim()}>Save</Button>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => { setShowNamingDialog(false); setSearchParams({}, { replace: true }); }}
+            >
+              Skip
+            </Button>
+            <Button className="w-full sm:w-auto" onClick={handleSaveStructureName} disabled={!newStructureName.trim()}>
+              Save
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

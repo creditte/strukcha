@@ -65,6 +65,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
     await serviceClient.from("xero_oauth_states").insert({
+      flow: "link",
       user_id: claimsData.claims.sub,
       csrf_token: csrfToken,
     });
