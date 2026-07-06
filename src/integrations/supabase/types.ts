@@ -1351,29 +1351,23 @@ export type Database = {
         Row: {
           created_at: string
           csrf_token: string
-          flow: string
           id: string
-          pending_signup: Json | null
           used: boolean
-          user_id: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string
           csrf_token: string
-          flow?: string
           id?: string
-          pending_signup?: Json | null
           used?: boolean
-          user_id?: string | null
+          user_id: string
         }
         Update: {
           created_at?: string
           csrf_token?: string
-          flow?: string
           id?: string
-          pending_signup?: Json | null
           used?: boolean
-          user_id?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -1425,6 +1419,7 @@ export type Database = {
         Args: { p_connection_id: string }
         Returns: Json
       }
+      email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
