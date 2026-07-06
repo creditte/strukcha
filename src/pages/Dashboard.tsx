@@ -464,70 +464,58 @@ export default function Dashboard() {
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-                  <Select
-                    value={xeroConnectionType}
-                    onValueChange={(v) => setXeroConnectionType(v as "accounting" | "practice_manager")}
-                  >
-                    <SelectTrigger className="h-10 w-full sm:w-[180px] rounded-xl text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="accounting">Accounting API</SelectItem>
-                      <SelectItem value="practice_manager">Practice Manager</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="lg"
-                    className="gap-2 rounded-xl px-6 text-sm font-medium shadow-sm"
-                    onClick={handleConnectXero}
-                    disabled={xeroLoading}
-                  >
-                    {xeroLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <SquareArrowOutUpRight className="h-4 w-4" />
-                    )}
-                    Connect to Xero
-                  </Button>
-                </div>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
+                  onClick={handleConnectXero}
+                  disabled={xeroLoading}
+                >
+                  {xeroLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <XeroLogo className="h-4 w-4" />
+                  )}
+                  Connect to Xero
+                </Button>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-1.5">
-                  <Badge
-                    variant="secondary"
-                    className="gap-1 rounded-md bg-success/10 text-success border-0 text-[11px] font-medium px-2 py-0.5"
-                  >
-                    <CheckCircle2 className="h-3 w-3" />
-                    Connected
-                  </Badge>
-                  {xeroConnection.xero_org_name && (
-                    <span className="max-w-[140px] truncate text-xs text-muted-foreground sm:max-w-[220px]">
-                      {xeroConnection.xero_org_name}
-                    </span>
-                  )}
+                <div className="flex items-center gap-2 rounded-xl border border-[#13B5EA]/30 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
+                  <XeroLogo className="h-4 w-4 shrink-0" />
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">Connected to Xero</span>
+                    {xeroConnection.xero_org_name && (
+                      <span className="max-w-[180px] truncate text-xs font-medium text-foreground sm:max-w-[240px]">
+                        {xeroConnection.xero_org_name}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mx-1 h-6 w-px bg-[#13B5EA]/20" />
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2"
+                    className="h-7 gap-1 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2"
                     onClick={handleSyncXpm}
                     disabled={syncing}
                   >
-                    {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {syncing ? "Syncing…" : "Sync"}
                   </Button>
                   <TooltipProvider delayDuration={200}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <button
-                          className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                           onClick={handleDisconnectXero}
                           disabled={disconnecting}
+                          aria-label="Disconnect Xero"
                         >
-                          <Unplug className="h-3 w-3" />
-                        </button>
+                          {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
+                        </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Disconnect from XPM</TooltipContent>
+                      <TooltipContent>Disconnect from Xero</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 </div>
