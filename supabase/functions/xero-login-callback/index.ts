@@ -137,17 +137,6 @@ Deno.serve(async (req) => {
       return Response.redirect(`${frontendUrl}/login?xero_login=no_account`, 302);
     }
 
-    const { data: authUserData, error: getUserErr } = await supabase.auth.admin.getUserById(existing.id);
-    if (getUserErr || !authUserData?.user) {
-      console.error("[xero-login-callback] getUserById:", getUserErr);
-      return Response.redirect(`${frontendUrl}/login?xero_login=error&reason=user_lookup_failed`, 302);
-    }
-
-    const signupSource = authUserData.user.user_metadata?.signup_source;
-    if (signupSource !== "xero") {
-      return Response.redirect(`${frontendUrl}/login?xero_login=not_xero_signup`, 302);
-    }
-
     const userId = existing.id;
     const { data: profile } = await supabase
       .from("profiles")
