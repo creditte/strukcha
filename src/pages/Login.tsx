@@ -202,6 +202,18 @@ export default function Login() {
           (data as { error?: string })?.error || "Could not start Xero sign-in",
         );
       }
+      // Xero blocks being rendered inside iframes (X-Frame-Options: DENY).
+      // If we're inside one (e.g. Lovable preview), break out to the top window.
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = oauthUrl;
+          return;
+        }
+      } catch {
+        // Cross-origin top access blocked — fall back to a new tab.
+        window.open(oauthUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
       window.location.href = oauthUrl;
     } catch (err: unknown) {
       const message =
