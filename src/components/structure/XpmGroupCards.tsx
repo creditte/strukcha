@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Search, Network, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import XeroErrorAlert from "@/components/XeroErrorAlert";
+import { xeroToastPayload } from "@/lib/xeroErrors";
 
 interface XpmGroup {
   xpm_uuid: string;
