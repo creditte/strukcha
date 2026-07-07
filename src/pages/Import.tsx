@@ -181,6 +181,14 @@ export default function Import() {
             {importing ? "Importing..." : "Import"}
           </Button>
 
+          {importError && (
+            <XeroErrorAlert
+              error={importError}
+              onRetry={handleImport}
+              retrying={importing}
+            />
+          )}
+
           {/* Post-import expectations */}
           <div className="rounded-md bg-muted/50 p-3 space-y-1">
             <p className="text-xs font-medium text-foreground">What happens after import?</p>
