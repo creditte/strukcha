@@ -67,6 +67,9 @@ export default function SettingsPage() {
           <TabsTrigger value="firm" className="gap-1.5">
             <Building2 className="h-3.5 w-3.5" /> Firm
           </TabsTrigger>
+          <TabsTrigger value="integrations" className="gap-1.5">
+            <Plug className="h-3.5 w-3.5" /> Integrations
+          </TabsTrigger>
           <TabsTrigger value="security" className="gap-1.5">
             <Lock className="h-3.5 w-3.5" /> Security
           </TabsTrigger>
