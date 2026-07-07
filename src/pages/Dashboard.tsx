@@ -206,18 +206,20 @@ export default function Dashboard() {
         },
         body: JSON.stringify({ origin: window.location.origin, connection_type: xeroConnectionType }),
       });
-      const responseText = await res.text();
-      let data;
+      let data: any = null;
       try {
-        data = JSON.parse(responseText);
+        data = JSON.parse(await res.text());
       } catch {
-        throw new Error(`Non-JSON response (${res.status}): ${responseText.substring(0, 200)}`);
+        // ignore — handled below
       }
-      const oauthUrl = data.auth_url || data.url;
-      if (!res.ok || !oauthUrl) throw new Error(data.error || `Failed to start Xero auth (status ${res.status})`);
+      const oauthUrl = data?.auth_url || data?.url;
+      if (!res.ok || !oauthUrl) {
+        throw new Error(data?.error || "Couldn't start Xero sign-in.");
+      }
       window.location.href = oauthUrl;
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
       setXeroLoading(false);
     }
@@ -228,6 +230,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       if (data?.started) {
         toast({
           title: "XPM Sync Started",
@@ -247,8 +250,9 @@ export default function Dashboard() {
         if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
         toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
       }
-    } catch (err: any) {
-      toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
       setSyncing(false);
     }
@@ -264,8 +268,9 @@ export default function Dashboard() {
       if (error) throw error;
       setXeroConnection(null);
       toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
       setDisconnecting(false);
     }
