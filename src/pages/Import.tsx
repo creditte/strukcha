@@ -53,6 +53,7 @@ export default function Import() {
     if (!file || !user) return;
     setImporting(true);
     setResult(null);
+    setImportError(null);
 
     try {
       const text = await file.text();
@@ -60,13 +61,16 @@ export default function Import() {
         body: { fileName: file.name, content: text },
       });
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       setResult(data);
       toast({
         title: "Import complete",
         description: `${data.entitiesCreated ?? 0} entities, ${data.relationshipsCreated ?? 0} relationships processed.`,
       });
-    } catch (err: any) {
-      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      setImportError(err);
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
       setImporting(false);
     }
