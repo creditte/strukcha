@@ -413,30 +413,23 @@ export default function Dashboard() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-1 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2"
+                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
                     onClick={handleSyncXpm}
                     disabled={syncing}
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {syncing ? "Syncing…" : "Sync"}
+                    {syncing ? "Syncing XPM…" : "Sync XPM"}
                   </Button>
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={handleDisconnectXero}
-                          disabled={disconnecting}
-                          aria-label="Disconnect Xero"
-                        >
-                          {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Disconnect from Xero</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
+                    onClick={handleDisconnectXero}
+                    disabled={disconnecting}
+                  >
+                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
+                    {disconnecting ? "Disconnecting…" : "Disconnect"}
+                  </Button>
                 </div>
               )}
             </div>
