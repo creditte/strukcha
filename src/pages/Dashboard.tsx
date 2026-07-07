@@ -228,40 +228,25 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
-      const parts = [
-        `${data.clientsFetched ?? data.contactsFetched ?? 0} clients fetched`,
-        `${data.entitiesCreated ?? 0} created`,
-        `${data.entitiesUpdated ?? 0} updated`,
-      ];
-      if (data.relationshipsCreated > 0) parts.push(`${data.relationshipsCreated} relationships created`);
-      if (data.groupsCreated > 0) parts.push(`${data.groupsCreated} groups created`);
-      if (data.staffFetched > 0) parts.push(`${data.staffFetched} staff fetched`);
-      if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
-      toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
-      // Refresh entity data
-      const [entitiesData, recentEnts] = await Promise.all([
-        supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
-        supabase
-          .from("entities")
-          .select("id, name, entity_type, is_trustee_company, abn, created_at")
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false })
-          .limit(8),
-      ]);
-      const entities = entitiesData.data ?? [];
-      setTotalEntities(entities.length);
-      setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
-      const typeCounts: Record<string, number> = {};
-      entities.forEach((e: any) => {
-        const t = e.entity_type || "Unclassified";
-        typeCounts[t] = (typeCounts[t] || 0) + 1;
-      });
-      setEntityStats(
-        Object.entries(typeCounts)
-          .map(([type, count]) => ({ type, count }))
-          .sort((a, b) => b.count - a.count),
-      );
-      setRecentEntities((recentEnts.data as any) ?? []);
+      if (data?.started) {
+        toast({
+          title: "XPM Sync Started",
+          description:
+            data.message ||
+            "Running in background. Refresh the dashboard in a minute or two to see updated entities.",
+        });
+      } else {
+        const parts = [
+          `${data.clientsFetched ?? data.contactsFetched ?? 0} clients fetched`,
+          `${data.entitiesCreated ?? 0} created`,
+          `${data.entitiesUpdated ?? 0} updated`,
+        ];
+        if (data.relationshipsCreated > 0) parts.push(`${data.relationshipsCreated} relationships created`);
+        if (data.groupsCreated > 0) parts.push(`${data.groupsCreated} groups created`);
+        if (data.staffFetched > 0) parts.push(`${data.staffFetched} staff fetched`);
+        if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
+        toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
+      }
     } catch (err: any) {
       toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
     } finally {
@@ -413,30 +398,23 @@ export default function Dashboard() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-1 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2"
+                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
                     onClick={handleSyncXpm}
                     disabled={syncing}
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {syncing ? "Syncing…" : "Sync"}
+                    {syncing ? "Syncing XPM…" : "Sync XPM"}
                   </Button>
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={handleDisconnectXero}
-                          disabled={disconnecting}
-                          aria-label="Disconnect Xero"
-                        >
-                          {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Disconnect from Xero</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
+                    onClick={handleDisconnectXero}
+                    disabled={disconnecting}
+                  >
+                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
+                    {disconnecting ? "Disconnecting…" : "Disconnect"}
+                  </Button>
                 </div>
               )}
             </div>
@@ -492,30 +470,23 @@ export default function Dashboard() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-1 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2"
+                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
                     onClick={handleSyncXpm}
                     disabled={syncing}
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {syncing ? "Syncing…" : "Sync"}
+                    {syncing ? "Syncing XPM…" : "Sync XPM"}
                   </Button>
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={handleDisconnectXero}
-                          disabled={disconnecting}
-                          aria-label="Disconnect Xero"
-                        >
-                          {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Disconnect from Xero</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
+                    onClick={handleDisconnectXero}
+                    disabled={disconnecting}
+                  >
+                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
+                    {disconnecting ? "Disconnecting…" : "Disconnect"}
+                  </Button>
                 </div>
               )}
             </div>
