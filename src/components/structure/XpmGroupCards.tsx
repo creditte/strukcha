@@ -46,17 +46,17 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       const { data, error: fnError } = await supabase.functions.invoke("list-xpm-groups");
       if (fnError) throw fnError;
       if (data?.error && (!data?.groups || data.groups.length === 0)) {
-        setError(data.error);
-        return;
+        throw new Error(data.error);
       }
       const fetchedGroups = (data?.groups ?? []) as XpmGroup[];
       setGroups(fetchedGroups);
       if (fetchedGroups.length > 0) {
         toast.success(`${fetchedGroups.length} groups loaded from XPM`);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch groups");
-      toast.error("Failed to fetch groups from XPM");
+    } catch (err: unknown) {
+      setError(err);
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setSyncing(false);
     }
@@ -70,15 +70,15 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
         body: { group_uuid: group.xpm_uuid, group_name: group.name },
       });
       if (fnError) {
-        const msg = data?.detail || data?.error || fnError.message || "Failed to import group";
-        throw new Error(msg);
+        throw new Error(data?.detail || data?.error || fnError.message || "");
       }
       if (data?.error) throw new Error(data.detail || data.error);
-      
+
       toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
       navigate(`/structures/${data.structure_id}`);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to import group");
+    } catch (err: unknown) {
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setImportingId(null);
     }
