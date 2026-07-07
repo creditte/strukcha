@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
+import XeroErrorAlert from "@/components/XeroErrorAlert";
+import { xeroToastPayload } from "@/lib/xeroErrors";
 
 const SAMPLE_CSV = `Name,Entity Type,ABN,ACN,Relationship Type,Related To
 "Smith Family Trust",Trust,12345678901,,"trustee","Smith Corp Pty Ltd"
@@ -20,6 +22,7 @@ export default function Import() {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [importError, setImportError] = useState<unknown>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
 
@@ -50,6 +53,7 @@ export default function Import() {
     if (!file || !user) return;
     setImporting(true);
     setResult(null);
+    setImportError(null);
 
     try {
       const text = await file.text();
@@ -57,13 +61,16 @@ export default function Import() {
         body: { fileName: file.name, content: text },
       });
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       setResult(data);
       toast({
         title: "Import complete",
         description: `${data.entitiesCreated ?? 0} entities, ${data.relationshipsCreated ?? 0} relationships processed.`,
       });
-    } catch (err: any) {
-      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      setImportError(err);
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
       setImporting(false);
     }
@@ -173,6 +180,14 @@ export default function Import() {
           <Button onClick={handleImport} disabled={!file || importing} className="w-full">
             {importing ? "Importing..." : "Import"}
           </Button>
+
+          {importError && (
+            <XeroErrorAlert
+              error={importError}
+              onRetry={handleImport}
+              retrying={importing}
+            />
+          )}
 
           {/* Post-import expectations */}
           <div className="rounded-md bg-muted/50 p-3 space-y-1">

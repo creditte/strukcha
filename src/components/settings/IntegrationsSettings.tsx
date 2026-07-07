@@ -7,6 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, RefreshCw, Unplug, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import XeroLogo from "@/components/XeroLogo";
+import XeroErrorAlert from "@/components/XeroErrorAlert";
+import { xeroToastPayload } from "@/lib/xeroErrors";
 
 interface XeroConnection {
   id: string;
@@ -21,6 +23,7 @@ export default function IntegrationsSettings() {
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [xeroError, setXeroError] = useState<unknown>(null);
 
   async function load() {
     setLoading(true);
@@ -35,6 +38,7 @@ export default function IntegrationsSettings() {
 
   const handleConnect = async () => {
     setConnecting(true);
+    setXeroError(null);
     try {
       const { data: sess } = await supabase.auth.getSession();
       const accessToken = sess.session?.access_token;
@@ -51,21 +55,32 @@ export default function IntegrationsSettings() {
           connection_type: "practice_manager",
         }),
       });
-      const data = await res.json();
-      const oauthUrl = data?.url || data?.oauth_url;
-      if (!res.ok || !oauthUrl) throw new Error(data.error || `Failed to start Xero auth (status ${res.status})`);
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // ignore parse errors — handled below
+      }
+      const oauthUrl = data?.url || data?.oauth_url || data?.auth_url;
+      if (!res.ok || !oauthUrl) {
+        throw new Error(data?.error || "Couldn't start Xero sign-in.");
+      }
       window.location.href = oauthUrl;
-    } catch (err: any) {
-      toast.error(err.message || "Failed to start Xero connection");
+    } catch (err: unknown) {
+      setXeroError(err);
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
       setConnecting(false);
     }
   };
 
   const handleSync = async () => {
     setSyncing(true);
+    setXeroError(null);
     try {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       if (data?.started) {
         toast.success(
           data.message ||
@@ -74,8 +89,10 @@ export default function IntegrationsSettings() {
       } else {
         toast.success("XPM sync complete.");
       }
-    } catch (err: any) {
-      toast.error(err.message || "Sync failed");
+    } catch (err: unknown) {
+      setXeroError(err);
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setSyncing(false);
     }
@@ -90,9 +107,11 @@ export default function IntegrationsSettings() {
       });
       if (error) throw error;
       setConnection(null);
+      setXeroError(null);
       toast.success("Disconnected from Xero.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to disconnect");
+    } catch (err: unknown) {
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setDisconnecting(false);
     }
@@ -133,6 +152,15 @@ export default function IntegrationsSettings() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {xeroError && (
+            <XeroErrorAlert
+              error={xeroError}
+              onRetry={connection ? handleSync : handleConnect}
+              retrying={syncing || connecting}
+              onReconnect={handleConnect}
+              reconnecting={connecting}
+            />
+          )}
           {connection ? (
             <>
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">

@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import { formatAbn, formatAcn } from "./EntityInfoFields";
+import XeroErrorAlert from "@/components/XeroErrorAlert";
 
 interface GroupNode {
   id: string;
@@ -131,34 +132,35 @@ function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
 
 export default function GroupStructureViewer({ groupUuid, groupName, onClose }: GroupStructureViewerProps) {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [groupNodes, setGroupNodes] = useState<GroupNode[]>([]);
   const [groupEdges, setGroupEdges] = useState<GroupEdge[]>([]);
   const [selectedNode, setSelectedNode] = useState<GroupNode | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  useEffect(() => {
-    async function fetchGroup() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke("fetch-xpm-group", {
-          body: { group_uuid: groupUuid },
-        });
-        if (fnError) throw fnError;
-        if (data?.error) throw new Error(data.error);
+  const fetchGroup = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("fetch-xpm-group", {
+        body: { group_uuid: groupUuid },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
 
-        setGroupNodes(data.nodes ?? []);
-        setGroupEdges(data.edges ?? []);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch group data");
-      } finally {
-        setLoading(false);
-      }
+      setGroupNodes(data.nodes ?? []);
+      setGroupEdges(data.edges ?? []);
+    } catch (err: unknown) {
+      setError(err);
+    } finally {
+      setLoading(false);
     }
-    fetchGroup();
   }, [groupUuid]);
+
+  useEffect(() => {
+    fetchGroup();
+  }, [fetchGroup]);
 
   // Build React Flow nodes/edges from data
   useEffect(() => {
@@ -253,8 +255,8 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
             <span className="text-sm">Loading group structure...</span>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-sm text-destructive">{error}</p>
+          <div className="p-4">
+            <XeroErrorAlert error={error} onRetry={fetchGroup} retrying={loading} />
           </div>
         ) : groupNodes.length === 0 ? (
           <div className="flex items-center justify-center h-full">

@@ -13,6 +13,7 @@ import {
   Archive, ArchiveRestore, MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
+import { xeroToastPayload } from "@/lib/xeroErrors";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -155,15 +156,20 @@ export default function Structures() {
 
       if (!silent) {
         if (data?.error) {
-          toast.warning(data.error + (fetchedGroups.length ? " — showing cached groups." : ""));
+          const payload = xeroToastPayload(new Error(data.error));
+          toast.warning(payload.title, {
+            description: payload.description + (fetchedGroups.length ? " Showing cached groups." : ""),
+          });
         } else if (fetchedGroups.length > 0) {
           toast.success(`${fetchedGroups.length} groups synced from XPM`);
         }
       }
     } catch (err: unknown) {
       if (!silent) {
-        const msg = err instanceof Error ? err.message : "Failed to fetch groups";
-        toast.error(msg + (groups.length ? " — showing cached groups." : ""));
+        const payload = xeroToastPayload(err);
+        toast.error(payload.title, {
+          description: payload.description + (groups.length ? " Showing cached groups." : ""),
+        });
       }
     } finally {
       setSyncing(false);
@@ -461,8 +467,9 @@ export default function Structures() {
         toast.success(`Imported ${data.entities_count} entities and ${relCount} relationships`);
       }
       navigate(`/structures/${data.structure_id}`);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to import group");
+    } catch (err: unknown) {
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setImportingId(null);
     }
