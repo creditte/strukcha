@@ -156,10 +156,11 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
 
       {/* Error state */}
       {error && groups.length === 0 && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <XeroErrorAlert
+          error={error}
+          onRetry={fetchFromXpm}
+          retrying={syncing}
+        />
       )}
 
       {/* Empty state */}
