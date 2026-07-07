@@ -139,27 +139,28 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  useEffect(() => {
-    async function fetchGroup() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke("fetch-xpm-group", {
-          body: { group_uuid: groupUuid },
-        });
-        if (fnError) throw fnError;
-        if (data?.error) throw new Error(data.error);
+  const fetchGroup = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("fetch-xpm-group", {
+        body: { group_uuid: groupUuid },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
 
-        setGroupNodes(data.nodes ?? []);
-        setGroupEdges(data.edges ?? []);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch group data");
-      } finally {
-        setLoading(false);
-      }
+      setGroupNodes(data.nodes ?? []);
+      setGroupEdges(data.edges ?? []);
+    } catch (err: unknown) {
+      setError(err);
+    } finally {
+      setLoading(false);
     }
-    fetchGroup();
   }, [groupUuid]);
+
+  useEffect(() => {
+    fetchGroup();
+  }, [fetchGroup]);
 
   // Build React Flow nodes/edges from data
   useEffect(() => {
