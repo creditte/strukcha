@@ -255,8 +255,8 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
             <span className="text-sm">Loading group structure...</span>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-sm text-destructive">{error}</p>
+          <div className="p-4">
+            <XeroErrorAlert error={error} onRetry={fetchGroup} retrying={loading} />
           </div>
         ) : groupNodes.length === 0 ? (
           <div className="flex items-center justify-center h-full">
