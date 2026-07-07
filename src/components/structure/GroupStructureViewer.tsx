@@ -132,7 +132,7 @@ function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
 
 export default function GroupStructureViewer({ groupUuid, groupName, onClose }: GroupStructureViewerProps) {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [groupNodes, setGroupNodes] = useState<GroupNode[]>([]);
   const [groupEdges, setGroupEdges] = useState<GroupEdge[]>([]);
   const [selectedNode, setSelectedNode] = useState<GroupNode | null>(null);
