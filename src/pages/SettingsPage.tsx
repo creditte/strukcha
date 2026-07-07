@@ -95,6 +95,10 @@ export default function SettingsPage() {
           <TenantSettings isAdmin={isOwnerOrAdmin} />
         </TabsContent>
 
+        <TabsContent value="integrations" className="mt-4">
+          <IntegrationsSettings />
+        </TabsContent>
+
         <TabsContent value="security" className="mt-4">
           <MfaSettings />
         </TabsContent>
