@@ -837,37 +837,67 @@ Deno.serve(async (req) => {
     // ════════════════════════════════════════════════════════════════
     // Import log
     // ════════════════════════════════════════════════════════════════
-    const result = {
-      success: true,
-      dataSource: "practicemanager_3.1_xml",
-      pmTenantId: xeroTenantId,
-      clientsFetched: clientDetails.length,
-      entitiesCreated,
-      entitiesUpdated,
-      relationshipsCreated,
-      relationshipsSkipped,
-      groupsFound: groups.length,
-      groupsCreated,
-      trusteesDetected,
-      staffFetched,
-      staffList,
-      typeCounts,
-      warnings,
+      const result = {
+        success: true,
+        dataSource: "practicemanager_3.1_xml",
+        pmTenantId: xeroTenantId,
+        clientsFetched: clientDetails.length,
+        entitiesCreated,
+        entitiesUpdated,
+        relationshipsCreated,
+        relationshipsSkipped,
+        groupsFound: groups.length,
+        groupsCreated,
+        trusteesDetected,
+        staffFetched,
+        staffList,
+        typeCounts,
+        warnings,
+      };
+
+      if (jobId) {
+        await supabase
+          .from("import_logs")
+          .update({ status: "completed", result })
+          .eq("id", jobId);
+      } else {
+        await supabase.from("import_logs").insert({
+          tenant_id: tenantId,
+          user_id: user.id,
+          file_name: "xpm-sync-3.1",
+          status: "completed",
+          result,
+        });
+      }
+
+      console.log("[sync-xpm] Result:", JSON.stringify({ ...result, staffList: `${staffList.length} items` }));
     };
 
-    await supabase.from("import_logs").insert({
-      tenant_id: tenantId,
-      user_id: user.id,
-      file_name: "xpm-sync-3.1",
-      status: "completed",
-      result,
-    });
+    // Fire background task and return immediately.
+    // @ts-ignore EdgeRuntime is provided by Supabase edge runtime
+    EdgeRuntime.waitUntil(
+      runSync().catch(async (e) => {
+        console.error("[sync-xpm] background error:", e);
+        if (jobId) {
+          await supabase
+            .from("import_logs")
+            .update({
+              status: "failed",
+              result: { error: e instanceof Error ? e.message : String(e) },
+            })
+            .eq("id", jobId);
+        }
+      }),
+    );
 
-    console.log("[sync-xpm] Result:", JSON.stringify({ ...result, staffList: `${staffList.length} items` }));
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        started: true,
+        jobId,
+        message: "XPM sync started in background. This can take a couple of minutes for large practices — refresh the dashboard shortly to see updated entities.",
+      }),
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (err) {
     console.error("[sync-xpm] Error:", err);
     return new Response(
