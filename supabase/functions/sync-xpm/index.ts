@@ -272,17 +272,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    const warnings: string[] = [];
-    let entitiesCreated = 0;
-    let entitiesUpdated = 0;
-    let relationshipsCreated = 0;
-    let relationshipsSkipped = 0;
-    let groupsCreated = 0;
-    let staffFetched = 0;
-    let trusteesDetected = 0;
-    const typeCounts: Record<string, number> = {};
-    const xeroUuidToEntityId = new Map<string, string>();
-    const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
+    // Insert a "processing" import_logs row so the UI can track it
+    const { data: jobRow } = await supabase
+      .from("import_logs")
+      .insert({
+        tenant_id: tenantId,
+        user_id: user.id,
+        file_name: "xpm-sync-3.1",
+        status: "processing",
+        result: { started_at: new Date().toISOString() },
+      })
+      .select("id")
+      .single();
+    const jobId = jobRow?.id ?? null;
+
+    // Run the heavy sync in the background so the request returns immediately
+    // (avoids WORKER_RESOURCE_LIMIT on the request/response cycle).
+    const runSync = async () => {
+      const warnings: string[] = [];
+      let entitiesCreated = 0;
+      let entitiesUpdated = 0;
+      let relationshipsCreated = 0;
+      let relationshipsSkipped = 0;
+      let groupsCreated = 0;
+      let staffFetched = 0;
+      let trusteesDetected = 0;
+      const typeCounts: Record<string, number> = {};
+      const xeroUuidToEntityId = new Map<string, string>();
+      const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
 
     // ════════════════════════════════════════════════════════════════
     // STEP 1: Fetch /client.api/list?detailed=true — all clients with full details (XML)
