@@ -467,8 +467,9 @@ export default function Structures() {
         toast.success(`Imported ${data.entities_count} entities and ${relCount} relationships`);
       }
       navigate(`/structures/${data.structure_id}`);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to import group");
+    } catch (err: unknown) {
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setImportingId(null);
     }
