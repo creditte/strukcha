@@ -98,10 +98,7 @@ export default function Dashboard() {
   const permissionsLoaded = !usersLoading && !tenantLoading;
   const userRole = currentUser?.role ?? null;
   const isOwnerOrAdmin = userRole === "owner" || userRole === "admin";
-  const canManageIntegrations =
-    !permissionsLoaded
-      ? isOwnerOrAdmin
-      : userRole === "owner" || (userRole === "admin" && currentUser?.can_manage_integrations !== false);
+  const canManageIntegrations = true;
 
   useEffect(() => {
     const xeroStatus = searchParams.get("xero");
