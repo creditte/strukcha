@@ -22,6 +22,7 @@ export default function Import() {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [importError, setImportError] = useState<unknown>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
 
