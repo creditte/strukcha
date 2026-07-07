@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import { formatAbn, formatAcn } from "./EntityInfoFields";
+import XeroErrorAlert from "@/components/XeroErrorAlert";
 
 interface GroupNode {
   id: string;
