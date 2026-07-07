@@ -152,6 +152,15 @@ export default function IntegrationsSettings() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {xeroError && (
+            <XeroErrorAlert
+              error={xeroError}
+              onRetry={connection ? handleSync : handleConnect}
+              retrying={syncing || connecting}
+              onReconnect={handleConnect}
+              reconnecting={connecting}
+            />
+          )}
           {connection ? (
             <>
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
