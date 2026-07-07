@@ -1,10 +1,11 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Building2, MessageSquare, Shield, AlertTriangle, Lock, CreditCard } from "lucide-react";
+import { Users, Building2, MessageSquare, Shield, AlertTriangle, Lock, CreditCard, Plug } from "lucide-react";
 import UsersManagement from "@/components/settings/UsersManagement";
 import TenantSettings from "@/components/settings/TenantSettings";
 import FeedbackSettings from "@/components/settings/FeedbackSettings";
 import MfaSettings from "@/components/settings/MfaSettings";
 import BillingSettings from "@/components/settings/BillingSettings";
+import IntegrationsSettings from "@/components/settings/IntegrationsSettings";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { Skeleton } from "@/components/ui/skeleton";
 
