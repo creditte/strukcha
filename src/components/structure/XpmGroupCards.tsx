@@ -27,7 +27,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
   const [groups, setGroups] = useState<XpmGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [importingId, setImportingId] = useState<string | null>(null);
 
