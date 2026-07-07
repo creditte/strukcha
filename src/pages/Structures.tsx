@@ -13,6 +13,7 @@ import {
   Archive, ArchiveRestore, MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
+import { xeroToastPayload } from "@/lib/xeroErrors";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
