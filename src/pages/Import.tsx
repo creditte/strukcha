@@ -26,6 +26,7 @@ export default function Import() {
   const [importError, setImportError] = useState<unknown>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [showInstructions, setShowInstructions] = useState(false);
+  const { reportError: reportXeroError } = useXeroConnection();
 
   useEffect(() => {
     if (!user) return;
