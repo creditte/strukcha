@@ -1,7 +1,9 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import AppSidebar from "@/components/AppSidebar";
 import GlobalSearch from "@/components/GlobalSearch";
+import XeroReconnectBanner from "@/components/XeroReconnectBanner";
 import { TenantSettingsProvider } from "@/contexts/TenantSettingsContext";
+import { XeroConnectionProvider } from "@/contexts/XeroConnectionContext";
 
 export default function AppLayout() {
   const location = useLocation();
