@@ -155,6 +155,7 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
       setGroupEdges(data.edges ?? []);
     } catch (err: unknown) {
       setError(err);
+      reportXeroError(err);
     } finally {
       setLoading(false);
     }
