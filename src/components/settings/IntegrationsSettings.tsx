@@ -98,6 +98,7 @@ export default function IntegrationsSettings() {
       }
     } catch (err: unknown) {
       setXeroError(err);
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast.error(payload.title, { description: payload.description });
     } finally {
