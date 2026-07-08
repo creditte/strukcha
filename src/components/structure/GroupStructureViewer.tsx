@@ -139,6 +139,7 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
   const [selectedNode, setSelectedNode] = useState<GroupNode | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const { reportError: reportXeroError } = useXeroConnection();
 
   const fetchGroup = useCallback(async () => {
     setLoading(true);
