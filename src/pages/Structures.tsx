@@ -156,6 +156,9 @@ export default function Structures() {
         setGroupsSyncedAt(data.cached_at);
       }
 
+      if (data?.error) {
+        reportXeroError(new Error(data.error));
+      }
       if (!silent) {
         if (data?.error) {
           const payload = xeroToastPayload(new Error(data.error));
@@ -167,6 +170,7 @@ export default function Structures() {
         }
       }
     } catch (err: unknown) {
+      reportXeroError(err);
       if (!silent) {
         const payload = xeroToastPayload(err);
         toast.error(payload.title, {
