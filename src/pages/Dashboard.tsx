@@ -40,6 +40,7 @@ import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import XeroLogo from "@/components/XeroLogo";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
