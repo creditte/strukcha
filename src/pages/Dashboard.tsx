@@ -261,6 +261,7 @@ export default function Dashboard() {
         toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
       }
     } catch (err) {
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
