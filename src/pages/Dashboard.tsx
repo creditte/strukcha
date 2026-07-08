@@ -40,6 +40,7 @@ import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import XeroLogo from "@/components/XeroLogo";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 export default function Dashboard() {
   const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
@@ -86,6 +87,12 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
+  const {
+    invalid: xeroInvalid,
+    reportError: reportXeroError,
+    reload: reloadXeroConnection,
+    clearInvalid: clearXeroInvalid,
+  } = useXeroConnection();
 
   const handleCreateNew = () => {
     if (atDiagramLimit) {
@@ -108,6 +115,8 @@ export default function Dashboard() {
         title: "Xero Connected",
         description: "Successfully connected to Xero Practice Manager.",
       });
+      clearXeroInvalid();
+      reloadXeroConnection();
       setSearchParams({}, { replace: true });
     } else if (xeroStatus === "error") {
       const reason = searchParams.get("reason") || "unknown";
@@ -252,6 +261,7 @@ export default function Dashboard() {
         toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
       }
     } catch (err) {
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
@@ -268,6 +278,8 @@ export default function Dashboard() {
       });
       if (error) throw error;
       setXeroConnection(null);
+      clearXeroInvalid();
+      await reloadXeroConnection();
       toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });
     } catch (err) {
       const payload = xeroToastPayload(err);
@@ -406,7 +418,7 @@ export default function Dashboard() {
                     size="sm"
                     className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
                     onClick={handleSyncXpm}
-                    disabled={syncing}
+                    disabled={syncing || xeroInvalid}
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {syncing ? "Syncing XPM…" : "Sync XPM"}
@@ -478,7 +490,7 @@ export default function Dashboard() {
                     size="sm"
                     className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
                     onClick={handleSyncXpm}
-                    disabled={syncing}
+                    disabled={syncing || xeroInvalid}
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {syncing ? "Syncing XPM…" : "Sync XPM"}

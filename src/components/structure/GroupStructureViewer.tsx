@@ -22,6 +22,7 @@ import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import { formatAbn, formatAcn } from "./EntityInfoFields";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 interface GroupNode {
   id: string;
@@ -138,6 +139,7 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
   const [selectedNode, setSelectedNode] = useState<GroupNode | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const { reportError: reportXeroError } = useXeroConnection();
 
   const fetchGroup = useCallback(async () => {
     setLoading(true);
@@ -153,6 +155,7 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
       setGroupEdges(data.edges ?? []);
     } catch (err: unknown) {
       setError(err);
+      reportXeroError(err);
     } finally {
       setLoading(false);
     }

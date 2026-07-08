@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -116,6 +117,7 @@ export default function Structures() {
 
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
+  const { invalid: xeroInvalid, reportError: reportXeroError } = useXeroConnection();
 
   const loadCachedGroups = useCallback(async (): Promise<XpmGroup[]> => {
     const { data } = await supabase
@@ -154,6 +156,9 @@ export default function Structures() {
         setGroupsSyncedAt(data.cached_at);
       }
 
+      if (data?.error) {
+        reportXeroError(new Error(data.error));
+      }
       if (!silent) {
         if (data?.error) {
           const payload = xeroToastPayload(new Error(data.error));
@@ -165,6 +170,7 @@ export default function Structures() {
         }
       }
     } catch (err: unknown) {
+      reportXeroError(err);
       if (!silent) {
         const payload = xeroToastPayload(err);
         toast.error(payload.title, {
@@ -174,7 +180,7 @@ export default function Structures() {
     } finally {
       setSyncing(false);
     }
-  }, [groups.length]);
+  }, [groups.length, reportXeroError]);
 
   // ── Load groups: cache first, then refresh from XPM in background ──
   useEffect(() => {
@@ -468,12 +474,13 @@ export default function Structures() {
       }
       navigate(`/structures/${data.structure_id}`);
     } catch (err: unknown) {
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast.error(payload.title, { description: payload.description });
     } finally {
       setImportingId(null);
     }
-  }, [navigate]);
+  }, [navigate, reportXeroError]);
 
   // ── Tab Bar ──
   const TabBar = () => (
@@ -538,7 +545,7 @@ export default function Structures() {
                   size="sm"
                   className="h-8 gap-1.5 text-xs"
                   onClick={() => handleImportToEditor(selectedGroup)}
-                  disabled={importingId === selectedGroup.xpm_uuid}
+                  disabled={importingId === selectedGroup.xpm_uuid || xeroInvalid}
                 >
                   {importingId === selectedGroup.xpm_uuid ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -740,7 +747,7 @@ export default function Structures() {
                                         e.stopPropagation();
                                         handleImportToEditor(g);
                                       }}
-                                      disabled={importingId === g.xpm_uuid}
+                                      disabled={importingId === g.xpm_uuid || xeroInvalid}
                                     >
                                       {importingId === g.xpm_uuid ? (
                                         <Loader2 className="h-3.5 w-3.5 animate-spin" />

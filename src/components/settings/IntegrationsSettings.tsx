@@ -4,11 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, RefreshCw, Unplug, CheckCircle2 } from "lucide-react";
+import { Loader2, RefreshCw, Unplug, CheckCircle2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import XeroLogo from "@/components/XeroLogo";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 interface XeroConnection {
   id: string;
@@ -24,6 +25,12 @@ export default function IntegrationsSettings() {
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroError, setXeroError] = useState<unknown>(null);
+  const {
+    invalid: xeroInvalid,
+    reportError: reportXeroError,
+    reload: reloadXeroConnection,
+    clearInvalid: clearXeroInvalid,
+  } = useXeroConnection();
 
   async function load() {
     setLoading(true);
@@ -91,6 +98,7 @@ export default function IntegrationsSettings() {
       }
     } catch (err: unknown) {
       setXeroError(err);
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast.error(payload.title, { description: payload.description });
     } finally {
@@ -108,6 +116,8 @@ export default function IntegrationsSettings() {
       if (error) throw error;
       setConnection(null);
       setXeroError(null);
+      clearXeroInvalid();
+      await reloadXeroConnection();
       toast.success("Disconnected from Xero.");
     } catch (err: unknown) {
       const payload = xeroToastPayload(err);
@@ -138,7 +148,11 @@ export default function IntegrationsSettings() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <CardTitle className="text-base">Xero Practice Manager</CardTitle>
-              {connection ? (
+              {connection && xeroInvalid ? (
+                <Badge variant="outline" className="gap-1 border-amber-400 bg-amber-50 text-amber-800">
+                  <AlertTriangle className="h-3 w-3" /> Connection lost
+                </Badge>
+              ) : connection ? (
                 <Badge className="bg-[#13B5EA]/10 text-[#0d8ab8] hover:bg-[#13B5EA]/15 border-[#13B5EA]/30 gap-1">
                   <CheckCircle2 className="h-3 w-3" /> Connected
                 </Badge>
@@ -176,11 +190,40 @@ export default function IntegrationsSettings() {
                   </p>
                 </div>
               </div>
+              {xeroInvalid && (
+                <div className="rounded-lg border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-medium">Reconnect Xero to keep syncing</p>
+                  <p className="mt-0.5 text-amber-800">
+                    Your Xero sign-in is no longer valid, so syncing is paused. Click{" "}
+                    <span className="font-medium">Reconnect to Xero</span> below to restore access.
+                  </p>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={handleSync} disabled={syncing} variant="outline" className="gap-2">
-                  {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {syncing ? "Syncing XPM…" : "Sync XPM"}
-                </Button>
+                {xeroInvalid ? (
+                  <Button
+                    onClick={handleConnect}
+                    disabled={connecting}
+                    className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
+                  >
+                    {connecting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <XeroLogo className="h-4 w-4" />
+                    )}
+                    {connecting ? "Redirecting to Xero…" : "Reconnect to Xero"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSync}
+                    disabled={syncing || xeroInvalid}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {syncing ? "Syncing XPM…" : "Sync XPM"}
+                  </Button>
+                )}
                 <Button
                   onClick={handleDisconnect}
                   disabled={disconnecting}
