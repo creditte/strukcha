@@ -148,7 +148,11 @@ export default function IntegrationsSettings() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <CardTitle className="text-base">Xero Practice Manager</CardTitle>
-              {connection ? (
+              {connection && xeroInvalid ? (
+                <Badge variant="outline" className="gap-1 border-amber-400 bg-amber-50 text-amber-800">
+                  <AlertTriangle className="h-3 w-3" /> Connection lost
+                </Badge>
+              ) : connection ? (
                 <Badge className="bg-[#13B5EA]/10 text-[#0d8ab8] hover:bg-[#13B5EA]/15 border-[#13B5EA]/30 gap-1">
                   <CheckCircle2 className="h-3 w-3" /> Connected
                 </Badge>
