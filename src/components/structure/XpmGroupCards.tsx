@@ -31,6 +31,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [importingId, setImportingId] = useState<string | null>(null);
+  const { invalid: xeroInvalid, reportError: reportXeroError } = useXeroConnection();
 
   async function loadFromDb() {
     const { data } = await supabase
