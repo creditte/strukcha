@@ -57,6 +57,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       }
     } catch (err: unknown) {
       setError(err);
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast.error(payload.title, { description: payload.description });
     } finally {
