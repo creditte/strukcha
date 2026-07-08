@@ -278,6 +278,8 @@ export default function Dashboard() {
       });
       if (error) throw error;
       setXeroConnection(null);
+      clearXeroInvalid();
+      await reloadXeroConnection();
       toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });
     } catch (err) {
       const payload = xeroToastPayload(err);
