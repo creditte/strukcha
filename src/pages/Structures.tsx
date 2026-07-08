@@ -180,7 +180,7 @@ export default function Structures() {
     } finally {
       setSyncing(false);
     }
-  }, [groups.length]);
+  }, [groups.length, reportXeroError]);
 
   // ── Load groups: cache first, then refresh from XPM in background ──
   useEffect(() => {
