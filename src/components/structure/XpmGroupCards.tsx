@@ -11,6 +11,7 @@ import { Search, Network, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucid
 import { toast } from "sonner";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 interface XpmGroup {
   xpm_uuid: string;
