@@ -80,6 +80,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
       navigate(`/structures/${data.structure_id}`);
     } catch (err: unknown) {
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast.error(payload.title, { description: payload.description });
     } finally {
