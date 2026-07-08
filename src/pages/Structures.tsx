@@ -117,6 +117,7 @@ export default function Structures() {
 
   // XPM connected check
   const [xpmConnected, setXpmConnected] = useState<boolean | null>(null);
+  const { invalid: xeroInvalid, reportError: reportXeroError } = useXeroConnection();
 
   const loadCachedGroups = useCallback(async (): Promise<XpmGroup[]> => {
     const { data } = await supabase
