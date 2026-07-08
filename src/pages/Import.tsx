@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 const SAMPLE_CSV = `Name,Entity Type,ABN,ACN,Relationship Type,Related To
 "Smith Family Trust",Trust,12345678901,,"trustee","Smith Corp Pty Ltd"
