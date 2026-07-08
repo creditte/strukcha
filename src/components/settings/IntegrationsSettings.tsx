@@ -116,6 +116,8 @@ export default function IntegrationsSettings() {
       if (error) throw error;
       setConnection(null);
       setXeroError(null);
+      clearXeroInvalid();
+      await reloadXeroConnection();
       toast.success("Disconnected from Xero.");
     } catch (err: unknown) {
       const payload = xeroToastPayload(err);
