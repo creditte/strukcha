@@ -4,11 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, RefreshCw, Unplug, CheckCircle2 } from "lucide-react";
+import { Loader2, RefreshCw, Unplug, CheckCircle2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import XeroLogo from "@/components/XeroLogo";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 interface XeroConnection {
   id: string;
