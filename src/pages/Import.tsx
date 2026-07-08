@@ -71,6 +71,7 @@ export default function Import() {
       });
     } catch (err: unknown) {
       setImportError(err);
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast({ title: payload.title, description: payload.description, variant: "destructive" });
     } finally {
