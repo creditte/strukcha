@@ -25,6 +25,12 @@ export default function IntegrationsSettings() {
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroError, setXeroError] = useState<unknown>(null);
+  const {
+    invalid: xeroInvalid,
+    reportError: reportXeroError,
+    reload: reloadXeroConnection,
+    clearInvalid: clearXeroInvalid,
+  } = useXeroConnection();
 
   async function load() {
     setLoading(true);
