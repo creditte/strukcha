@@ -474,12 +474,13 @@ export default function Structures() {
       }
       navigate(`/structures/${data.structure_id}`);
     } catch (err: unknown) {
+      reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast.error(payload.title, { description: payload.description });
     } finally {
       setImportingId(null);
     }
-  }, [navigate]);
+  }, [navigate, reportXeroError]);
 
   // ── Tab Bar ──
   const TabBar = () => (
