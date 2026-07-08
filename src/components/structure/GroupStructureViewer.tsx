@@ -22,6 +22,7 @@ import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import { formatAbn, formatAcn } from "./EntityInfoFields";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 interface GroupNode {
   id: string;
