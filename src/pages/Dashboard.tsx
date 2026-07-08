@@ -418,7 +418,7 @@ export default function Dashboard() {
                     size="sm"
                     className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
                     onClick={handleSyncXpm}
-                    disabled={syncing}
+                    disabled={syncing || xeroInvalid}
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {syncing ? "Syncing XPM…" : "Sync XPM"}
@@ -490,7 +490,7 @@ export default function Dashboard() {
                     size="sm"
                     className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
                     onClick={handleSyncXpm}
-                    disabled={syncing}
+                    disabled={syncing || xeroInvalid}
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {syncing ? "Syncing XPM…" : "Sync XPM"}
