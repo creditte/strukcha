@@ -115,6 +115,8 @@ export default function Dashboard() {
         title: "Xero Connected",
         description: "Successfully connected to Xero Practice Manager.",
       });
+      clearXeroInvalid();
+      reloadXeroConnection();
       setSearchParams({}, { replace: true });
     } else if (xeroStatus === "error") {
       const reason = searchParams.get("reason") || "unknown";
