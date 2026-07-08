@@ -190,11 +190,40 @@ export default function IntegrationsSettings() {
                   </p>
                 </div>
               </div>
+              {xeroInvalid && (
+                <div className="rounded-lg border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-medium">Reconnect Xero to keep syncing</p>
+                  <p className="mt-0.5 text-amber-800">
+                    Your Xero sign-in is no longer valid, so syncing is paused. Click{" "}
+                    <span className="font-medium">Reconnect to Xero</span> below to restore access.
+                  </p>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={handleSync} disabled={syncing} variant="outline" className="gap-2">
-                  {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {syncing ? "Syncing XPM…" : "Sync XPM"}
-                </Button>
+                {xeroInvalid ? (
+                  <Button
+                    onClick={handleConnect}
+                    disabled={connecting}
+                    className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
+                  >
+                    {connecting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <XeroLogo className="h-4 w-4" />
+                    )}
+                    {connecting ? "Redirecting to Xero…" : "Reconnect to Xero"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSync}
+                    disabled={syncing || xeroInvalid}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {syncing ? "Syncing XPM…" : "Sync XPM"}
+                  </Button>
+                )}
                 <Button
                   onClick={handleDisconnect}
                   disabled={disconnecting}
