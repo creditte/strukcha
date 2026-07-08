@@ -215,7 +215,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
                         size="icon"
                         className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-all"
                         onClick={(e) => handleImportToEditor(e, g)}
-                        disabled={importingId === g.xpm_uuid}
+                        disabled={importingId === g.xpm_uuid || xeroInvalid}
                       >
                         {importingId === g.xpm_uuid ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
