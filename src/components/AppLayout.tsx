@@ -55,6 +55,7 @@ export default function AppLayout() {
               <GlobalSearch />
             </header>
             <XeroReconnectBanner />
+            <XeroOrgPickerBridge />
             <main className="flex-1 overflow-auto px-3 pt-4 sm:px-6">
               <Outlet />
             </main>
