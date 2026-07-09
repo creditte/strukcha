@@ -77,6 +77,20 @@ export function XeroConnectionProvider({ children }: { children: ReactNode }) {
     reload();
   }, [reload]);
 
+  // Dev helper: allow forcing the "invalid connection" state from the console
+  // via `window.dispatchEvent(new Event('xero-force-invalid'))` so the
+  // reconnect banner can be tested without revoking access in Xero.
+  useEffect(() => {
+    const forceInvalid = () => setInvalid(true);
+    const clear = () => setInvalid(false);
+    window.addEventListener("xero-force-invalid", forceInvalid);
+    window.addEventListener("xero-clear-invalid", clear);
+    return () => {
+      window.removeEventListener("xero-force-invalid", forceInvalid);
+      window.removeEventListener("xero-clear-invalid", clear);
+    };
+  }, []);
+
   const reportError = useCallback((err: unknown) => {
     const friendly = translateXeroError(err);
     if (friendly.requiresReconnect) setInvalid(true);
