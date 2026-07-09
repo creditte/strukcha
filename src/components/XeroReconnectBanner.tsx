@@ -26,44 +26,42 @@ export default function XeroReconnectBanner() {
   };
 
   return (
-    <div
-      role="alert"
-      className="border-b border-amber-300/60 bg-amber-50 px-4 py-3 sm:px-6"
-    >
-      <div className="mx-auto flex max-w-6xl flex-wrap items-start gap-3">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+    <div className="px-3 pt-3 sm:px-6">
+      <div
+        role="alert"
+        className="mx-auto flex w-full max-w-4xl items-start gap-3 rounded-lg border border-amber-300/70 bg-amber-50 p-3 shadow-sm sm:items-center sm:gap-4 sm:p-4"
+      >
+        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 sm:mt-0">
           <AlertTriangle className="h-4 w-4" />
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-amber-900">
             Your Xero connection has been lost
           </p>
-          <p className="mt-0.5 text-sm text-amber-800">
+          <p className="mt-0.5 text-sm leading-snug text-amber-800">
             {connection.xero_org_name ? (
               <>
                 We can no longer reach{" "}
-                <span className="font-medium">{connection.xero_org_name}</span> on your behalf.
+                <span className="font-medium">{connection.xero_org_name}</span>. Syncing is paused until you reconnect.
               </>
             ) : (
-              "We can no longer reach your Xero organisation on your behalf."
-            )}{" "}
-            This usually happens when access has been revoked in Xero or your sign-in
-            has expired. Syncing and Xero-powered imports are paused until you
-            reconnect.
+              "We can no longer reach your Xero organisation. Syncing is paused until you reconnect."
+            )}
           </p>
         </div>
         <Button
           onClick={handleReconnect}
           disabled={reconnecting}
           size="sm"
-          className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
+          className="shrink-0 gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
         >
           {reconnecting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Unplug className="h-4 w-4" />
           )}
-          {reconnecting ? "Redirecting to Xero…" : "Reconnect to Xero"}
+          <span className="hidden sm:inline">{reconnecting ? "Redirecting…" : "Reconnect to Xero"}</span>
+          <span className="sm:hidden">{reconnecting ? "…" : "Reconnect"}</span>
         </Button>
       </div>
     </div>
