@@ -2,8 +2,21 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import AppSidebar from "@/components/AppSidebar";
 import GlobalSearch from "@/components/GlobalSearch";
 import XeroReconnectBanner from "@/components/XeroReconnectBanner";
+import XeroOrgPickerDialog from "@/components/XeroOrgPickerDialog";
 import { TenantSettingsProvider } from "@/contexts/TenantSettingsContext";
-import { XeroConnectionProvider } from "@/contexts/XeroConnectionContext";
+import { XeroConnectionProvider, useXeroConnection } from "@/contexts/XeroConnectionContext";
+
+function XeroOrgPickerBridge() {
+  const { reload, clearInvalid } = useXeroConnection();
+  return (
+    <XeroOrgPickerDialog
+      onConnected={() => {
+        clearInvalid();
+        reload();
+      }}
+    />
+  );
+}
 
 export default function AppLayout() {
   const location = useLocation();
@@ -42,6 +55,7 @@ export default function AppLayout() {
               <GlobalSearch />
             </header>
             <XeroReconnectBanner />
+            <XeroOrgPickerBridge />
             <main className="flex-1 overflow-auto px-3 pt-4 sm:px-6">
               <Outlet />
             </main>
