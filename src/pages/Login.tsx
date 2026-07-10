@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import XeroLogo from "@/components/XeroLogo";
 
 export default function Login() {
   const { user, bootStatus } = useAuth();
