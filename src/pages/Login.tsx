@@ -319,7 +319,7 @@ export default function Login() {
                   </>
                 ) : (
                   <>
-                    <XeroLogo className="h-6 w-6 shrink-0" />
+                    <XeroLogo className="h-8 w-8 shrink-0" />
                     Sign in with Xero
                   </>
                 )}
