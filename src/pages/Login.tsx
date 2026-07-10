@@ -319,14 +319,7 @@ export default function Login() {
                   </>
                 ) : (
                   <>
-                    <img
-                      src="/Xero%20logo%201x1.png"
-                      alt=""
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 shrink-0 object-contain mix-blend-screen"
-                      aria-hidden
-                    />
+                    <XeroLogo className="h-6 w-6 shrink-0" />
                     Sign in with Xero
                   </>
                 )}
