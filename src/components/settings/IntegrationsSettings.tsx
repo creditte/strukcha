@@ -258,6 +258,8 @@ export default function IntegrationsSettings() {
           )}
         </CardContent>
       </Card>
+
+      <XeroErrorTestPanel />
     </div>
   );
 }
