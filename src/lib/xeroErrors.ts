@@ -72,6 +72,43 @@ function pickStatus(err: unknown): number | null {
   return null;
 }
 
+/**
+ * Async variant that also reads the response body of a Supabase
+ * FunctionsHttpError (whose `.context` is a `Response`). Our edge functions
+ * return `{ error: "…" }` JSON on non-2xx, so parsing the body lets us
+ * surface a specific, user-friendly reason instead of the generic
+ * "Edge Function returned a non-2xx status code" fallback.
+ */
+export async function translateXeroErrorAsync(err: unknown): Promise<FriendlyXeroError> {
+  try {
+    const ctx = (err as { context?: unknown } | null)?.context;
+    if (ctx && typeof (ctx as Response).clone === "function") {
+      const res = (ctx as Response).clone();
+      let bodyText = "";
+      try {
+        bodyText = await res.text();
+      } catch {
+        /* ignore */
+      }
+      let bodyMsg = "";
+      try {
+        const parsed = JSON.parse(bodyText);
+        bodyMsg =
+          (typeof parsed?.error === "string" && parsed.error) ||
+          (typeof parsed?.message === "string" && parsed.message) ||
+          (typeof parsed?.detail === "string" && parsed.detail) ||
+          "";
+      } catch {
+        bodyMsg = bodyText.slice(0, 300);
+      }
+      return translateXeroError({ message: bodyMsg, status: (ctx as Response).status });
+    }
+  } catch {
+    /* fall through */
+  }
+  return translateXeroError(err);
+}
+
 export function translateXeroError(err: unknown): FriendlyXeroError {
   const raw = rawSignal(err).toLowerCase();
   const status = pickStatus(err);
@@ -211,6 +248,19 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
     };
   }
 
+  // Bare Supabase FunctionsHttpError with no parseable body / status.
+  // e.g. "Edge Function returned a non-2xx status code" or "non-200".
+  if (has("non-2xx") || has("non-200") || has("edge function returned")) {
+    return {
+      kind: "unavailable",
+      title: "Xero request failed",
+      message: "Xero didn't return a successful response for that request.",
+      resolution: "Please try again in a moment. If it keeps happening, contact support at hello@strukcha.app.",
+      retryable: true,
+      requiresReconnect: false,
+    };
+  }
+
   return {
     kind: "unknown",
     title: "Something went wrong with Xero",
@@ -229,3 +279,15 @@ export function xeroToastPayload(err: unknown): { title: string; description: st
     description: `${f.message} ${f.resolution}`.trim(),
   };
 }
+
+/** Async variant that also reads the FunctionsHttpError response body. */
+export async function xeroToastPayloadAsync(
+  err: unknown,
+): Promise<{ title: string; description: string }> {
+  const f = await translateXeroErrorAsync(err);
+  return {
+    title: f.title,
+    description: `${f.message} ${f.resolution}`.trim(),
+  };
+}
+
