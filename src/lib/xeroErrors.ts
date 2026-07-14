@@ -248,6 +248,19 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
     };
   }
 
+  // Bare Supabase FunctionsHttpError with no parseable body / status.
+  // e.g. "Edge Function returned a non-2xx status code" or "non-200".
+  if (has("non-2xx") || has("non-200") || has("edge function returned")) {
+    return {
+      kind: "unavailable",
+      title: "Xero request failed",
+      message: "Xero didn't return a successful response for that request.",
+      resolution: "Please try again in a moment. If it keeps happening, contact support at hello@strukcha.app.",
+      retryable: true,
+      requiresReconnect: false,
+    };
+  }
+
   return {
     kind: "unknown",
     title: "Something went wrong with Xero",
@@ -266,3 +279,15 @@ export function xeroToastPayload(err: unknown): { title: string; description: st
     description: `${f.message} ${f.resolution}`.trim(),
   };
 }
+
+/** Async variant that also reads the FunctionsHttpError response body. */
+export async function xeroToastPayloadAsync(
+  err: unknown,
+): Promise<{ title: string; description: string }> {
+  const f = await translateXeroErrorAsync(err);
+  return {
+    title: f.title,
+    description: `${f.message} ${f.resolution}`.trim(),
+  };
+}
+
