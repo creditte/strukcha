@@ -8,7 +8,6 @@ import { Loader2, RefreshCw, Unplug, CheckCircle2, AlertTriangle } from "lucide-
 import { toast } from "sonner";
 import XeroLogo from "@/components/XeroLogo";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
-import XeroErrorTestPanel from "@/components/XeroErrorTestPanel";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
@@ -258,8 +257,6 @@ export default function IntegrationsSettings() {
           )}
         </CardContent>
       </Card>
-
-      <XeroErrorTestPanel />
     </div>
   );
 }
