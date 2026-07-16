@@ -229,6 +229,22 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Require owner/admin role for destructive sync (overwrites tenant data)
+    const { data: callerRole } = await supabase
+      .from("tenant_users")
+      .select("role")
+      .eq("tenant_id", tenantId)
+      .eq("auth_user_id", user.id)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!callerRole || !["owner", "admin"].includes(callerRole.role)) {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Load Xero connection
     const { data: connections } = await supabase
       .from("xero_connections")
@@ -256,17 +272,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    const warnings: string[] = [];
-    let entitiesCreated = 0;
-    let entitiesUpdated = 0;
-    let relationshipsCreated = 0;
-    let relationshipsSkipped = 0;
-    let groupsCreated = 0;
-    let staffFetched = 0;
-    let trusteesDetected = 0;
-    const typeCounts: Record<string, number> = {};
-    const xeroUuidToEntityId = new Map<string, string>();
-    const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
+    // Insert a "processing" import_logs row so the UI can track it
+    const { data: jobRow } = await supabase
+      .from("import_logs")
+      .insert({
+        tenant_id: tenantId,
+        user_id: user.id,
+        file_name: "xpm-sync-3.1",
+        status: "processing",
+        result: { started_at: new Date().toISOString() },
+      })
+      .select("id")
+      .single();
+    const jobId = jobRow?.id ?? null;
+
+    // Run the heavy sync in the background so the request returns immediately
+    // (avoids WORKER_RESOURCE_LIMIT on the request/response cycle).
+    const runSync = async () => {
+      const warnings: string[] = [];
+      let entitiesCreated = 0;
+      let entitiesUpdated = 0;
+      let relationshipsCreated = 0;
+      let relationshipsSkipped = 0;
+      let groupsCreated = 0;
+      let staffFetched = 0;
+      let trusteesDetected = 0;
+      const typeCounts: Record<string, number> = {};
+      const xeroUuidToEntityId = new Map<string, string>();
+      const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
 
     // ════════════════════════════════════════════════════════════════
     // STEP 1: Fetch /client.api/list?detailed=true — all clients with full details (XML)
@@ -804,37 +837,67 @@ Deno.serve(async (req) => {
     // ════════════════════════════════════════════════════════════════
     // Import log
     // ════════════════════════════════════════════════════════════════
-    const result = {
-      success: true,
-      dataSource: "practicemanager_3.1_xml",
-      pmTenantId: xeroTenantId,
-      clientsFetched: clientDetails.length,
-      entitiesCreated,
-      entitiesUpdated,
-      relationshipsCreated,
-      relationshipsSkipped,
-      groupsFound: groups.length,
-      groupsCreated,
-      trusteesDetected,
-      staffFetched,
-      staffList,
-      typeCounts,
-      warnings,
+      const result = {
+        success: true,
+        dataSource: "practicemanager_3.1_xml",
+        pmTenantId: xeroTenantId,
+        clientsFetched: clientDetails.length,
+        entitiesCreated,
+        entitiesUpdated,
+        relationshipsCreated,
+        relationshipsSkipped,
+        groupsFound: groups.length,
+        groupsCreated,
+        trusteesDetected,
+        staffFetched,
+        staffList,
+        typeCounts,
+        warnings,
+      };
+
+      if (jobId) {
+        await supabase
+          .from("import_logs")
+          .update({ status: "completed", result })
+          .eq("id", jobId);
+      } else {
+        await supabase.from("import_logs").insert({
+          tenant_id: tenantId,
+          user_id: user.id,
+          file_name: "xpm-sync-3.1",
+          status: "completed",
+          result,
+        });
+      }
+
+      console.log("[sync-xpm] Result:", JSON.stringify({ ...result, staffList: `${staffList.length} items` }));
     };
 
-    await supabase.from("import_logs").insert({
-      tenant_id: tenantId,
-      user_id: user.id,
-      file_name: "xpm-sync-3.1",
-      status: "completed",
-      result,
-    });
+    // Fire background task and return immediately.
+    // @ts-ignore EdgeRuntime is provided by Supabase edge runtime
+    EdgeRuntime.waitUntil(
+      runSync().catch(async (e) => {
+        console.error("[sync-xpm] background error:", e);
+        if (jobId) {
+          await supabase
+            .from("import_logs")
+            .update({
+              status: "failed",
+              result: { error: e instanceof Error ? e.message : String(e) },
+            })
+            .eq("id", jobId);
+        }
+      }),
+    );
 
-    console.log("[sync-xpm] Result:", JSON.stringify({ ...result, staffList: `${staffList.length} items` }));
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        started: true,
+        jobId,
+        message: "XPM sync started in background. This can take a couple of minutes for large practices — refresh the dashboard shortly to see updated entities.",
+      }),
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (err) {
     console.error("[sync-xpm] Error:", err);
     return new Response(

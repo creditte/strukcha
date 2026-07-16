@@ -89,7 +89,8 @@ serve(async (req) => {
       `client_id=${encodeURIComponent(clientId)}&` +
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scopes)}&` +
-      `state=${encodeURIComponent(state)}`;
+      `state=${encodeURIComponent(state)}&` +
+      `prompt=${encodeURIComponent("consent select_account")}`;
 
     return new Response(JSON.stringify({ url: authUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

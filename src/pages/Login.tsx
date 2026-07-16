@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import XeroLogo from "@/components/XeroLogo";
 
 export default function Login() {
   const { user, bootStatus } = useAuth();
@@ -202,6 +203,18 @@ export default function Login() {
           (data as { error?: string })?.error || "Could not start Xero sign-in",
         );
       }
+      // Xero blocks being rendered inside iframes (X-Frame-Options: DENY).
+      // If we're inside one (e.g. Lovable preview), break out to the top window.
+      try {
+        if (window.top && window.top !== window.self) {
+          window.top.location.href = oauthUrl;
+          return;
+        }
+      } catch {
+        // Cross-origin top access blocked — fall back to a new tab.
+        window.open(oauthUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
       window.location.href = oauthUrl;
     } catch (err: unknown) {
       const message =
@@ -306,14 +319,7 @@ export default function Login() {
                   </>
                 ) : (
                   <>
-                    <img
-                      src="/Xero%20logo%201x1.png"
-                      alt=""
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 shrink-0 object-contain mix-blend-screen"
-                      aria-hidden
-                    />
+                    <XeroLogo className="h-8 w-8 shrink-0" />
                     Sign in with Xero
                   </>
                 )}

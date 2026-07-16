@@ -32,7 +32,9 @@ function EntityNodeComponent({ data, selected }: NodeProps) {
 
   return (
     <>
-      <Handle type="target" position={Position.Top} className={handleClass} />
+      <Handle type="target" position={Position.Top} className={handleClass} id="top-target" />
+      <Handle type="source" position={Position.Top} className={handleClass} id="top" />
+      <Handle type="target" position={Position.Bottom} className={handleClass} id="bottom-target" />
       <Handle type="source" position={Position.Bottom} className={handleClass} id="bottom" />
       <Handle type="source" position={Position.Left} className={handleClass} id="left" />
       <Handle type="source" position={Position.Right} className={handleClass} id="right" />

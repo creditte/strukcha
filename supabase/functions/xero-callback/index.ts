@@ -95,21 +95,20 @@ serve(async (req) => {
 
     const tokens = await tokenRes.json();
 
-    // Get Xero tenant (organisation) info
+    // Get Xero tenants (organisations) available to this authorisation
     const connectionsRes = await fetch("https://api.xero.com/connections", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
 
-    let xeroTenantId = null;
-    let xeroOrgName = null;
     const connectionsBody = await connectionsRes.text();
     console.log("[xero-callback] GET /connections status:", connectionsRes.status);
+    let tenants: Array<{ tenantId: string; tenantName?: string; tenantType?: string }> = [];
     if (connectionsRes.ok) {
-      const connections = JSON.parse(connectionsBody);
-      if (connections.length > 0) {
-        xeroTenantId = connections[0].tenantId;
-        xeroOrgName = connections[0].tenantName || null;
-      }
+      try { tenants = JSON.parse(connectionsBody) || []; } catch { tenants = []; }
+    }
+
+    if (tenants.length === 0) {
+      return Response.redirect(`${frontendUrl}/?xero=error&reason=no_organisations`, 302);
     }
 
     // Get user's tenant_id and email
@@ -132,7 +131,46 @@ serve(async (req) => {
     const encryptedAccessToken = await encryptToken(tokens.access_token);
     const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
 
-    // Upsert connection with encrypted tokens
+    // If more than one Xero organisation is available, let the user pick.
+    if (tenants.length > 1) {
+      const selectionToken = crypto.randomUUID();
+      const orgList = tenants.map((t) => ({
+        id: t.tenantId,
+        name: t.tenantName || "Xero organisation",
+        type: t.tenantType || null,
+      }));
+
+      const { error: pendingErr } = await supabase.from("xero_oauth_states").insert({
+        flow: "link_select",
+        user_id: userId,
+        csrf_token: selectionToken,
+        selection_token: selectionToken,
+        pending_link: {
+          access_token: encryptedAccessToken,
+          refresh_token: encryptedRefreshToken,
+          expires_at: expiresAt,
+          connected_by_email: connectedByEmail,
+          tenant_id: profile.tenant_id,
+          organisations: orgList,
+        },
+      });
+
+      if (pendingErr) {
+        console.error("[xero-callback] pending insert failed:", pendingErr);
+        return Response.redirect(`${frontendUrl}/?xero=error&reason=db_error`, 302);
+      }
+
+      const orgsParam = encodeURIComponent(btoa(JSON.stringify(orgList)));
+      return Response.redirect(
+        `${frontendUrl}/?xero=select_org&token=${encodeURIComponent(selectionToken)}&orgs=${orgsParam}`,
+        302,
+      );
+    }
+
+    // Single organisation — connect it directly.
+    const xeroTenantId = tenants[0].tenantId;
+    const xeroOrgName = tenants[0].tenantName || null;
+
     const { error: dbError } = await supabase
       .from("xero_connections")
       .upsert(

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { X, Info } from "lucide-react";
 import {
   RELATIONSHIP_RULES,
-  getValidRelationshipTypes,
+  getValidRelationshipOptions,
   getRelationshipLabel,
 } from "@/lib/relationshipRules";
 
@@ -16,7 +16,7 @@ interface Props {
   toEntityName: string;
   fromEntityType?: string;
   toEntityType?: string;
-  onConfirm: (relationshipType: string) => void;
+  onConfirm: (relationshipType: string, needsReversal: boolean) => void;
   onCancel: () => void;
 }
 
@@ -25,10 +25,12 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
 
   if (!open) return null;
 
-  const validTypes =
+  const validOptions =
     fromEntityType && toEntityType
-      ? getValidRelationshipTypes(ALL_TYPE_VALUES, fromEntityType, toEntityType)
-      : ALL_TYPE_VALUES;
+      ? getValidRelationshipOptions(ALL_TYPE_VALUES, fromEntityType, toEntityType)
+      : ALL_TYPE_VALUES.map((t) => ({ type: t, needsReversal: false }));
+  const validTypes = validOptions.map((o) => o.type);
+  const selectedOption = validOptions.find((o) => o.type === selected);
 
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 rounded-lg border bg-card shadow-lg p-4 w-80 animate-in fade-in-0 zoom-in-95">
@@ -69,7 +71,7 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
       )}
       <div className="flex justify-end gap-2 mt-3">
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" className="h-7 text-xs" disabled={!selected} onClick={() => onConfirm(selected)}>
+        <Button size="sm" className="h-7 text-xs" disabled={!selected} onClick={() => onConfirm(selected, !!selectedOption?.needsReversal)}>
           Add
         </Button>
       </div>

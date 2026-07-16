@@ -139,8 +139,10 @@ function buildEdges(
 
     return {
       id: r.id,
-      source: r.from_entity_id,
-      target: r.to_entity_id,
+      source: r.to_entity_id,
+      target: r.from_entity_id,
+      sourceHandle: "top",
+      targetHandle: "bottom-target",
       label: edgeLabel,
       type: "default",
       animated: false,
@@ -166,6 +168,7 @@ function buildEdges(
         height: 14,
         color: invalid ? "#ef4444" : (EDGE_COLORS[r.relationship_type] ?? "#94a3b8"),
       },
+
     };
   });
 }
@@ -336,6 +339,31 @@ function StructureGraphInner({
       })
     );
   }, [selectedEntityId, pinnedNodeIds, searchHighlightId, setNodes, issueMap]);
+
+  // Dynamically pick the closest handles based on relative node positions,
+  // so arrows always connect via the nearest sides (top/bottom).
+  const positionsKey = useMemo(
+    () => nodes.map((n) => `${n.id}:${Math.round(n.position.y)}`).join("|"),
+    [nodes]
+  );
+  useEffect(() => {
+    const posMap = new Map(nodes.map((n) => [n.id, n.position]));
+    setEdges((eds) => {
+      let changed = false;
+      const next = eds.map((e) => {
+        const s = posMap.get(e.source);
+        const t = posMap.get(e.target);
+        if (!s || !t) return e;
+        const sourceAbove = s.y < t.y;
+        const sh = sourceAbove ? "bottom" : "top";
+        const th = sourceAbove ? "top-target" : "bottom-target";
+        if (e.sourceHandle === sh && e.targetHandle === th) return e;
+        changed = true;
+        return { ...e, sourceHandle: sh, targetHandle: th };
+      });
+      return changed ? next : eds;
+    });
+  }, [positionsKey, setEdges, nodes]);
 
   useEffect(() => {
     if (searchHighlightId) {

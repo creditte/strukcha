@@ -1,10 +1,11 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Building2, MessageSquare, Shield, AlertTriangle, Lock, CreditCard } from "lucide-react";
+import { Users, Building2, MessageSquare, Shield, AlertTriangle, Lock, CreditCard, Plug } from "lucide-react";
 import UsersManagement from "@/components/settings/UsersManagement";
 import TenantSettings from "@/components/settings/TenantSettings";
 import FeedbackSettings from "@/components/settings/FeedbackSettings";
 import MfaSettings from "@/components/settings/MfaSettings";
 import BillingSettings from "@/components/settings/BillingSettings";
+import IntegrationsSettings from "@/components/settings/IntegrationsSettings";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -66,6 +67,9 @@ export default function SettingsPage() {
           <TabsTrigger value="firm" className="gap-1.5">
             <Building2 className="h-3.5 w-3.5" /> Firm
           </TabsTrigger>
+          <TabsTrigger value="integrations" className="gap-1.5">
+            <Plug className="h-3.5 w-3.5" /> Integrations
+          </TabsTrigger>
           <TabsTrigger value="security" className="gap-1.5">
             <Lock className="h-3.5 w-3.5" /> Security
           </TabsTrigger>
@@ -89,6 +93,10 @@ export default function SettingsPage() {
 
         <TabsContent value="firm" className="mt-4">
           <TenantSettings isAdmin={isOwnerOrAdmin} />
+        </TabsContent>
+
+        <TabsContent value="integrations" className="mt-4">
+          <IntegrationsSettings />
         </TabsContent>
 
         <TabsContent value="security" className="mt-4">

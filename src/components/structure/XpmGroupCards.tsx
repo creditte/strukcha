@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Search, Network, RefreshCw, AlertCircle, PenLine, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import XeroErrorAlert from "@/components/XeroErrorAlert";
+import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 
 interface XpmGroup {
   xpm_uuid: string;
@@ -25,9 +28,10 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
   const [groups, setGroups] = useState<XpmGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [importingId, setImportingId] = useState<string | null>(null);
+  const { invalid: xeroInvalid, reportError: reportXeroError } = useXeroConnection();
 
   async function loadFromDb() {
     const { data } = await supabase
@@ -44,17 +48,18 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       const { data, error: fnError } = await supabase.functions.invoke("list-xpm-groups");
       if (fnError) throw fnError;
       if (data?.error && (!data?.groups || data.groups.length === 0)) {
-        setError(data.error);
-        return;
+        throw new Error(data.error);
       }
       const fetchedGroups = (data?.groups ?? []) as XpmGroup[];
       setGroups(fetchedGroups);
       if (fetchedGroups.length > 0) {
         toast.success(`${fetchedGroups.length} groups loaded from XPM`);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch groups");
-      toast.error("Failed to fetch groups from XPM");
+    } catch (err: unknown) {
+      setError(err);
+      reportXeroError(err);
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setSyncing(false);
     }
@@ -68,15 +73,16 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
         body: { group_uuid: group.xpm_uuid, group_name: group.name },
       });
       if (fnError) {
-        const msg = data?.detail || data?.error || fnError.message || "Failed to import group";
-        throw new Error(msg);
+        throw new Error(data?.detail || data?.error || fnError.message || "");
       }
       if (data?.error) throw new Error(data.detail || data.error);
-      
+
       toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
       navigate(`/structures/${data.structure_id}`);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to import group");
+    } catch (err: unknown) {
+      reportXeroError(err);
+      const payload = xeroToastPayload(err);
+      toast.error(payload.title, { description: payload.description });
     } finally {
       setImportingId(null);
     }
@@ -154,10 +160,11 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
 
       {/* Error state */}
       {error && groups.length === 0 && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <XeroErrorAlert
+          error={error}
+          onRetry={fetchFromXpm}
+          retrying={syncing}
+        />
       )}
 
       {/* Empty state */}
@@ -208,7 +215,7 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
                         size="icon"
                         className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-all"
                         onClick={(e) => handleImportToEditor(e, g)}
-                        disabled={importingId === g.xpm_uuid}
+                        disabled={importingId === g.xpm_uuid || xeroInvalid}
                       >
                         {importingId === g.xpm_uuid ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />

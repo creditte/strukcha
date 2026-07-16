@@ -122,11 +122,13 @@ export default function StructureView() {
     setPendingConnection({ source: connection.source, target: connection.target });
   }, []);
 
-  const handleConfirmRelationship = useCallback(async (relationshipType: string) => {
+  const handleConfirmRelationship = useCallback(async (relationshipType: string, needsReversal = false) => {
     if (!pendingConnection || !tenantId || !id) return;
+    const fromId = needsReversal ? pendingConnection.target : pendingConnection.source;
+    const toId = needsReversal ? pendingConnection.source : pendingConnection.target;
     const { data: rel, error } = await supabase.from("relationships").insert({
-      from_entity_id: pendingConnection.source,
-      to_entity_id: pendingConnection.target,
+      from_entity_id: fromId,
+      to_entity_id: toId,
       relationship_type: relationshipType as any,
       tenant_id: tenantId,
       source: "manual" as any,
