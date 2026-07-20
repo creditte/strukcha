@@ -71,7 +71,7 @@ serve(async (req) => {
       .from("tenant_users")
       .select("role")
       .eq("tenant_id", conn.tenant_id)
-      .eq("user_id", userId)
+      .eq("auth_user_id", userId)
       .maybeSingle();
     const role = (membership as any)?.role;
     if (role !== "owner" && role !== "admin") {
