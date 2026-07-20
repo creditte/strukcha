@@ -67,19 +67,14 @@ serve(async (req) => {
     }
 
     // Authorise: caller must be owner/admin of the tenant that owns the connection.
-    const { data: authorised } = await service.rpc("is_owner_or_admin", {
-      _tenant_id: conn.tenant_id,
-    }).select?.() ?? { data: null };
-    // Fallback: run membership check via user client so RLS enforces access.
-    const { data: membership } = await userClient
+    const { data: membership } = await service
       .from("tenant_users")
       .select("role")
       .eq("tenant_id", conn.tenant_id)
       .eq("user_id", userId)
       .maybeSingle();
     const role = (membership as any)?.role;
-    const allowed = role === "owner" || role === "admin" || authorised === true;
-    if (!allowed) {
+    if (role !== "owner" && role !== "admin") {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
