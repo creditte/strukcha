@@ -131,10 +131,16 @@ export default function MfaSettings() {
     try {
       await revokeAllDevices();
       setTrustedDevices([]);
-      toast({ title: "All devices revoked", description: "You'll need to verify MFA on all devices again." });
+      toast({
+        title: "All trusted devices removed",
+        description: "For your security, you've been signed out. Please sign in again to continue.",
+      });
+      // Terminate current session; useAuth clears any remaining trusted-device tokens.
+      await supabase.auth.signOut();
+      // Hard redirect ensures all in-memory state and cookies for this origin are dropped.
+      window.location.replace("/login");
     } catch (err: any) {
       toast({ title: "Failed", description: err.message, variant: "destructive" });
-    } finally {
       setRevokingAll(false);
     }
   }
