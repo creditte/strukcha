@@ -106,7 +106,13 @@ export default function MfaSettings() {
     setDevicesLoading(true);
     try {
       const devices = await listDevices();
-      setTrustedDevices(devices);
+      // Keep current device pinned to the top for easy identification.
+      const sorted = [...devices].sort((a, b) => {
+        if (a.is_current && !b.is_current) return -1;
+        if (!a.is_current && b.is_current) return 1;
+        return new Date(b.last_used_at).getTime() - new Date(a.last_used_at).getTime();
+      });
+      setTrustedDevices(sorted);
     } catch {
       // silent
     } finally {
