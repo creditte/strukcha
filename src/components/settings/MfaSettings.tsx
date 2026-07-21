@@ -493,6 +493,7 @@ export default function MfaSettings() {
                 <TableRow>
                   <TableHead>Device</TableHead>
                   <TableHead>IP Address</TableHead>
+                  <TableHead>First Trusted</TableHead>
                   <TableHead>Last Used</TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead className="w-[80px]" />
@@ -500,21 +501,32 @@ export default function MfaSettings() {
               </TableHeader>
               <TableBody>
                 {trustedDevices.map((device) => (
-                  <TableRow key={device.id}>
+                  <TableRow
+                    key={device.id}
+                    className={device.is_current ? "bg-primary/5 hover:bg-primary/10" : undefined}
+                  >
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Monitor className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Monitor className={`h-4 w-4 ${device.is_current ? "text-primary" : "text-muted-foreground"}`} />
                         <span className="text-sm font-medium">{device.device_label || "Unknown"}</span>
+                        {device.is_current && (
+                          <Badge variant="default" className="text-[10px] px-1.5 py-0 h-5">
+                            This Device
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         <Globe className="h-3.5 w-3.5" />
-                        {device.ip_address}
+                        {device.ip_address || "—"}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {format(new Date(device.last_used_at), "d MMM yyyy")}
+                      {format(new Date(device.created_at), "d MMM yyyy")}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {format(new Date(device.last_used_at), "d MMM yyyy, HH:mm")}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {format(new Date(device.expires_at), "d MMM yyyy")}
