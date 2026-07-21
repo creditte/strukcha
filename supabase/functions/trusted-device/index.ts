@@ -68,6 +68,13 @@ Deno.serve(async (req) => {
       const deviceLabel = parseUserAgent(userAgent);
       const expiresAt = new Date(Date.now() + THIRTY_DAYS_MS).toISOString();
 
+      // Opportunistic cleanup: drop this user's expired rows so the table stays lean.
+      await supabaseAdmin
+        .from("trusted_devices")
+        .delete()
+        .eq("user_id", user.id)
+        .lt("expires_at", new Date().toISOString());
+
       const { error: insertError } = await supabaseAdmin.from("trusted_devices").insert({
         user_id: user.id,
         token_hash: tokenHash,
