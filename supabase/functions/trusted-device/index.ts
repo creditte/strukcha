@@ -182,13 +182,19 @@ Deno.serve(async (req) => {
     if (action === "list") {
       const { data: devices } = await supabaseAdmin
         .from("trusted_devices")
-        .select("id, device_label, ip_address, created_at, last_used_at, expires_at")
+        .select("id, device_label, ip_address, created_at, last_used_at, expires_at, token_hash")
         .eq("user_id", user.id)
         .gt("expires_at", new Date().toISOString())
         .order("last_used_at", { ascending: false });
 
+      const currentTokenHash = body.device_token ? await sha256(body.device_token) : null;
+      const withCurrent = (devices ?? []).map((d: any) => {
+        const { token_hash, ...rest } = d;
+        return { ...rest, is_current: currentTokenHash ? token_hash === currentTokenHash : false };
+      });
+
       return new Response(
-        JSON.stringify({ devices: devices ?? [] }),
+        JSON.stringify({ devices: withCurrent }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
