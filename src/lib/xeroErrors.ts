@@ -131,7 +131,7 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
   // a fresh connection can fix it — no point letting the user retry.
   if (has("xero_reauthorization_required") || has("no longer authorised")) {
     return {
-      kind: "auth",
+      kind: "auth_expired",
       title: "Reconnect Xero",
       message: "Xero no longer accepts the saved authorisation for your firm.",
       resolution: "Reconnect Xero Practice Manager, then run the sync again.",
