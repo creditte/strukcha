@@ -975,6 +975,15 @@ Deno.serve(async (req) => {
     }
     const noCapacity = capacity.enforced && !capacity.unlimited && capacity.remaining === 0;
 
+    // Only the client groups the user picked become diagrams. Report an empty
+    // selection up front instead of finishing a long run with nothing to show.
+    const { count: selectedCount } = await supabase
+      .from("xpm_groups")
+      .select("xpm_uuid", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("is_selected", true);
+    const nothingSelected = (selectedCount ?? 0) === 0;
+
     const progress = emptyProgress();
     // `full_sync` forces every group to be re-read from XPM, bypassing the
     // freshness window. Routine syncs leave recently read groups alone.
