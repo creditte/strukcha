@@ -169,6 +169,8 @@ serve(async (req) => {
           connected_by_email: connectedByEmail,
           tenant_id: profile.tenant_id,
           organisations: orgList,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
         },
       });
 
@@ -200,6 +202,13 @@ serve(async (req) => {
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
           expires_at: expiresAt,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },

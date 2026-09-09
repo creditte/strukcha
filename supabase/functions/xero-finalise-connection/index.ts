@@ -86,7 +86,9 @@ serve(async (req) => {
       expires_at: string;
       connected_by_email: string | null;
       tenant_id: string;
-      organisations: Array<{ id: string; name: string }>;
+      organisations: Array<{ id: string; name: string; type?: string | null }>;
+      connection_type?: string;
+      scopes?: string | null;
     };
 
     const chosen = link.organisations.find((o) => o.id === xeroTenantId);
@@ -95,6 +97,21 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const connectionType = link.connection_type === "standard" ? "standard" : "practice_manager";
+
+    // Practice Manager connections must point at a Practice Manager entry,
+    // otherwise every later sync would fail with "Unauthorized".
+    if (connectionType === "practice_manager" && chosen.type && chosen.type !== "PRACTICEMANAGER") {
+      return new Response(
+        JSON.stringify({
+          error:
+            "That organisation doesn't include Xero Practice Manager. Please choose the Practice Manager entry, or connect it as a standard Xero organisation.",
+          code: "xero_practice_manager_required",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     const { error: upsertErr } = await service
@@ -109,6 +126,13 @@ serve(async (req) => {
           access_token: link.access_token,
           refresh_token: link.refresh_token,
           expires_at: link.expires_at,
+          connection_type: connectionType,
+          scopes: link.scopes ?? null,
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
