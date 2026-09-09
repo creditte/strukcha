@@ -781,6 +781,7 @@ function loadProgress(result: any): Progress {
       trusteesDetected: result.trusteesDetected ?? 0,
 
       staffFetched: result.staffFetched ?? 0,
+      groupsBlockedByLimit: result.groupsBlockedByLimit ?? 0,
       xpmRequests: result.xpmRequests ?? 0,
       xpmMs: result.xpmMs ?? 0,
       dbCalls: result.dbCalls ?? 0,
@@ -789,6 +790,10 @@ function loadProgress(result: any): Progress {
       typeCounts: result.typeCounts ?? {},
     },
     warnings: Array.isArray(result.warnings) ? result.warnings.slice(0, 200) : [],
+    limitReached: result.limitReached === true,
+    limitCode: result.limitCode ?? "",
+    blockedGroups: Array.isArray(result.blockedGroups) ? result.blockedGroups.slice(0, 20) : [],
+    capacityRemaining: result.capacityRemaining ?? null,
   };
 }
 
