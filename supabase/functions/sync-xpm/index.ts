@@ -48,7 +48,10 @@ interface Stats {
   entitiesUpdated: number;
   relationshipsCreated: number;
   relationshipsSkipped: number;
+  /** Groups selected by the user — the groups this sync will turn into diagrams. */
   groupsFound: number;
+  /** Every group that exists in XPM, selected or not. */
+  groupsCatalogued: number;
   groupsCreated: number;
   groupsProcessed: number;
   /** Groups whose XPM membership is unchanged since the last sync. */
