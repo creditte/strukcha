@@ -257,6 +257,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       enforcement_enabled: enforcementEnabled,
+      unlimited_structures: unlimitedStructures,
       payment_method_required: paymentMethodRequired,
       payment_method_captured: tenant.payment_method_captured === true,
       stripe_mode: refs.mode,
