@@ -220,8 +220,13 @@ Deno.serve(async (req) => {
     }
 
 
-    // Persist corrected limit to DB if it differs
-    if (effectiveDiagramLimit !== tenant.diagram_limit) {
+    // Permanent per-tenant override: this firm is never capped on structures,
+    // regardless of plan, trial state or future billing logic changes.
+    const unlimitedStructures = tenant.unlimited_structures === true;
+
+    // Persist corrected limit to DB if it differs. Skipped for override tenants so
+    // the plan-derived limit never overwrites their uncapped state.
+    if (!unlimitedStructures && effectiveDiagramLimit !== tenant.diagram_limit) {
       await supabaseAdmin
         .from("tenants")
         .update({ diagram_limit: effectiveDiagramLimit })
