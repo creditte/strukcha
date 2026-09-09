@@ -1016,7 +1016,11 @@ Deno.serve(async (req) => {
       jobId: jobRow.id,
       capacityRemaining: capacity.remaining,
       atCapacity: noCapacity,
-      message: noCapacity
+      selectedGroups: selectedCount ?? 0,
+      nothingSelected,
+      message: nothingSelected
+        ? "Sync started, but no client groups are selected yet. Choose the client groups you want as diagrams, then run the sync again."
+        : noCapacity
         ? `Sync started, but your workspace is full (${capacity.used} of ${capacity.limit} structures). Existing diagrams will be refreshed; new client groups can't be added until you archive a structure or upgrade.`
         : "XPM sync started. It runs in batches across multiple background executions — refresh the dashboard shortly to see progress.",
     }, 202);
