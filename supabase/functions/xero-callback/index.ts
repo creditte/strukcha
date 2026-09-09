@@ -21,15 +21,17 @@ serve(async (req) => {
       return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=missing_params`, 302);
     }
 
-    // Decode state to get user_id, origin, and CSRF token
+    // Decode state to get user_id, origin, CSRF token and what was asked for
     let userId: string;
     let frontendUrl: string;
     let csrfToken: string;
+    let connectionType = "practice_manager";
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       userId = state.user_id;
       frontendUrl = state.origin || defaultFrontendUrl;
       csrfToken = state.csrf;
+      if (state.connection_type === "standard") connectionType = "standard";
     } catch {
       return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=invalid_state`, 302);
     }
