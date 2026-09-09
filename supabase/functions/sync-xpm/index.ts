@@ -127,6 +127,7 @@ function emptyProgress(): Progress {
       groupsSkippedUnchanged: 0,
       trusteesDetected: 0,
       staffFetched: 0,
+      groupsBlockedByLimit: 0,
       xpmRequests: 0,
       xpmMs: 0,
       dbCalls: 0,
@@ -135,6 +136,33 @@ function emptyProgress(): Progress {
       typeCounts: {},
     },
     warnings: [],
+    limitReached: false,
+    limitCode: "",
+    blockedGroups: [],
+    capacityRemaining: null,
+  };
+}
+
+/** Remaining structure capacity for a tenant, as reported by the database. */
+async function readCapacity(supabase: any, tenantId: string): Promise<{
+  found: boolean;
+  enforced: boolean;
+  accessEnabled: boolean;
+  unlimited: boolean;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+}> {
+  const { data } = await supabase.rpc("tenant_structure_capacity", { _tenant_id: tenantId });
+  const c = (data ?? {}) as any;
+  return {
+    found: c.found === true,
+    enforced: c.enforced === true,
+    accessEnabled: c.accessEnabled === true,
+    unlimited: c.unlimited === true,
+    used: c.used ?? 0,
+    limit: c.limit ?? null,
+    remaining: c.remaining ?? null,
   };
 }
 
