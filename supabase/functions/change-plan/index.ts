@@ -196,7 +196,8 @@ Deno.serve(async (req) => {
 
       // Check if current usage exceeds target limit
       const targetLimit = PLAN_LIMITS.starter;
-      if ((tenant.diagram_count || 0) > targetLimit) {
+      // Tenants with the permanent unlimited-structures override are never capped.
+      if (tenant.unlimited_structures !== true && (tenant.diagram_count || 0) > targetLimit) {
         throw new Error(
           `Cannot downgrade to Starter. You have ${tenant.diagram_count} active structures, but Starter allows a maximum of ${targetLimit}. Please archive or delete some structures first.`
         );
