@@ -20,6 +20,10 @@ import {
 } from "./_lib.ts";
 import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
 import { parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
+import {
+  markXeroConnectionInvalid,
+  XeroReauthRequiredError,
+} from "../_shared/xero-token.ts";
 
 /**
  * Chunked, resumable XPM sync.
