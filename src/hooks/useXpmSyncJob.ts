@@ -114,7 +114,7 @@ export function xpmSyncPercent(job: XpmSyncJob | null): number {
  * job reaches a terminal state, and reports completion from the database rather
  * than from the request that started it.
  */
-export function useXpmSyncJob(options?: { onFinished?: () => void }) {
+export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void }) {
   const { toast } = useToast();
   const [job, setJob] = useState<XpmSyncJob | null>(null);
   const [starting, setStarting] = useState(false);
@@ -178,7 +178,7 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
             variant: "destructive",
           });
         }
-        onFinished?.();
+        onFinished?.(next);
       }
       lastStatus.current = next.status;
     }, POLL_MS);
