@@ -36,6 +36,7 @@ import {
   Briefcase,
   Shield,
   Copy,
+  ListChecks,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
