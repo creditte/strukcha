@@ -1438,6 +1438,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_selected: boolean
           last_synced_at: string | null
           member_hash: string | null
           name: string
@@ -1448,6 +1449,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_selected?: boolean
           last_synced_at?: string | null
           member_hash?: string | null
           name: string
@@ -1458,6 +1460,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_selected?: boolean
           last_synced_at?: string | null
           member_hash?: string | null
           name?: string
