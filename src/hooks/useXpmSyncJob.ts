@@ -226,6 +226,7 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
     starting,
     label: xpmSyncLabel(job),
     percent: xpmSyncPercent(job),
+    limitMessage: xpmSyncLimitMessage(job),
     start,
     refresh: fetchJob,
   };
