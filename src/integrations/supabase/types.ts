@@ -1646,6 +1646,7 @@ export type Database = {
         Args: { _tenant_id: string }
         Returns: boolean
       }
+      tenant_structure_capacity: { Args: { _tenant_id: string }; Returns: Json }
     }
     Enums: {
       app_role: "admin" | "editor" | "viewer" | "user"

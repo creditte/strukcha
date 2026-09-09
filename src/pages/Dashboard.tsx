@@ -77,6 +77,7 @@ export default function Dashboard() {
     running: syncing,
     label: syncLabel,
     percent: syncPercent,
+    limitMessage: syncLimitMessage,
     start: startXpmSync,
   } = useXpmSyncJob({ onFinished: () => window.location.reload() });
   const {
@@ -570,6 +571,33 @@ export default function Dashboard() {
           </>
         )}
       </section>
+
+      {/* ── Sync ran out of structure space ── */}
+      {syncLimitMessage && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="space-y-2 text-sm">
+              <p className="font-medium text-foreground">Some client groups were not added</p>
+              <p className="text-muted-foreground">{syncLimitMessage}</p>
+              {syncJob && syncJob.blockedGroups.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  For example: {syncJob.blockedGroups.slice(0, 5).join(", ")}
+                  {syncJob.groupsBlockedByLimit > 5 ? "…" : ""}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                  <Link to="/structures">Manage structures</Link>
+                </Button>
+                <Button asChild size="sm" className="h-7 text-xs">
+                  <Link to="/settings?tab=billing">Upgrade plan</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Billing Banner ── */}
       <BillingBanner />

@@ -24,6 +24,13 @@ export interface XpmSyncJob {
   groupsTotal: number;
   groupsSkippedUnchanged: number;
   staffFetched: number;
+  /** Client groups that could not become diagrams (workspace full / inactive plan). */
+  groupsBlockedByLimit: number;
+  limitReached: boolean;
+  limitCode: "structure_limit_reached" | "subscription_inactive" | null;
+  blockedGroups: string[];
+  /** Structure slots left when last checked; null means unlimited. */
+  capacityRemaining: number | null;
   error?: string;
 }
 
@@ -43,15 +50,36 @@ function mapJob(row: any): XpmSyncJob {
     groupsTotal: r.progress?.groupsTotal ?? r.groupsFound ?? 0,
     groupsSkippedUnchanged: r.groupsSkippedUnchanged ?? 0,
     staffFetched: r.staffFetched ?? 0,
+    groupsBlockedByLimit: r.groupsBlockedByLimit ?? 0,
+    limitReached: r.limitReached === true,
+    limitCode: r.limitCode ?? null,
+    blockedGroups: Array.isArray(r.blockedGroups) ? r.blockedGroups : [],
+    capacityRemaining: r.capacityRemaining ?? null,
     error: r.error,
   };
+}
+
+/**
+ * Plain-English explanation of a sync that ran out of structure space, or null
+ * when capacity was never a problem.
+ */
+export function xpmSyncLimitMessage(job: XpmSyncJob | null): string | null {
+  if (!job?.limitReached) return null;
+  const n = job.groupsBlockedByLimit;
+  const groups = n === 1 ? "1 client group" : `${n} client groups`;
+  if (job.limitCode === "subscription_inactive") {
+    return `${groups} could not be added because your subscription is not active. Reactivate your plan and run the sync again.`;
+  }
+  return `${groups} could not be added because your workspace is full. Archive or delete a structure, or upgrade your plan, then run the sync again — only the missing groups will be added.`;
 }
 
 /** Human-readable description of where the sync currently is. */
 export function xpmSyncLabel(job: XpmSyncJob | null): string {
   if (!job) return "";
   if (job.status === "failed") return job.error ?? "Sync failed";
-  if (job.status === "completed") return "Sync complete";
+  if (job.status === "completed") {
+    return job.limitReached ? "Sync finished — workspace full" : "Sync complete";
+  }
   switch (job.phase) {
     case "clients":
       return `Reading clients from XPM — ${job.clientsFetched} so far`;
@@ -132,7 +160,17 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
           if (next.relationshipsCreated > 0) parts.push(`${next.relationshipsCreated} relationships`);
           if (next.groupsCreated > 0) parts.push(`${next.groupsCreated} diagrams created`);
           if (next.groupsSkippedUnchanged > 0) parts.push(`${next.groupsSkippedUnchanged} unchanged`);
-          toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
+          const limitMsg = xpmSyncLimitMessage(next);
+          if (limitMsg) {
+            // The cap is never reported as a plain success any more.
+            toast({
+              title: "XPM sync finished — some groups were not added",
+              description: `${limitMsg} (${parts.join(", ")}.)`,
+              variant: "destructive",
+            });
+          } else {
+            toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
+          }
         } else if (next.status === "failed") {
           toast({
             title: "XPM sync failed",
@@ -157,10 +195,20 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast({
-        title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
-        description: "Progress is shown here — you can keep working while it runs.",
-      });
+      if (data?.atCapacity) {
+        toast({
+          title: "Workspace is full",
+          description:
+            data.message ??
+            "Existing diagrams will be refreshed, but new client groups can't be added until you archive a structure or upgrade.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
+          description: "Progress is shown here — you can keep working while it runs.",
+        });
+      }
       lastStatus.current = "processing";
       await fetchJob();
     } catch (err) {
@@ -178,6 +226,7 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
     starting,
     label: xpmSyncLabel(job),
     percent: xpmSyncPercent(job),
+    limitMessage: xpmSyncLimitMessage(job),
     start,
     refresh: fetchJob,
   };

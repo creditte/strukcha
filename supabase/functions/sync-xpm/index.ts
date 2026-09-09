@@ -55,6 +55,12 @@ interface Stats {
   groupsSkippedUnchanged: number;
   trusteesDetected: number;
   staffFetched: number;
+  /**
+   * Groups that could not become a structure because the firm is at its
+   * structure limit (or its subscription is inactive). These groups are left
+   * untouched so a later sync retries them once capacity is freed.
+   */
+  groupsBlockedByLimit: number;
   /** Observability: cost of the sync so far. */
   xpmRequests: number;
   xpmMs: number;
@@ -87,6 +93,14 @@ interface Progress {
   updated_at: string;
   stats: Stats;
   warnings: string[];
+  /** Terminal capacity condition met during this run. */
+  limitReached: boolean;
+  /** `structure_limit_reached` or `subscription_inactive`. */
+  limitCode: string;
+  /** Example group names that were blocked, for user-facing messaging. */
+  blockedGroups: string[];
+  /** Remaining structure slots observed when the run started (null = unlimited). */
+  capacityRemaining: number | null;
 }
 
 function emptyProgress(): Progress {
@@ -113,6 +127,7 @@ function emptyProgress(): Progress {
       groupsSkippedUnchanged: 0,
       trusteesDetected: 0,
       staffFetched: 0,
+      groupsBlockedByLimit: 0,
       xpmRequests: 0,
       xpmMs: 0,
       dbCalls: 0,
@@ -121,6 +136,33 @@ function emptyProgress(): Progress {
       typeCounts: {},
     },
     warnings: [],
+    limitReached: false,
+    limitCode: "",
+    blockedGroups: [],
+    capacityRemaining: null,
+  };
+}
+
+/** Remaining structure capacity for a tenant, as reported by the database. */
+async function readCapacity(supabase: any, tenantId: string): Promise<{
+  found: boolean;
+  enforced: boolean;
+  accessEnabled: boolean;
+  unlimited: boolean;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+}> {
+  const { data } = await supabase.rpc("tenant_structure_capacity", { _tenant_id: tenantId });
+  const c = (data ?? {}) as any;
+  return {
+    found: c.found === true,
+    enforced: c.enforced === true,
+    accessEnabled: c.accessEnabled === true,
+    unlimited: c.unlimited === true,
+    used: c.used ?? 0,
+    limit: c.limit ?? null,
+    remaining: c.remaining ?? null,
   };
 }
 
@@ -421,6 +463,24 @@ async function linkGroupBatch(
   const res = (data ?? {}) as any;
   p.stats.groupsCreated += res.structuresCreated ?? 0;
   p.stats.groupsSkippedUnchanged += res.skippedUnchanged ?? 0;
+  const blocked = res.groupsBlocked ?? 0;
+  if (blocked > 0 || res.limitReached === true) {
+    // Distinct, expected condition — recorded once, not buried in warnings.
+    p.stats.groupsBlockedByLimit += blocked;
+    if (!p.limitReached) {
+      p.limitReached = true;
+      p.limitCode = String(res.limitCode ?? "structure_limit_reached");
+      warn(
+        p,
+        p.limitCode === "subscription_inactive"
+          ? "Some client groups could not be turned into diagrams because the subscription is inactive."
+          : "Some client groups could not be turned into diagrams because the workspace structure limit was reached.",
+      );
+    }
+    for (const name of res.blockedGroups ?? []) {
+      if (p.blockedGroups.length < 20) p.blockedGroups.push(String(name));
+    }
+  }
   for (const e of res.errors ?? []) warn(p, String(e));
 }
 
@@ -554,6 +614,10 @@ async function runSlice(
       else p.stats.relationshipsCreated += (data as any)?.relationshipsCreated ?? 0;
     }
   } else if (p.phase === "groups") {
+    // Capacity is re-read each slice: it can change mid-run (a structure is
+    // archived, the plan is upgraded), and it is what the UI reports.
+    const capacity = await readCapacity(supabase, tenantId);
+    p.capacityRemaining = capacity.remaining;
     if (!p.groupsLoaded) {
       await loadGroupList(supabase, tenantId, accessToken, xeroTenantId, p);
       p.updated_at = new Date().toISOString();
@@ -653,6 +717,12 @@ async function saveProgress(
           runs: p.runs,
         },
         ...p.stats,
+        // The cap is reported as its own terminal condition, not as a warning,
+        // so the UI can finish the run as "completed with limits reached".
+        limitReached: p.limitReached,
+        limitCode: p.limitCode || null,
+        blockedGroups: p.blockedGroups.slice(0, 20),
+        capacityRemaining: p.capacityRemaining,
         // Keep the row bounded: only the most recent warnings are retained.
         warnings: p.warnings.slice(-50),
         started_at: p.started_at,
@@ -711,6 +781,7 @@ function loadProgress(result: any): Progress {
       trusteesDetected: result.trusteesDetected ?? 0,
 
       staffFetched: result.staffFetched ?? 0,
+      groupsBlockedByLimit: result.groupsBlockedByLimit ?? 0,
       xpmRequests: result.xpmRequests ?? 0,
       xpmMs: result.xpmMs ?? 0,
       dbCalls: result.dbCalls ?? 0,
@@ -719,6 +790,10 @@ function loadProgress(result: any): Progress {
       typeCounts: result.typeCounts ?? {},
     },
     warnings: Array.isArray(result.warnings) ? result.warnings.slice(0, 200) : [],
+    limitReached: result.limitReached === true,
+    limitCode: result.limitCode ?? "",
+    blockedGroups: Array.isArray(result.blockedGroups) ? result.blockedGroups.slice(0, 20) : [],
+    capacityRemaining: result.capacityRemaining ?? null,
   };
 }
 
@@ -751,6 +826,10 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
               groupsTotal: progress.stats.groupsFound,
               runs: progress.runs,
             },
+            limitReached: progress.limitReached,
+            limitCode: progress.limitCode || null,
+            blockedGroups: progress.blockedGroups.slice(0, 20),
+            capacityRemaining: progress.capacityRemaining,
             warnings: progress.warnings.slice(-50),
           },
         })
@@ -868,10 +947,24 @@ Deno.serve(async (req) => {
       }, 202);
     }
 
+    // Pre-flight capacity: refuse outright when the subscription cannot create
+    // structures at all, and flag a full workspace so the caller can warn the
+    // user before a long run that will not produce new diagrams.
+    const capacity = await readCapacity(supabase, tenantId);
+    if (capacity.enforced && !capacity.accessEnabled) {
+      return json({
+        error:
+          "Your subscription is not active, so client groups cannot be turned into diagrams. Please reactivate your plan and try again.",
+        code: "subscription_inactive",
+      }, 402);
+    }
+    const noCapacity = capacity.enforced && !capacity.unlimited && capacity.remaining === 0;
+
     const progress = emptyProgress();
     // `full_sync` forces every group to be re-read from XPM, bypassing the
     // freshness window. Routine syncs leave recently read groups alone.
     progress.fullSync = body.full_sync === true;
+    progress.capacityRemaining = capacity.remaining;
     const { data: jobRow, error: jobErr } = await supabase
       .from("import_logs")
       .insert({
@@ -879,7 +972,12 @@ Deno.serve(async (req) => {
         user_id: user.id,
         file_name: JOB_FILE_NAME,
         status: "processing",
-        result: { phase: progress.phase, started_at: progress.started_at, ...progress.stats },
+        result: {
+          phase: progress.phase,
+          started_at: progress.started_at,
+          capacityRemaining: capacity.remaining,
+          ...progress.stats,
+        },
       })
       .select("id")
       .single();
@@ -892,8 +990,11 @@ Deno.serve(async (req) => {
     return json({
       started: true,
       jobId: jobRow.id,
-      message:
-        "XPM sync started. It runs in batches across multiple background executions — refresh the dashboard shortly to see progress.",
+      capacityRemaining: capacity.remaining,
+      atCapacity: noCapacity,
+      message: noCapacity
+        ? `Sync started, but your workspace is full (${capacity.used} of ${capacity.limit} structures). Existing diagrams will be refreshed; new client groups can't be added until you archive a structure or upgrade.`
+        : "XPM sync started. It runs in batches across multiple background executions — refresh the dashboard shortly to see progress.",
     }, 202);
   } catch (err) {
     console.error("[sync-xpm] Error:", err);
