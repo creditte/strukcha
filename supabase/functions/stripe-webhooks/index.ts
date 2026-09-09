@@ -14,6 +14,7 @@ import {
   buildPlanConfig,
   buildPriceMap,
   resolvePlanFromSubscription as sharedResolvePlan,
+  TRIAL_GROUP_LIMIT,
 } from "../_shared/stripe-plans.ts";
 import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
 
@@ -25,8 +26,6 @@ const corsHeaders = {
 // Plan configuration mapped by Stripe Product ID — single source of truth in _shared/stripe-plans.ts
 // Trials always get the capped trial allowance (full Pro features, 3 structure groups);
 // plan limits apply once the subscription is paying.
-const TRIAL_GROUP_LIMIT = 3;
-
 const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
 
 const PRICE_MAP = buildPriceMap();

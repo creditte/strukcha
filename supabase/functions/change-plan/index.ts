@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
 import { stripeVar } from "../_shared/stripe-env.ts";
+import { PLAN_DIAGRAM_LIMITS } from "../_shared/stripe-plans.ts";
 import {
   LEGACY_SUBSCRIPTION_MESSAGE,
   quarantineLegacyStripeRefs,
@@ -24,10 +25,9 @@ const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   },
 };
 
-const PLAN_LIMITS: Record<string, number> = {
-  starter: 15,
-  pro: 50,
-};
+// Structure allowances come from the shared plan table so a plan change is
+// edited in exactly one place.
+const PLAN_LIMITS = PLAN_DIAGRAM_LIMITS;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });

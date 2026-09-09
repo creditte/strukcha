@@ -5,6 +5,7 @@ import { encryptToken } from "../_shared/crypto.ts";
 import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
 import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { TRIAL_GROUP_LIMIT } from "../_shared/stripe-plans.ts";
 
 type PendingSignup = {
   firm_name: string;
@@ -197,7 +198,7 @@ Deno.serve(async (req) => {
         subscription_status: "incomplete",
         subscription_plan: plan,
         selected_plan: plan,
-        diagram_limit: 3,
+        diagram_limit: TRIAL_GROUP_LIMIT,
         payment_method_captured: false,
         access_enabled: false,
         access_locked_reason: "payment_method_required",
