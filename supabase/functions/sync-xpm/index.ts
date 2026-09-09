@@ -375,19 +375,28 @@ async function loadGroupList(
     .filter((g) => g.uuid && g.name);
   groupXml = null;
 
-  p.stats.groupsFound = groups.length;
-
   const t = tuning();
   const now = new Date().toISOString();
   for (const part of chunk(groups, t.dbBatchSize)) {
-    // `member_hash` is deliberately left untouched so previously synced groups
-    // keep their fingerprint and can be skipped when unchanged.
+    // `member_hash` and `is_selected` are deliberately left untouched so
+    // previously synced groups keep their fingerprint and the user's choice of
+    // which groups become diagrams survives every catalogue refresh.
     const { error } = await supabase.from("xpm_groups").upsert(
       part.map((g) => ({ tenant_id: tenantId, xpm_uuid: g.uuid, name: g.name, updated_at: now })),
       { onConflict: "tenant_id,xpm_uuid" },
     );
     if (error) warn(p, `Failed to persist group batch: ${error.message}`);
   }
+
+  // Only the groups the user chose are turned into diagrams, so progress is
+  // measured against the selection — not the whole XPM catalogue.
+  const { count } = await supabase
+    .from("xpm_groups")
+    .select("xpm_uuid", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("is_selected", true);
+  p.stats.groupsCatalogued = groups.length;
+  p.stats.groupsFound = count ?? 0;
 
   p.groupsLoaded = true;
 }
