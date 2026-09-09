@@ -195,7 +195,17 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      if (data?.atCapacity) {
+      if (data?.nothingSelected) {
+        // Nothing to build: tell the user to pick groups rather than letting the
+        // run finish silently with no diagrams.
+        toast({
+          title: "No client groups selected",
+          description:
+            data.message ??
+            "Choose the client groups you want as diagrams, then run the sync again.",
+          variant: "destructive",
+        });
+      } else if (data?.atCapacity) {
         toast({
           title: "Workspace is full",
           description:

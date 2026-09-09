@@ -36,6 +36,7 @@ import {
   Briefcase,
   Shield,
   Copy,
+  ListChecks,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
@@ -49,6 +50,7 @@ import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import XeroLogo from "@/components/XeroLogo";
+import XpmGroupSelectionDialog from "@/components/structure/XpmGroupSelectionDialog";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 import { useXpmSyncJob } from "@/hooks/useXpmSyncJob";
@@ -67,6 +69,7 @@ export default function Dashboard() {
   const { duplicateCount } = useDuplicateCount();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
   const { user } = useAuth();
@@ -435,6 +438,15 @@ export default function Dashboard() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="h-7 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-foreground hover:bg-[#13B5EA]/10"
+                    onClick={() => setShowGroupPicker(true)}
+                  >
+                    <ListChecks className="h-3.5 w-3.5" />
+                    Choose groups
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
                     onClick={handleDisconnectXero}
                     disabled={disconnecting}
@@ -540,6 +552,15 @@ export default function Dashboard() {
                   >
                     {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {syncing ? "Syncing XPM…" : "Sync XPM"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-foreground hover:bg-[#13B5EA]/10"
+                    onClick={() => setShowGroupPicker(true)}
+                  >
+                    <ListChecks className="h-3.5 w-3.5" />
+                    Choose groups
                   </Button>
                   <Button
                     variant="ghost"
@@ -953,6 +974,11 @@ export default function Dashboard() {
       )}
 
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
+      <XpmGroupSelectionDialog
+        open={showGroupPicker}
+        onOpenChange={setShowGroupPicker}
+        syncing={syncing}
+      />
       <CreateStructureModal
         open={showCreateModal}
         onOpenChange={setShowCreateModal}

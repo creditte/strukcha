@@ -48,7 +48,10 @@ interface Stats {
   entitiesUpdated: number;
   relationshipsCreated: number;
   relationshipsSkipped: number;
+  /** Groups selected by the user — the groups this sync will turn into diagrams. */
   groupsFound: number;
+  /** Every group that exists in XPM, selected or not. */
+  groupsCatalogued: number;
   groupsCreated: number;
   groupsProcessed: number;
   /** Groups whose XPM membership is unchanged since the last sync. */
@@ -122,6 +125,7 @@ function emptyProgress(): Progress {
       relationshipsCreated: 0,
       relationshipsSkipped: 0,
       groupsFound: 0,
+      groupsCatalogued: 0,
       groupsCreated: 0,
       groupsProcessed: 0,
       groupsSkippedUnchanged: 0,
@@ -375,19 +379,28 @@ async function loadGroupList(
     .filter((g) => g.uuid && g.name);
   groupXml = null;
 
-  p.stats.groupsFound = groups.length;
-
   const t = tuning();
   const now = new Date().toISOString();
   for (const part of chunk(groups, t.dbBatchSize)) {
-    // `member_hash` is deliberately left untouched so previously synced groups
-    // keep their fingerprint and can be skipped when unchanged.
+    // `member_hash` and `is_selected` are deliberately left untouched so
+    // previously synced groups keep their fingerprint and the user's choice of
+    // which groups become diagrams survives every catalogue refresh.
     const { error } = await supabase.from("xpm_groups").upsert(
       part.map((g) => ({ tenant_id: tenantId, xpm_uuid: g.uuid, name: g.name, updated_at: now })),
       { onConflict: "tenant_id,xpm_uuid" },
     );
     if (error) warn(p, `Failed to persist group batch: ${error.message}`);
   }
+
+  // Only the groups the user chose are turned into diagrams, so progress is
+  // measured against the selection — not the whole XPM catalogue.
+  const { count } = await supabase
+    .from("xpm_groups")
+    .select("xpm_uuid", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("is_selected", true);
+  p.stats.groupsCatalogued = groups.length;
+  p.stats.groupsFound = count ?? 0;
 
   p.groupsLoaded = true;
 }
@@ -403,6 +416,7 @@ async function fetchGroupSlice(
     .from("xpm_groups")
     .select("xpm_uuid, name, last_synced_at")
     .eq("tenant_id", tenantId)
+    .eq("is_selected", true)
     .order("xpm_uuid", { ascending: true })
     .limit(limit);
   if (cursor) q = q.gt("xpm_uuid", cursor);
@@ -775,6 +789,7 @@ function loadProgress(result: any): Progress {
       relationshipsCreated: result.relationshipsCreated ?? 0,
       relationshipsSkipped: result.relationshipsSkipped ?? 0,
       groupsFound: result.groupsFound ?? 0,
+      groupsCatalogued: result.groupsCatalogued ?? 0,
       groupsCreated: result.groupsCreated ?? 0,
       groupsProcessed: result.groupsProcessed ?? result.progress?.groupsProcessed ?? 0,
       groupsSkippedUnchanged: result.groupsSkippedUnchanged ?? 0,
@@ -960,6 +975,15 @@ Deno.serve(async (req) => {
     }
     const noCapacity = capacity.enforced && !capacity.unlimited && capacity.remaining === 0;
 
+    // Only the client groups the user picked become diagrams. Report an empty
+    // selection up front instead of finishing a long run with nothing to show.
+    const { count: selectedCount } = await supabase
+      .from("xpm_groups")
+      .select("xpm_uuid", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("is_selected", true);
+    const nothingSelected = (selectedCount ?? 0) === 0;
+
     const progress = emptyProgress();
     // `full_sync` forces every group to be re-read from XPM, bypassing the
     // freshness window. Routine syncs leave recently read groups alone.
@@ -992,7 +1016,11 @@ Deno.serve(async (req) => {
       jobId: jobRow.id,
       capacityRemaining: capacity.remaining,
       atCapacity: noCapacity,
-      message: noCapacity
+      selectedGroups: selectedCount ?? 0,
+      nothingSelected,
+      message: nothingSelected
+        ? "Sync started, but no client groups are selected yet. Choose the client groups you want as diagrams, then run the sync again."
+        : noCapacity
         ? `Sync started, but your workspace is full (${capacity.used} of ${capacity.limit} structures). Existing diagrams will be refreshed; new client groups can't be added until you archive a structure or upgrade.`
         : "XPM sync started. It runs in batches across multiple background executions — refresh the dashboard shortly to see progress.",
     }, 202);
