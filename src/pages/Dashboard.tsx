@@ -547,6 +547,15 @@ export default function Dashboard() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="h-7 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-foreground hover:bg-[#13B5EA]/10"
+                    onClick={() => setShowGroupPicker(true)}
+                  >
+                    <ListChecks className="h-3.5 w-3.5" />
+                    Choose groups
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
                     onClick={handleDisconnectXero}
                     disabled={disconnecting}
