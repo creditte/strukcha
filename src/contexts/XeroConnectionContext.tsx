@@ -19,6 +19,13 @@ export interface XeroConnectionInfo {
   xero_tenant_id: string | null;
   xero_org_name: string | null;
   connected_by_email?: string | null;
+  /** "practice_manager" or "standard" — what the firm authorised. */
+  connection_type?: string | null;
+  /** "active" or "needs_reauth", stored server-side so every device agrees. */
+  status?: string | null;
+  last_error?: string | null;
+  last_error_at?: string | null;
+  invalidated_at?: string | null;
 }
 
 interface XeroConnectionContextValue {
@@ -69,9 +76,17 @@ export function XeroConnectionProvider({ children }: { children: ReactNode }) {
     await query.refetch();
   }, [query]);
 
-  // If the connection record disappeared, there is nothing to mark invalid on.
+  // The broken/healthy state is stored on the connection itself, so a refresh,
+  // a second device or another staff member sees the same reconnect prompt.
   useEffect(() => {
-    if (query.isSuccess && !query.data) setInvalid(false);
+    if (!query.isSuccess) return;
+    if (!query.data) {
+      setInvalid(false);
+      return;
+    }
+    const status = (query.data as XeroConnectionInfo).status;
+    if (status === "needs_reauth") setInvalid(true);
+    else if (status === "active") setInvalid(false);
   }, [query.isSuccess, query.data]);
 
 
