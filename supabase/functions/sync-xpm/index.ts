@@ -463,6 +463,24 @@ async function linkGroupBatch(
   const res = (data ?? {}) as any;
   p.stats.groupsCreated += res.structuresCreated ?? 0;
   p.stats.groupsSkippedUnchanged += res.skippedUnchanged ?? 0;
+  const blocked = res.groupsBlocked ?? 0;
+  if (blocked > 0 || res.limitReached === true) {
+    // Distinct, expected condition — recorded once, not buried in warnings.
+    p.stats.groupsBlockedByLimit += blocked;
+    if (!p.limitReached) {
+      p.limitReached = true;
+      p.limitCode = String(res.limitCode ?? "structure_limit_reached");
+      warn(
+        p,
+        p.limitCode === "subscription_inactive"
+          ? "Some client groups could not be turned into diagrams because the subscription is inactive."
+          : "Some client groups could not be turned into diagrams because the workspace structure limit was reached.",
+      );
+    }
+    for (const name of res.blockedGroups ?? []) {
+      if (p.blockedGroups.length < 20) p.blockedGroups.push(String(name));
+    }
+  }
   for (const e of res.errors ?? []) warn(p, String(e));
 }
 
