@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decryptToken } from "../_shared/crypto.ts";
+import { getXeroAccessToken } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
 import { parseXpmRelationshipType, resolveRelationshipEndpoints } from "../_shared/xpm-relationships.ts";
 
@@ -10,40 +10,6 @@ const corsHeaders = {
 };
 
 const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
-
-async function refreshAccessToken(supabase: any, connection: any): Promise<string> {
-  const now = new Date();
-  const expiresAt = new Date(connection.expires_at);
-  const currentAccessToken = await decryptToken(connection.access_token);
-
-  if (expiresAt.getTime() - now.getTime() > 300_000) return currentAccessToken;
-
-  const clientId = Deno.env.get("XERO_CLIENT_ID")!;
-  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
-  const currentRefreshToken = await decryptToken(connection.refresh_token);
-
-  const res = await fetch("https://identity.xero.com/connect/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
-    },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: currentRefreshToken }),
-  });
-
-  if (!res.ok) throw new Error(`Token refresh failed: ${await res.text()}`);
-
-  const tokens = await res.json();
-  const { encryptToken } = await import("../_shared/crypto.ts");
-  await supabase.from("xero_connections").update({
-    access_token: await encryptToken(tokens.access_token),
-    refresh_token: await encryptToken(tokens.refresh_token),
-    expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-    updated_at: new Date().toISOString(),
-  }).eq("id", connection.id);
-
-  return tokens.access_token;
-}
 
 function xpmHeaders(accessToken: string, xeroTenantId: string) {
   return { Authorization: `Bearer ${accessToken}`, "xero-tenant-id": xeroTenantId, Accept: "application/xml" };
@@ -138,7 +104,7 @@ Deno.serve(async (req) => {
     }
 
     const connection = connections[0];
-    const accessToken = await refreshAccessToken(supabase, connection);
+    const accessToken = await getXeroAccessToken(supabase, connection);
     const xeroTenantId = await discoverPmTenantId(accessToken, connection.xero_tenant_id);
     if (!xeroTenantId) {
       return new Response(JSON.stringify({ error: "Xero tenant ID not available" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
