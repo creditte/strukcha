@@ -717,6 +717,12 @@ async function saveProgress(
           runs: p.runs,
         },
         ...p.stats,
+        // The cap is reported as its own terminal condition, not as a warning,
+        // so the UI can finish the run as "completed with limits reached".
+        limitReached: p.limitReached,
+        limitCode: p.limitCode || null,
+        blockedGroups: p.blockedGroups.slice(0, 20),
+        capacityRemaining: p.capacityRemaining,
         // Keep the row bounded: only the most recent warnings are retained.
         warnings: p.warnings.slice(-50),
         started_at: p.started_at,
