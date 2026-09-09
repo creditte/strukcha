@@ -69,6 +69,7 @@ export default function Dashboard() {
   const { duplicateCount } = useDuplicateCount();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
   const { user } = useAuth();
