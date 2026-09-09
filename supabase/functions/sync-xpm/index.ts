@@ -20,6 +20,10 @@ import {
 } from "./_lib.ts";
 import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
 import { parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
+import {
+  markXeroConnectionInvalid,
+  XeroReauthRequiredError,
+} from "../_shared/xero-token.ts";
 
 /**
  * Chunked, resumable XPM sync.
@@ -821,8 +825,27 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
       if (next.phase !== "done") await continueJob(jobId, next.runs);
       else console.log(`[sync-xpm] job ${jobId} completed in ${next.runs} runs`);
     } catch (e) {
-      const fatal = e instanceof FatalXpmError;
+      const reauth = e instanceof XeroReauthRequiredError;
+      const fatal = e instanceof FatalXpmError || reauth;
       console.error(`[sync-xpm] slice error${fatal ? " (fatal)" : ""}:`, e);
+      // Remember a broken connection on the record itself, so every user and
+      // device sees the reconnect prompt instead of a healthy-looking link.
+      if (fatal) {
+        const { data: conn } = await supabase
+          .from("xero_connections")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .order("connected_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (conn) {
+          await markXeroConnectionInvalid(
+            supabase,
+            conn.id,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+      }
       await supabase
         .from("import_logs")
         .update({
@@ -929,11 +952,29 @@ Deno.serve(async (req) => {
 
     const { data: connections } = await supabase
       .from("xero_connections")
-      .select("id")
+      .select("id, status, connection_type, last_error")
       .eq("tenant_id", tenantId)
+      .order("connected_at", { ascending: false })
       .limit(1);
     if (!connections?.length) {
       return json({ error: "No Xero connection found. Please connect to Xero first." }, 400);
+    }
+
+    // A connection Xero has already rejected can only be fixed by reconnecting.
+    // Refuse up front instead of piling up identical failed runs.
+    if (connections[0].status === "needs_reauth") {
+      return json({
+        error:
+          "Your Xero connection is no longer authorised. Please reconnect Xero Practice Manager and try again.",
+        code: "xero_reauthorization_required",
+      }, 409);
+    }
+    if (connections[0].connection_type === "standard") {
+      return json({
+        error:
+          "The connected Xero organisation doesn't include Practice Manager, so client groups can't be read. Please reconnect using the Practice Manager option.",
+        code: "xero_practice_manager_required",
+      }, 409);
     }
 
     // Don't start a second sync while one is still running.

@@ -131,9 +131,17 @@ export default function Dashboard() {
       setSearchParams({}, { replace: true });
     } else if (xeroStatus === "error") {
       const reason = searchParams.get("reason") || "unknown";
+      const reasonMessages: Record<string, string> = {
+        no_practice_manager:
+          "That Xero organisation doesn't include Practice Manager, so client groups can't be read. Ask whoever manages your Xero account to authorise Practice Manager, or connect a standard Xero organisation instead.",
+        no_organisations: "No Xero organisation was available on that sign-in. Please try again.",
+        token_exchange_failed: "Xero didn't complete the sign-in. Please try connecting again.",
+        expired_csrf: "The connection request timed out. Please try connecting again.",
+        invalid_csrf: "The connection request couldn't be verified. Please try connecting again.",
+      };
       toast({
         title: "Xero Connection Failed",
-        description: `Error: ${reason}`,
+        description: reasonMessages[reason] ?? `Couldn't connect to Xero (${reason}).`,
         variant: "destructive",
       });
       setSearchParams({}, { replace: true });

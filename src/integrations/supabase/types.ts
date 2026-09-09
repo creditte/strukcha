@@ -1358,10 +1358,18 @@ export type Database = {
           access_token: string
           connected_at: string | null
           connected_by_email: string | null
+          connection_type: string
           created_at: string | null
           expires_at: string
           id: string
+          invalidated_at: string | null
+          last_error: string | null
+          last_error_at: string | null
+          last_refresh_at: string | null
+          refresh_lock_until: string | null
           refresh_token: string
+          scopes: string | null
+          status: string
           tenant_id: string
           updated_at: string | null
           user_id: string
@@ -1372,10 +1380,18 @@ export type Database = {
           access_token: string
           connected_at?: string | null
           connected_by_email?: string | null
+          connection_type?: string
           created_at?: string | null
           expires_at: string
           id?: string
+          invalidated_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_refresh_at?: string | null
+          refresh_lock_until?: string | null
           refresh_token: string
+          scopes?: string | null
+          status?: string
           tenant_id: string
           updated_at?: string | null
           user_id: string
@@ -1386,10 +1402,18 @@ export type Database = {
           access_token?: string
           connected_at?: string | null
           connected_by_email?: string | null
+          connection_type?: string
           created_at?: string | null
           expires_at?: string
           id?: string
+          invalidated_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_refresh_at?: string | null
+          refresh_lock_until?: string | null
           refresh_token?: string
+          scopes?: string | null
+          status?: string
           tenant_id?: string
           updated_at?: string | null
           user_id?: string

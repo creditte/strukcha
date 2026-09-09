@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/queryKeys";
 
 /** Job rows written by the sync-xpm edge function. */
 const JOB_FILE_NAME = "xpm-sync-3.1";
@@ -116,6 +118,7 @@ export function xpmSyncPercent(job: XpmSyncJob | null): number {
  */
 export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [job, setJob] = useState<XpmSyncJob | null>(null);
   const [starting, setStarting] = useState(false);
   const lastStatus = useRef<string | null>(null);
@@ -180,13 +183,16 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
                 description: "The sync stopped before finishing. Please try again.",
               };
           toast({ title: payload.title, description: payload.description, variant: "destructive" });
+          // The connection record may now be marked as needing reconnection —
+          // re-read it so the reconnect banner appears without a page reload.
+          queryClient.invalidateQueries({ queryKey: qk.xeroConnection() });
         }
         onFinished?.(next);
       }
       lastStatus.current = next.status;
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [running, fetchJob, toast, onFinished]);
+  }, [running, fetchJob, toast, onFinished, queryClient]);
 
   useEffect(() => {
     if (job?.status) lastStatus.current = job.status;

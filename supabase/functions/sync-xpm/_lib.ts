@@ -1,5 +1,5 @@
 /** Shared helpers for the chunked XPM sync. */
-import { decryptToken, encryptToken } from "../_shared/crypto.ts";
+import { getXeroAccessToken } from "../_shared/xero-token.ts";
 // esm.sh mirror of jsr:@libs/xml — the deno.land/x mirror fails to bundle.
 import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
 
@@ -133,39 +133,12 @@ let lastXpmStartedAt = 0;
 
 
 // ── Token refresh ───────────────────────────────────────────────────
+/**
+ * Renewal now lives in `_shared/xero-token.ts`, which serialises concurrent
+ * renewals so a single-use Xero refresh token can never be burned twice.
+ */
 export async function refreshAccessToken(supabase: any, connection: any): Promise<string> {
-  const expiresAt = new Date(connection.expires_at);
-  const currentAccessToken = await decryptToken(connection.access_token);
-  if (expiresAt.getTime() - Date.now() > 300_000) return currentAccessToken;
-
-  console.log("[sync-xpm] Token expiring, refreshing...");
-  const clientId = Deno.env.get("XERO_CLIENT_ID")!;
-  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
-  const currentRefreshToken = await decryptToken(connection.refresh_token);
-
-  const res = await fetch("https://identity.xero.com/connect/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
-    },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: currentRefreshToken }),
-  });
-
-  if (!res.ok) throw new Error(`Token refresh failed: ${await res.text()}`);
-
-  const tokens = await res.json();
-  await supabase
-    .from("xero_connections")
-    .update({
-      access_token: await encryptToken(tokens.access_token),
-      refresh_token: await encryptToken(tokens.refresh_token),
-      expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", connection.id);
-
-  return tokens.access_token;
+  return await getXeroAccessToken(supabase, connection);
 }
 
 // ── XPM API helpers ─────────────────────────────────────────────────
