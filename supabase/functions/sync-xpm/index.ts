@@ -826,6 +826,10 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
               groupsTotal: progress.stats.groupsFound,
               runs: progress.runs,
             },
+            limitReached: progress.limitReached,
+            limitCode: progress.limitCode || null,
+            blockedGroups: progress.blockedGroups.slice(0, 20),
+            capacityRemaining: progress.capacityRemaining,
             warnings: progress.warnings.slice(-50),
           },
         })
