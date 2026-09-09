@@ -55,6 +55,12 @@ interface Stats {
   groupsSkippedUnchanged: number;
   trusteesDetected: number;
   staffFetched: number;
+  /**
+   * Groups that could not become a structure because the firm is at its
+   * structure limit (or its subscription is inactive). These groups are left
+   * untouched so a later sync retries them once capacity is freed.
+   */
+  groupsBlockedByLimit: number;
   /** Observability: cost of the sync so far. */
   xpmRequests: number;
   xpmMs: number;
@@ -87,6 +93,14 @@ interface Progress {
   updated_at: string;
   stats: Stats;
   warnings: string[];
+  /** Terminal capacity condition met during this run. */
+  limitReached: boolean;
+  /** `structure_limit_reached` or `subscription_inactive`. */
+  limitCode: string;
+  /** Example group names that were blocked, for user-facing messaging. */
+  blockedGroups: string[];
+  /** Remaining structure slots observed when the run started (null = unlimited). */
+  capacityRemaining: number | null;
 }
 
 function emptyProgress(): Progress {
