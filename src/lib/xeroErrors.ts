@@ -127,6 +127,22 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
     };
   }
 
+  // Xero Practice Manager answers "AuthorizationUnsuccessful" when the linked
+  // organisation has no Practice Manager access — usually because a plain Xero
+  // organisation was connected instead. Say that, rather than "sign-in expired".
+  if (has("authorizationunsuccessful") || has("authorisationunsuccessful")) {
+    return {
+      kind: "permission",
+      title: "No Practice Manager access",
+      message:
+        "The connected Xero organisation doesn't give strukcha access to Xero Practice Manager, so client groups can't be read.",
+      resolution:
+        "Reconnect Xero and choose the Practice Manager option with an organisation that has Practice Manager enabled.",
+      retryable: false,
+      requiresReconnect: true,
+    };
+  }
+
   // Auth / token issues.
   if (
     status === 401 ||
