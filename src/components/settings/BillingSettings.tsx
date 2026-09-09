@@ -143,6 +143,7 @@ export default function BillingSettings() {
   })();
 
   const diagramCount = billing?.diagram_count ?? 0;
+  const unlimitedStructures = billing?.unlimited_structures === true;
   const diagramLimit = billing?.diagram_limit ?? TRIAL.groupLimit;
 
   const trialEnd = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : null;
