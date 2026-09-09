@@ -114,6 +114,20 @@ serve(async (req) => {
       return Response.redirect(`${frontendUrl}/?xero=error&reason=no_organisations`, 302);
     }
 
+    // A Practice Manager connection must actually include Practice Manager.
+    // Saving a plain Xero organisation here is what caused every later sync to
+    // fail with "Unauthorized", so refuse it now and say what's needed.
+    if (connectionType === "practice_manager") {
+      const pmTenants = tenants.filter((t) => t.tenantType === "PRACTICEMANAGER");
+      if (pmTenants.length === 0) {
+        return Response.redirect(
+          `${frontendUrl}/?xero=error&reason=no_practice_manager`,
+          302,
+        );
+      }
+      tenants = pmTenants;
+    }
+
     // Get user's tenant_id and email
     const { data: profile } = await supabase
       .from("profiles")
