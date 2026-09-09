@@ -247,7 +247,8 @@ Deno.serve(async (req) => {
 
     const effectiveAccessEnabled = enforcementEnabled ? tenant.access_enabled : true;
     const effectiveAccessLockedReason = enforcementEnabled ? tenant.access_locked_reason : null;
-    const exposedDiagramLimit = enforcementEnabled ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
+    const exposedDiagramLimit =
+      enforcementEnabled && !unlimitedStructures ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
 
     // Mandatory payment-method capture during registration is enforced
     // independently of the billing enforcement kill-switch.
