@@ -172,11 +172,14 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
             toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
           }
         } else if (next.status === "failed") {
-          toast({
-            title: "XPM sync failed",
-            description: next.error ?? "The sync stopped before finishing. Please try again.",
-            variant: "destructive",
-          });
+          // Never show Xero's raw status codes or JSON — translate first.
+          const payload = next.error
+            ? xeroToastPayload(next.error)
+            : {
+                title: "XPM sync failed",
+                description: "The sync stopped before finishing. Please try again.",
+              };
+          toast({ title: payload.title, description: payload.description, variant: "destructive" });
         }
         onFinished?.(next);
       }
