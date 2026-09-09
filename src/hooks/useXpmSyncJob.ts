@@ -114,7 +114,7 @@ export function xpmSyncPercent(job: XpmSyncJob | null): number {
  * job reaches a terminal state, and reports completion from the database rather
  * than from the request that started it.
  */
-export function useXpmSyncJob(options?: { onFinished?: () => void }) {
+export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void }) {
   const { toast } = useToast();
   const [job, setJob] = useState<XpmSyncJob | null>(null);
   const [starting, setStarting] = useState(false);
@@ -172,13 +172,16 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
             toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
           }
         } else if (next.status === "failed") {
-          toast({
-            title: "XPM sync failed",
-            description: next.error ?? "The sync stopped before finishing. Please try again.",
-            variant: "destructive",
-          });
+          // Never show Xero's raw status codes or JSON — translate first.
+          const payload = next.error
+            ? xeroToastPayload(next.error)
+            : {
+                title: "XPM sync failed",
+                description: "The sync stopped before finishing. Please try again.",
+              };
+          toast({ title: payload.title, description: payload.description, variant: "destructive" });
         }
-        onFinished?.();
+        onFinished?.(next);
       }
       lastStatus.current = next.status;
     }, POLL_MS);

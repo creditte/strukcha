@@ -76,14 +76,6 @@ export default function Dashboard() {
   // The sync runs as a resumable background job; the UI follows the job row so
   // it never claims success before the database work has actually finished.
   const {
-    job: syncJob,
-    running: syncing,
-    label: syncLabel,
-    percent: syncPercent,
-    limitMessage: syncLimitMessage,
-    start: startXpmSync,
-  } = useXpmSyncJob({ onFinished: () => window.location.reload() });
-  const {
     // Shared Xero record — the Dashboard no longer fetches it separately.
     connection: xeroConnection,
 
@@ -92,6 +84,26 @@ export default function Dashboard() {
     reload: reloadXeroConnection,
     clearInvalid: clearXeroInvalid,
   } = useXeroConnection();
+  const {
+    job: syncJob,
+    running: syncing,
+    label: syncLabel,
+    percent: syncPercent,
+    limitMessage: syncLimitMessage,
+    start: startXpmSync,
+  } = useXpmSyncJob({
+    onFinished: (finished) => {
+      // A failed sync must never reload the page — the reload wipes the error
+      // message before the user can read it. Only a successful run refreshes
+      // the dashboard data; a failure keeps the message and, when Xero asked
+      // for re-authorisation, raises the reconnect banner instead.
+      if (finished.status === "completed") {
+        window.location.reload();
+        return;
+      }
+      if (finished.error) reportXeroError(finished.error);
+    },
+  });
 
   const handleCreateNew = () => {
     if (atDiagramLimit) {
