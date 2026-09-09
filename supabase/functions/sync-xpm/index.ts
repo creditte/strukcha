@@ -947,10 +947,24 @@ Deno.serve(async (req) => {
       }, 202);
     }
 
+    // Pre-flight capacity: refuse outright when the subscription cannot create
+    // structures at all, and flag a full workspace so the caller can warn the
+    // user before a long run that will not produce new diagrams.
+    const capacity = await readCapacity(supabase, tenantId);
+    if (capacity.enforced && !capacity.accessEnabled) {
+      return json({
+        error:
+          "Your subscription is not active, so client groups cannot be turned into diagrams. Please reactivate your plan and try again.",
+        code: "subscription_inactive",
+      }, 402);
+    }
+    const noCapacity = capacity.enforced && !capacity.unlimited && capacity.remaining === 0;
+
     const progress = emptyProgress();
     // `full_sync` forces every group to be re-read from XPM, bypassing the
     // freshness window. Routine syncs leave recently read groups alone.
     progress.fullSync = body.full_sync === true;
+    progress.capacityRemaining = capacity.remaining;
     const { data: jobRow, error: jobErr } = await supabase
       .from("import_logs")
       .insert({
@@ -958,7 +972,12 @@ Deno.serve(async (req) => {
         user_id: user.id,
         file_name: JOB_FILE_NAME,
         status: "processing",
-        result: { phase: progress.phase, started_at: progress.started_at, ...progress.stats },
+        result: {
+          phase: progress.phase,
+          started_at: progress.started_at,
+          capacityRemaining: capacity.remaining,
+          ...progress.stats,
+        },
       })
       .select("id")
       .single();
@@ -971,8 +990,11 @@ Deno.serve(async (req) => {
     return json({
       started: true,
       jobId: jobRow.id,
-      message:
-        "XPM sync started. It runs in batches across multiple background executions — refresh the dashboard shortly to see progress.",
+      capacityRemaining: capacity.remaining,
+      atCapacity: noCapacity,
+      message: noCapacity
+        ? `Sync started, but your workspace is full (${capacity.used} of ${capacity.limit} structures). Existing diagrams will be refreshed; new client groups can't be added until you archive a structure or upgrade.`
+        : "XPM sync started. It runs in batches across multiple background executions — refresh the dashboard shortly to see progress.",
     }, 202);
   } catch (err) {
     console.error("[sync-xpm] Error:", err);
