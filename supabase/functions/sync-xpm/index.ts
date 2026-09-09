@@ -125,6 +125,7 @@ function emptyProgress(): Progress {
       relationshipsCreated: 0,
       relationshipsSkipped: 0,
       groupsFound: 0,
+      groupsCatalogued: 0,
       groupsCreated: 0,
       groupsProcessed: 0,
       groupsSkippedUnchanged: 0,
