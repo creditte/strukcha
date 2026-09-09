@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { TRIAL_GROUP_LIMIT } from "../_shared/stripe-plans.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -142,7 +143,7 @@ Deno.serve(async (req) => {
         subscription_status: "incomplete",
         subscription_plan: plan,
         selected_plan: plan,
-        diagram_limit: 3,
+        diagram_limit: TRIAL_GROUP_LIMIT,
         payment_method_captured: false,
         access_enabled: false,
         access_locked_reason: "payment_method_required",

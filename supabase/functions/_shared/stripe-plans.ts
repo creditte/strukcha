@@ -13,6 +13,40 @@ export const PLAN_DIAGRAM_LIMITS: Record<string, number> = {
   pro: 50,
 };
 
+/**
+ * Trials always get the capped trial allowance (full Pro features, 3 structure
+ * groups), whether the trial is Stripe-managed or self-serve. Plan limits only
+ * apply once the subscription is paying. Declared here so no other file
+ * hard-codes the number.
+ */
+export const TRIAL_GROUP_LIMIT = 3;
+
+/** Structure allowance for a paying plan. Throws for unmapped plans — never guesses. */
+export function planDiagramLimit(plan: string | null | undefined): number {
+  const limit = plan ? PLAN_DIAGRAM_LIMITS[plan] : undefined;
+  if (typeof limit !== "number") {
+    throw new Error(
+      `Unmapped subscription plan "${plan}". Cannot determine a structure limit without an explicit plan mapping.`,
+    );
+  }
+  return limit;
+}
+
+/**
+ * The single rule that decides a tenant's structure allowance from its billing
+ * state. Every server path (webhooks, check-subscription, plan changes) must go
+ * through this so a plan change is edited in one place.
+ */
+export function effectiveDiagramLimit(
+  subscriptionStatus: string | null | undefined,
+  plan: string | null | undefined,
+): number {
+  if (subscriptionStatus === "active" || subscriptionStatus === "past_due") {
+    return planDiagramLimit(plan);
+  }
+  return TRIAL_GROUP_LIMIT;
+}
+
 export function parseIdList(name: string): string[] {
   return (stripeVar(name) ?? "")
     .split(",")

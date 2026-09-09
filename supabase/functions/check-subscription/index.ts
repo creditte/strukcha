@@ -2,6 +2,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
 import { stripeVar } from "../_shared/stripe-env.ts";
 import {
+  PLAN_DIAGRAM_LIMITS,
+  effectiveDiagramLimit as resolveEffectiveDiagramLimit,
+} from "../_shared/stripe-plans.ts";
+import {
   isStripeMissingResource,
   quarantineLegacyStripeRefs,
   tenantStripeRefs,
@@ -121,10 +125,10 @@ Deno.serve(async (req) => {
             let resolvedLimit: number | null = null;
             if (productId && starterProductIds.includes(productId)) {
               resolvedPlan = "starter";
-              resolvedLimit = 15;
+              resolvedLimit = PLAN_DIAGRAM_LIMITS.starter;
             } else if (productId && proProductIds.includes(productId)) {
               resolvedPlan = "pro";
-              resolvedLimit = 50;
+              resolvedLimit = PLAN_DIAGRAM_LIMITS.pro;
             }
 
 
@@ -198,25 +202,20 @@ Deno.serve(async (req) => {
     }
 
 
-    // Determine effective diagram_limit strictly from subscription_plan; never fall back to a Pro-sized limit.
-    // Trials always get the 3-group trial allowance (full Pro features, capped volume), whether the
-    // trial is Stripe-managed or self-serve. Plan limits only apply once the subscription is paying.
-    const TRIAL_GROUP_LIMIT = 3;
-    let effectiveDiagramLimit = TRIAL_GROUP_LIMIT; // trialing, trial_expired, canceled
-    if (["active", "past_due"].includes(tenant.subscription_status)) {
-
-      if (tenant.subscription_plan === "starter") {
-        effectiveDiagramLimit = 15;
-      } else if (tenant.subscription_plan === "pro") {
-        effectiveDiagramLimit = 50;
-      } else {
-        console.error(
-          `[check-subscription] Tenant ${profile.tenant_id} is ${tenant.subscription_status} with unmapped subscription_plan="${tenant.subscription_plan}". Refusing to grant a plan limit.`,
-        );
-        throw new Error(
-          `Unmapped subscription plan "${tenant.subscription_plan}" for active tenant. Cannot determine diagram limit.`,
-        );
-      }
+    // One shared rule decides the allowance: trials get the trial cap, paying
+    // plans get their plan limit, and an unmapped plan is an error rather than a
+    // silent fallback to a bigger limit.
+    let effectiveDiagramLimit: number;
+    try {
+      effectiveDiagramLimit = resolveEffectiveDiagramLimit(
+        tenant.subscription_status,
+        tenant.subscription_plan,
+      );
+    } catch (e) {
+      console.error(
+        `[check-subscription] Tenant ${profile.tenant_id} is ${tenant.subscription_status} with unmapped subscription_plan="${tenant.subscription_plan}". Refusing to grant a plan limit.`,
+      );
+      throw e;
     }
 
 
