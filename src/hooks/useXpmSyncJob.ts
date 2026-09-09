@@ -77,7 +77,9 @@ export function xpmSyncLimitMessage(job: XpmSyncJob | null): string | null {
 export function xpmSyncLabel(job: XpmSyncJob | null): string {
   if (!job) return "";
   if (job.status === "failed") return job.error ?? "Sync failed";
-  if (job.status === "completed") return "Sync complete";
+  if (job.status === "completed") {
+    return job.limitReached ? "Sync finished — workspace full" : "Sync complete";
+  }
   switch (job.phase) {
     case "clients":
       return `Reading clients from XPM — ${job.clientsFetched} so far`;
