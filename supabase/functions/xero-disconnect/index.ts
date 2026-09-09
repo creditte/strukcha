@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decryptXeroTokens, getXeroAccessToken } from "../_shared/xero-token.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -56,7 +57,7 @@ serve(async (req) => {
     // Look up the connection (need tokens). Verify caller has access via tenant.
     const { data: conn, error: connErr } = await service
       .from("xero_connections")
-      .select("id, tenant_id, refresh_token, access_token, xero_tenant_id")
+      .select("*")
       .eq("id", connectionId)
       .maybeSingle();
     if (connErr || !conn) {
@@ -85,31 +86,79 @@ serve(async (req) => {
     const clientSecret = Deno.env.get("XERO_CLIENT_SECRET");
 
     const revokeWarnings: string[] = [];
+    let removedFromXero = false;
+
+    // Xero only accepts the real access key, so renew/decrypt it first. The
+    // stored value is ciphertext — sending it straight to Xero silently fails
+    // and leaves the app listed under the org's Connected Apps.
+    let accessToken: string | null = null;
+    try {
+      accessToken = await getXeroAccessToken(service, conn as any);
+    } catch (e) {
+      console.warn("xero-disconnect: no usable access key", e);
+      revokeWarnings.push("access_token_unavailable");
+    }
 
     // 1) Delete the tenant connection on Xero's side so the app disappears
     //    from the org's Connected Apps list.
-    if (conn.access_token && conn.xero_tenant_id) {
+    if (accessToken && conn.xero_tenant_id) {
       try {
         const res = await fetch(
           `https://api.xero.com/connections/${conn.xero_tenant_id}`,
           {
             method: "DELETE",
-            headers: { Authorization: `Bearer ${conn.access_token}` },
+            headers: { Authorization: `Bearer ${accessToken}` },
           },
         );
-        if (!res.ok && res.status !== 404) {
+        if (res.ok || res.status === 404) {
+          removedFromXero = true;
+        } else {
+          const detail = (await res.text()).slice(0, 200);
+          console.error(`xero connections delete ${res.status}: ${detail}`);
           revokeWarnings.push(`connections_delete_${res.status}`);
         }
       } catch (e) {
         console.error("xero connections delete failed", e);
         revokeWarnings.push("connections_delete_network");
       }
+
+      // 2) Confirm against Xero's own list that the organisation is gone.
+      try {
+        const check = await fetch("https://api.xero.com/connections", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (check.ok) {
+          const list = await check.json();
+          const stillThere = Array.isArray(list) &&
+            list.some((c: any) => c.tenantId === conn.xero_tenant_id);
+          if (stillThere) {
+            removedFromXero = false;
+            revokeWarnings.push("still_listed_in_xero");
+          } else {
+            removedFromXero = true;
+          }
+        } else {
+          await check.body?.cancel();
+        }
+      } catch (e) {
+        console.warn("xero connections verify failed", e);
+      }
     }
 
-    // 2) Revoke the refresh token so the user's Xero account fully forgets
-    //    this app authorisation.
-    if (clientId && clientSecret && conn.refresh_token) {
+    // 3) Revoke the renewal key so the user's Xero account fully forgets this
+    //    app authorisation. Re-read the row: renewing above rotates the key.
+    const { data: latest } = await service
+      .from("xero_connections")
+      .select("refresh_token")
+      .eq("id", connectionId)
+      .maybeSingle();
+    const storedRefresh = latest?.refresh_token ?? conn.refresh_token;
+    if (clientId && clientSecret && storedRefresh) {
       try {
+        const { refreshToken } = await decryptXeroTokens({
+          access_token: null,
+          refresh_token: storedRefresh,
+        });
         const basic = btoa(`${clientId}:${clientSecret}`);
         const res = await fetch("https://identity.xero.com/connect/revocation", {
           method: "POST",
@@ -117,9 +166,11 @@ serve(async (req) => {
             Authorization: `Basic ${basic}`,
             "Content-Type": "application/x-www-form-urlencoded",
           },
-          body: new URLSearchParams({ token: conn.refresh_token }).toString(),
+          body: new URLSearchParams({ token: refreshToken ?? "" }).toString(),
         });
         if (!res.ok) {
+          const detail = (await res.text()).slice(0, 200);
+          console.error(`xero revoke ${res.status}: ${detail}`);
           revokeWarnings.push(`revoke_${res.status}`);
         }
       } catch (e) {
@@ -128,7 +179,7 @@ serve(async (req) => {
       }
     }
 
-    // 3) Remove the local record regardless — the user asked to disconnect.
+    // 4) Remove the local record regardless — the user asked to disconnect.
     const { error: delErr } = await service
       .from("xero_connections")
       .delete()
@@ -141,7 +192,14 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, warnings: revokeWarnings }),
+      JSON.stringify({
+        ok: true,
+        removedFromXero,
+        warnings: revokeWarnings,
+        message: removedFromXero
+          ? "Disconnected from Xero."
+          : "Disconnected in strukcha, but Xero didn't confirm the removal. Please also remove strukcha under Xero Settings → Connected Apps.",
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
