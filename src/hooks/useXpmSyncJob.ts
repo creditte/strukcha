@@ -24,6 +24,13 @@ export interface XpmSyncJob {
   groupsTotal: number;
   groupsSkippedUnchanged: number;
   staffFetched: number;
+  /** Client groups that could not become diagrams (workspace full / inactive plan). */
+  groupsBlockedByLimit: number;
+  limitReached: boolean;
+  limitCode: "structure_limit_reached" | "subscription_inactive" | null;
+  blockedGroups: string[];
+  /** Structure slots left when last checked; null means unlimited. */
+  capacityRemaining: number | null;
   error?: string;
 }
 
@@ -43,8 +50,27 @@ function mapJob(row: any): XpmSyncJob {
     groupsTotal: r.progress?.groupsTotal ?? r.groupsFound ?? 0,
     groupsSkippedUnchanged: r.groupsSkippedUnchanged ?? 0,
     staffFetched: r.staffFetched ?? 0,
+    groupsBlockedByLimit: r.groupsBlockedByLimit ?? 0,
+    limitReached: r.limitReached === true,
+    limitCode: r.limitCode ?? null,
+    blockedGroups: Array.isArray(r.blockedGroups) ? r.blockedGroups : [],
+    capacityRemaining: r.capacityRemaining ?? null,
     error: r.error,
   };
+}
+
+/**
+ * Plain-English explanation of a sync that ran out of structure space, or null
+ * when capacity was never a problem.
+ */
+export function xpmSyncLimitMessage(job: XpmSyncJob | null): string | null {
+  if (!job?.limitReached) return null;
+  const n = job.groupsBlockedByLimit;
+  const groups = n === 1 ? "1 client group" : `${n} client groups`;
+  if (job.limitCode === "subscription_inactive") {
+    return `${groups} could not be added because your subscription is not active. Reactivate your plan and run the sync again.`;
+  }
+  return `${groups} could not be added because your workspace is full. Archive or delete a structure, or upgrade your plan, then run the sync again — only the missing groups will be added.`;
 }
 
 /** Human-readable description of where the sync currently is. */
