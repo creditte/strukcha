@@ -789,6 +789,7 @@ function loadProgress(result: any): Progress {
       relationshipsCreated: result.relationshipsCreated ?? 0,
       relationshipsSkipped: result.relationshipsSkipped ?? 0,
       groupsFound: result.groupsFound ?? 0,
+      groupsCatalogued: result.groupsCatalogued ?? 0,
       groupsCreated: result.groupsCreated ?? 0,
       groupsProcessed: result.groupsProcessed ?? result.progress?.groupsProcessed ?? 0,
       groupsSkippedUnchanged: result.groupsSkippedUnchanged ?? 0,
