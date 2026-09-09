@@ -320,17 +320,21 @@ export default function BillingSettings() {
             <div>
               <p className="text-sm font-medium">Active Structures</p>
               <p className="text-xs text-muted-foreground">
-                {diagramCount} of {diagramLimit} used
+                {unlimitedStructures
+                  ? `${diagramCount} used — unlimited`
+                  : `${diagramCount} of ${diagramLimit} used`}
               </p>
             </div>
-            <div className="h-2 w-32 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all"
-                style={{
-                  width: `${Math.min(100, (diagramCount / diagramLimit) * 100)}%`,
-                }}
-              />
-            </div>
+            {!unlimitedStructures && (
+              <div className="h-2 w-32 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, (diagramCount / diagramLimit) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
