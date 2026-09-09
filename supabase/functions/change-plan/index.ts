@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at, unlimited_structures")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
