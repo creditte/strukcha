@@ -195,10 +195,20 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
       const { data, error } = await supabase.functions.invoke("sync-xpm");
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast({
-        title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
-        description: "Progress is shown here — you can keep working while it runs.",
-      });
+      if (data?.atCapacity) {
+        toast({
+          title: "Workspace is full",
+          description:
+            data.message ??
+            "Existing diagrams will be refreshed, but new client groups can't be added until you archive a structure or upgrade.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
+          description: "Progress is shown here — you can keep working while it runs.",
+        });
+      }
       lastStatus.current = "processing";
       await fetchJob();
     } catch (err) {
