@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at, unlimited_structures")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
@@ -196,7 +196,8 @@ Deno.serve(async (req) => {
 
       // Check if current usage exceeds target limit
       const targetLimit = PLAN_LIMITS.starter;
-      if ((tenant.diagram_count || 0) > targetLimit) {
+      // Tenants with the permanent unlimited-structures override are never capped.
+      if (tenant.unlimited_structures !== true && (tenant.diagram_count || 0) > targetLimit) {
         throw new Error(
           `Cannot downgrade to Starter. You have ${tenant.diagram_count} active structures, but Starter allows a maximum of ${targetLimit}. Please archive or delete some structures first.`
         );

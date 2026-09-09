@@ -1216,6 +1216,7 @@ export type Database = {
           trial_ends_at: string | null
           trial_starts_at: string | null
           trial_used_at: string | null
+          unlimited_structures: boolean
           updated_at: string
         }
         Insert: {
@@ -1254,6 +1255,7 @@ export type Database = {
           trial_ends_at?: string | null
           trial_starts_at?: string | null
           trial_used_at?: string | null
+          unlimited_structures?: boolean
           updated_at?: string
         }
         Update: {
@@ -1292,6 +1294,7 @@ export type Database = {
           trial_ends_at?: string | null
           trial_starts_at?: string | null
           trial_used_at?: string | null
+          unlimited_structures?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -1638,6 +1641,10 @@ export type Database = {
       sync_xpm_upsert_clients: {
         Args: { _payload: Json; _tenant_id: string }
         Returns: Json
+      }
+      tenant_has_unlimited_structures: {
+        Args: { _tenant_id: string }
+        Returns: boolean
       }
     }
     Enums: {

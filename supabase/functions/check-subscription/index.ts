@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, stripe_mode, trial_used_at, last_plan_switch_at, payment_method_captured")
+      .select("id, subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, stripe_mode, trial_used_at, last_plan_switch_at, payment_method_captured, unlimited_structures")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
@@ -220,8 +220,13 @@ Deno.serve(async (req) => {
     }
 
 
-    // Persist corrected limit to DB if it differs
-    if (effectiveDiagramLimit !== tenant.diagram_limit) {
+    // Permanent per-tenant override: this firm is never capped on structures,
+    // regardless of plan, trial state or future billing logic changes.
+    const unlimitedStructures = tenant.unlimited_structures === true;
+
+    // Persist corrected limit to DB if it differs. Skipped for override tenants so
+    // the plan-derived limit never overwrites their uncapped state.
+    if (!unlimitedStructures && effectiveDiagramLimit !== tenant.diagram_limit) {
       await supabaseAdmin
         .from("tenants")
         .update({ diagram_limit: effectiveDiagramLimit })
@@ -242,7 +247,8 @@ Deno.serve(async (req) => {
 
     const effectiveAccessEnabled = enforcementEnabled ? tenant.access_enabled : true;
     const effectiveAccessLockedReason = enforcementEnabled ? tenant.access_locked_reason : null;
-    const exposedDiagramLimit = enforcementEnabled ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
+    const exposedDiagramLimit =
+      enforcementEnabled && !unlimitedStructures ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
 
     // Mandatory payment-method capture during registration is enforced
     // independently of the billing enforcement kill-switch.
@@ -251,6 +257,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       enforcement_enabled: enforcementEnabled,
+      unlimited_structures: unlimitedStructures,
       payment_method_required: paymentMethodRequired,
       payment_method_captured: tenant.payment_method_captured === true,
       stripe_mode: refs.mode,

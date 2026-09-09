@@ -143,6 +143,7 @@ export default function BillingSettings() {
   })();
 
   const diagramCount = billing?.diagram_count ?? 0;
+  const unlimitedStructures = billing?.unlimited_structures === true;
   const diagramLimit = billing?.diagram_limit ?? TRIAL.groupLimit;
 
   const trialEnd = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : null;
@@ -320,17 +321,21 @@ export default function BillingSettings() {
             <div>
               <p className="text-sm font-medium">Active Structures</p>
               <p className="text-xs text-muted-foreground">
-                {diagramCount} of {diagramLimit} used
+                {unlimitedStructures
+                  ? `${diagramCount} used — unlimited`
+                  : `${diagramCount} of ${diagramLimit} used`}
               </p>
             </div>
-            <div className="h-2 w-32 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all"
-                style={{
-                  width: `${Math.min(100, (diagramCount / diagramLimit) * 100)}%`,
-                }}
-              />
-            </div>
+            {!unlimitedStructures && (
+              <div className="h-2 w-32 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, (diagramCount / diagramLimit) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
