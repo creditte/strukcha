@@ -180,6 +180,9 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
                 description: "The sync stopped before finishing. Please try again.",
               };
           toast({ title: payload.title, description: payload.description, variant: "destructive" });
+          // The connection record may now be marked as needing reconnection —
+          // re-read it so the reconnect banner appears without a page reload.
+          queryClient.invalidateQueries({ queryKey: qk.xeroConnection() });
         }
         onFinished?.(next);
       }
