@@ -160,7 +160,17 @@ export function useXpmSyncJob(options?: { onFinished?: () => void }) {
           if (next.relationshipsCreated > 0) parts.push(`${next.relationshipsCreated} relationships`);
           if (next.groupsCreated > 0) parts.push(`${next.groupsCreated} diagrams created`);
           if (next.groupsSkippedUnchanged > 0) parts.push(`${next.groupsSkippedUnchanged} unchanged`);
-          toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
+          const limitMsg = xpmSyncLimitMessage(next);
+          if (limitMsg) {
+            // The cap is never reported as a plain success any more.
+            toast({
+              title: "XPM sync finished — some groups were not added",
+              description: `${limitMsg} (${parts.join(", ")}.)`,
+              variant: "destructive",
+            });
+          } else {
+            toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
+          }
         } else if (next.status === "failed") {
           toast({
             title: "XPM sync failed",
