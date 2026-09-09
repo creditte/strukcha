@@ -77,6 +77,7 @@ export default function Dashboard() {
     running: syncing,
     label: syncLabel,
     percent: syncPercent,
+    limitMessage: syncLimitMessage,
     start: startXpmSync,
   } = useXpmSyncJob({ onFinished: () => window.location.reload() });
   const {
