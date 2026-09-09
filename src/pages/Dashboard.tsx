@@ -974,6 +974,11 @@ export default function Dashboard() {
       )}
 
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
+      <XpmGroupSelectionDialog
+        open={showGroupPicker}
+        onOpenChange={setShowGroupPicker}
+        syncing={syncing}
+      />
       <CreateStructureModal
         open={showCreateModal}
         onOpenChange={setShowCreateModal}
