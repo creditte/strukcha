@@ -412,6 +412,7 @@ async function fetchGroupSlice(
     .from("xpm_groups")
     .select("xpm_uuid, name, last_synced_at")
     .eq("tenant_id", tenantId)
+    .eq("is_selected", true)
     .order("xpm_uuid", { ascending: true })
     .limit(limit);
   if (cursor) q = q.gt("xpm_uuid", cursor);
