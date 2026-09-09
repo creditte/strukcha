@@ -614,6 +614,10 @@ async function runSlice(
       else p.stats.relationshipsCreated += (data as any)?.relationshipsCreated ?? 0;
     }
   } else if (p.phase === "groups") {
+    // Capacity is re-read each slice: it can change mid-run (a structure is
+    // archived, the plan is upgraded), and it is what the UI reports.
+    const capacity = await readCapacity(supabase, tenantId);
+    p.capacityRemaining = capacity.remaining;
     if (!p.groupsLoaded) {
       await loadGroupList(supabase, tenantId, accessToken, xeroTenantId, p);
       p.updated_at = new Date().toISOString();
