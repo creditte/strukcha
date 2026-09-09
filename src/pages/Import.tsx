@@ -37,7 +37,9 @@ export default function Import() {
   const { reportError: reportXeroError } = useXeroConnection();
   const { billing } = useBilling();
 
-  const structureLimit = billing?.diagram_limit ?? null;
+  // Firms with the permanent unlimited-structures override have no cap at all.
+  const unlimitedStructures = billing?.unlimited_structures === true;
+  const structureLimit = unlimitedStructures ? null : billing?.diagram_limit ?? null;
   const structureCount = billing?.diagram_count ?? null;
   const limitReached =
     structureLimit !== null && structureCount !== null && structureCount >= structureLimit;
