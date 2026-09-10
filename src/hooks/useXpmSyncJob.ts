@@ -151,13 +151,22 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     });
   }, [fetchJob]);
 
-  const running = job?.status === "processing";
+  // A ticking value so a job that goes silent is noticed even if no new row
+  // arrives (a dead worker never updates the row again).
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  const processing = job?.status === "processing";
+  const stalled = Boolean(
+    processing && job && nowTs - new Date(job.updatedAt).getTime() > STALE_MS,
+  );
+  const running = Boolean(processing) && !stalled;
 
   useEffect(() => {
-    if (!running) return;
+    if (!processing) return;
     const timer = setInterval(async () => {
+      setNowTs(Date.now());
       const next = await fetchJob();
       if (!next || next.status === "processing") return;
+
 
       if (lastStatus.current === "processing") {
         if (next.status === "completed") {
