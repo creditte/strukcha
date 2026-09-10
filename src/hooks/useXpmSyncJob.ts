@@ -9,6 +9,12 @@ import { qk } from "@/lib/queryKeys";
 const JOB_FILE_NAME = "xpm-sync-3.1";
 /** Poll interval while a sync is running. One narrow row read per tick. */
 const POLL_MS = 4000;
+/**
+ * A live sync writes progress every page/batch. Longer silence than this means
+ * its worker died, so the UI stops pretending it is still running.
+ */
+const STALE_MS = 3 * 60_000;
+
 
 export type XpmSyncPhase = "clients" | "groups" | "staff" | "done";
 
@@ -121,6 +127,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
   const queryClient = useQueryClient();
   const [job, setJob] = useState<XpmSyncJob | null>(null);
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const lastStatus = useRef<string | null>(null);
   const onFinished = options?.onFinished;
 
@@ -145,13 +152,22 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     });
   }, [fetchJob]);
 
-  const running = job?.status === "processing";
+  // A ticking value so a job that goes silent is noticed even if no new row
+  // arrives (a dead worker never updates the row again).
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  const processing = job?.status === "processing";
+  const stalled = Boolean(
+    processing && job && nowTs - new Date(job.updatedAt).getTime() > STALE_MS,
+  );
+  const running = Boolean(processing) && !stalled;
 
   useEffect(() => {
-    if (!running) return;
+    if (!processing) return;
     const timer = setInterval(async () => {
+      setNowTs(Date.now());
       const next = await fetchJob();
       if (!next || next.status === "processing") return;
+
 
       if (lastStatus.current === "processing") {
         if (next.status === "completed") {
@@ -192,7 +208,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
       lastStatus.current = next.status;
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [running, fetchJob, toast, onFinished, queryClient]);
+  }, [processing, fetchJob, toast, onFinished, queryClient]);
 
   useEffect(() => {
     if (job?.status) lastStatus.current = job.status;
@@ -222,6 +238,12 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
             "Existing diagrams will be refreshed, but new client groups can't be added until you archive a structure or upgrade.",
           variant: "destructive",
         });
+      } else if (data?.resumed) {
+        toast({
+          title: "Sync resumed",
+          description:
+            data.message ?? "The previous sync had stopped responding and was picked up again.",
+        });
       } else {
         toast({
           title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
@@ -229,6 +251,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
         });
       }
       lastStatus.current = "processing";
+      setNowTs(Date.now());
       await fetchJob();
     } catch (err) {
       const payload = xeroToastPayload(err);
@@ -239,14 +262,46 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     }
   }, [fetchJob, toast]);
 
+  /** Stop the running sync. The job row is the source of truth, so the live
+   * worker stands down on its next write. */
+  const stop = useCallback(async () => {
+    setStopping(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm", {
+        body: { cancel_job: true },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      lastStatus.current = "failed";
+      toast({
+        title: data?.cancelled ? "Sync stopped" : "No sync running",
+        description:
+          data?.message ?? "The XPM sync has been stopped. You can start it again at any time.",
+      });
+      await fetchJob();
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
+    } finally {
+      setStopping(false);
+    }
+  }, [fetchJob, toast]);
+
   return {
     job,
     running: running || starting,
     starting,
-    label: xpmSyncLabel(job),
+    /** The job says "processing" but its worker went silent. */
+    stalled,
+    stopping,
+    label: stalled
+      ? "Sync stopped responding — start it again to carry on where it left off"
+      : xpmSyncLabel(job),
     percent: xpmSyncPercent(job),
     limitMessage: xpmSyncLimitMessage(job),
     start,
+    stop,
     refresh: fetchJob,
   };
+
 }

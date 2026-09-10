@@ -179,11 +179,28 @@ serve(async (req) => {
       }
     }
 
-    // 4) Remove the local record regardless — the user asked to disconnect.
+    // 4) Stop any XPM sync that is still running — it can no longer reach Xero,
+    // and leaving it "processing" would keep the dashboard showing progress.
+    await service
+      .from("import_logs")
+      .update({
+        status: "failed",
+        result: {
+          success: false,
+          cancelled: true,
+          error: "Sync stopped because Xero was disconnected.",
+        },
+      })
+      .eq("tenant_id", conn.tenant_id)
+      .eq("file_name", "xpm-sync-3.1")
+      .eq("status", "processing");
+
+    // 5) Remove the local record regardless — the user asked to disconnect.
     const { error: delErr } = await service
       .from("xero_connections")
       .delete()
       .eq("id", connectionId);
+
     if (delErr) {
       return new Response(JSON.stringify({ error: "Failed to remove connection" }), {
         status: 500,

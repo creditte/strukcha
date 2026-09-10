@@ -37,6 +37,7 @@ import {
   Shield,
   Copy,
   ListChecks,
+  X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
@@ -87,10 +88,13 @@ export default function Dashboard() {
   const {
     job: syncJob,
     running: syncing,
+    stalled: syncStalled,
+    stopping: syncStopping,
     label: syncLabel,
     percent: syncPercent,
     limitMessage: syncLimitMessage,
     start: startXpmSync,
+    stop: stopXpmSync,
   } = useXpmSyncJob({
     onFinished: (finished) => {
       // A failed sync must never reload the page — the reload wipes the error
@@ -476,20 +480,33 @@ export default function Dashboard() {
                   </Button>
                 </div>
               )}
-              {syncing && (
+              {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-foreground">{syncLabel || "Starting XPM sync…"}</span>
-                    <span className="text-xs text-muted-foreground">{syncPercent}%</span>
+                    {!syncStalled && <span className="text-xs text-muted-foreground">{syncPercent}%</span>}
                   </div>
-                  <Progress value={syncPercent} className="h-1.5" />
+                  {!syncStalled && <Progress value={syncPercent} className="h-1.5" />}
                   {syncJob && syncJob.groupsSkippedUnchanged > 0 && (
                     <p className="text-[11px] text-muted-foreground">
                       {syncJob.groupsSkippedUnchanged} unchanged groups skipped
                     </p>
                   )}
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-destructive"
+                      onClick={() => stopXpmSync()}
+                      disabled={syncStopping}
+                    >
+                      {syncStopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                      {syncStopping ? "Stopping…" : "Stop sync"}
+                    </Button>
+                  </div>
                 </div>
               )}
+
             </div>
           </>
         ) : (
@@ -594,20 +611,33 @@ export default function Dashboard() {
                   </Button>
                 </div>
               )}
-              {syncing && (
+              {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-foreground">{syncLabel || "Starting XPM sync…"}</span>
-                    <span className="text-xs text-muted-foreground">{syncPercent}%</span>
+                    {!syncStalled && <span className="text-xs text-muted-foreground">{syncPercent}%</span>}
                   </div>
-                  <Progress value={syncPercent} className="h-1.5" />
+                  {!syncStalled && <Progress value={syncPercent} className="h-1.5" />}
                   {syncJob && syncJob.groupsSkippedUnchanged > 0 && (
                     <p className="text-[11px] text-muted-foreground">
                       {syncJob.groupsSkippedUnchanged} unchanged groups skipped
                     </p>
                   )}
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-destructive"
+                      onClick={() => stopXpmSync()}
+                      disabled={syncStopping}
+                    >
+                      {syncStopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                      {syncStopping ? "Stopping…" : "Stop sync"}
+                    </Button>
+                  </div>
                 </div>
               )}
+
             </div>
           </>
         )}
