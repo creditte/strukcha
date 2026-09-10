@@ -127,6 +127,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
   const queryClient = useQueryClient();
   const [job, setJob] = useState<XpmSyncJob | null>(null);
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const lastStatus = useRef<string | null>(null);
   const onFinished = options?.onFinished;
 
