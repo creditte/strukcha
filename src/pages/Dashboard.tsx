@@ -37,6 +37,7 @@ import {
   Shield,
   Copy,
   ListChecks,
+  X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
