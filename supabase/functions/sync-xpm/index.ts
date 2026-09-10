@@ -971,6 +971,36 @@ Deno.serve(async (req) => {
       return json({ error: "Admin access required" }, 403);
     }
 
+    // ── Stop a running sync ───────────────────────────────────────
+    // The job row is the single source of truth: flipping it out of
+    // `processing` makes the live worker stand down on its next write and stops
+    // the continuation chain, so "Stop sync" really stops.
+    if (body.cancel_job === true || body.cancel_job === "true") {
+      const { data: cancelled } = await supabase
+        .from("import_logs")
+        .update({
+          status: "failed",
+          result: {
+            success: false,
+            cancelled: true,
+            error: "Sync was stopped.",
+          },
+        })
+        .eq("tenant_id", tenantId)
+        .eq("file_name", JOB_FILE_NAME)
+        .eq("status", "processing")
+        .select("id");
+      return json({
+        cancelled: (cancelled?.length ?? 0) > 0,
+        stoppedJobs: cancelled?.length ?? 0,
+        message:
+          (cancelled?.length ?? 0) > 0
+            ? "The XPM sync was stopped."
+            : "No XPM sync was running.",
+      });
+    }
+
+
     const { data: connections } = await supabase
       .from("xero_connections")
       .select("id, status, connection_type, last_error")
