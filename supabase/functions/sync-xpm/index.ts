@@ -1028,24 +1028,47 @@ Deno.serve(async (req) => {
       }, 409);
     }
 
-    // Don't start a second sync while one is still running.
-    // Mark abandoned workers as failed so a dead job never blocks a new sync
-    // and is visible to the user instead of sitting in "processing" forever.
-    await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 10 });
+    // Clean up long-dead jobs across the project so nothing sits in
+    // "processing" for ever after a worker was killed mid-slice.
+    await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 30 });
 
-    const staleCutoff = new Date(Date.now() - 10 * 60_000).toISOString();
+    // A worker heartbeats on every page/batch and its lease lasts 90s, so a job
+    // that hasn't written for STALE_JOB_MS lost its worker.
     const { data: running } = await supabase
       .from("import_logs")
-      .select("id, updated_at")
+      .select("id, updated_at, result")
       .eq("tenant_id", tenantId)
       .eq("file_name", JOB_FILE_NAME)
       .eq("status", "processing")
-      .gt("updated_at", staleCutoff)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (running) {
+      const idleMs = Date.now() - new Date(running.updated_at as string).getTime();
+      if (idleMs < STALE_JOB_MS) {
+        return json({
+          started: true,
+          alreadyRunning: true,
+          jobId: running.id,
+          message: "An XPM sync is already running. Refresh the dashboard shortly to see progress.",
+        }, 202);
+      }
+      // Stalled: take over the abandoned job and carry on from its saved
+      // cursor rather than throwing away the work already done.
+      const { data: claimed } = await supabase.rpc("claim_sync_job", {
+        _job_id: running.id,
+        _lease_seconds: LEASE_SECONDS,
+      });
+      if (claimed) {
+        scheduleSlice(supabase, running.id, tenantId, loadProgress(running.result));
+        return json({
+          started: true,
+          resumed: true,
+          jobId: running.id,
+          message: "The previous sync had stopped responding — it has been resumed where it left off.",
+        }, 202);
+      }
       return json({
         started: true,
         alreadyRunning: true,
@@ -1053,6 +1076,7 @@ Deno.serve(async (req) => {
         message: "An XPM sync is already running. Refresh the dashboard shortly to see progress.",
       }, 202);
     }
+
 
     // Pre-flight capacity: refuse outright when the subscription cannot create
     // structures at all, and flag a full workspace so the caller can warn the
