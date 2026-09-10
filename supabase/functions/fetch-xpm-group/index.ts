@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getXeroAccessToken } from "../_shared/xero-token.ts";
+import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
 import { buildXpmEdges, parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
 
@@ -145,21 +145,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load Xero connection
-    const { data: connections } = await supabase
-      .from("xero_connections")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("connected_at", { ascending: false })
-      .limit(1);
+    // Load Xero connection (healthy Practice Manager link preferred)
+    const connection = await loadXeroConnection(supabase, tenantId);
 
-    if (!connections || connections.length === 0) {
+    if (!connection) {
       return new Response(JSON.stringify({ error: "No Xero connection found" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const connection = connections[0];
+
     const accessToken = await getXeroAccessToken(supabase, connection);
 
     const xeroTenantId = await discoverPmTenantId(accessToken, connection.xero_tenant_id);

@@ -24,13 +24,16 @@ Deno.serve(async (req) => {
     let selectedPlan = "pro";
     let selectedBilling = "monthly";
     let callerOrigin: string | undefined;
-    let connectionType = "accounting";
+    let connectionType: "practice_manager" | "standard" = "practice_manager";
 
     try {
       const body = await req.json();
       firmName = typeof body.firmName === "string" ? body.firmName.trim() : "";
       callerOrigin = typeof body.origin === "string" ? body.origin : undefined;
-      if (body.connection_type === "practice_manager") connectionType = "practice_manager";
+      if (body.connection_type === "accounting" || body.connection_type === "standard") {
+        connectionType = "standard";
+      }
+
       const plan = body.selectedPlan;
       const billing = body.selectedBilling;
       if (plan && ["starter", "pro", "enterprise"].includes(plan)) selectedPlan = plan;

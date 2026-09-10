@@ -37,6 +37,12 @@ export function tuning() {
     sliceBudgetMs: num("XPM_SLICE_BUDGET_MS", 5000),
     /** XPM client page size (XPM caps this server-side). */
     clientPageSize: num("XPM_CLIENT_PAGE_SIZE", 50),
+    /**
+     * Clients parsed and persisted per chunk within a page. XPM ignores
+     * `pagesize`, so a page must be consumed in resumable chunks — this is the
+     * unit of work whose CPU cost has to stay well inside the worker's budget.
+     */
+    clientChunkSize: num("XPM_CLIENT_CHUNK_SIZE", 150),
     /** Client groups processed per execution. */
     groupsPerRun: num("XPM_GROUPS_PER_RUN", 120),
     /** Groups fetched concurrently from XPM within a run. */
@@ -156,7 +162,33 @@ export async function xpmGetXml(
   accessToken: string,
   xeroTenantId: string,
   maxAttempts = 3,
+  opts?: { optionalScope?: boolean },
 ): Promise<any> {
+  const text = await xpmGetText(path, accessToken, xeroTenantId, maxAttempts, opts);
+  if (text === null) return null;
+  try {
+    return parseXml(text);
+  } catch (e) {
+    console.warn(`[sync-xpm] XML parse error on ${path}:`, e);
+    return null;
+  }
+}
+
+/**
+ * GET one XPM XML endpoint and return the raw body.
+ *
+ * Large responses (a detailed client list can exceed 4 MB — XPM ignores
+ * `pagesize`) must never be handed to the DOM parser: parsing the whole
+ * document in one go exceeds the worker's CPU allowance and the run is killed
+ * mid-page. Callers scan the raw text in bounded chunks instead.
+ */
+export async function xpmGetText(
+  path: string,
+  accessToken: string,
+  xeroTenantId: string,
+  maxAttempts = 3,
+  opts?: { optionalScope?: boolean },
+): Promise<string | null> {
   const url = `${XPM_BASE}${path}`;
   const startedAt = Date.now();
   counters.xpmRequests++;
@@ -189,6 +221,13 @@ export async function xpmGetXml(
 
     if (res.status === 401 || res.status === 403) {
       const errText = (await res.text()).substring(0, 200);
+      // Some endpoints need a scope the firm may not have authorised (staff, for
+      // one). Refusing those must not condemn an otherwise healthy connection or
+      // abandon a sync that has already imported every client.
+      if (opts?.optionalScope) {
+        console.warn(`[sync-xpm] ${res.status} on optional ${path}: ${errText}`);
+        return null;
+      }
       throw new FatalXpmError(
         `Xero rejected the request (${res.status}). The connection needs to be re-authorised. ${errText}`,
       );
@@ -227,12 +266,7 @@ export async function xpmGetXml(
 
     const text = await res.text();
     counters.xpmMs += Date.now() - startedAt;
-    try {
-      return parseXml(text);
-    } catch (e) {
-      console.warn(`[sync-xpm] XML parse error on ${path}:`, e);
-      return null;
-    }
+    return text;
   }
 
   return null;

@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getXeroAccessToken } from "../_shared/xero-token.ts";
+import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
 
 const corsHeaders = {
@@ -75,14 +75,10 @@ Deno.serve(async (req) => {
     }
 
     // Load Xero connection
-    const { data: connections } = await supabase
-      .from("xero_connections")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("connected_at", { ascending: false })
-      .limit(1);
+    const chosen = await loadXeroConnection(supabase, tenantId);
+    const connections = chosen ? [chosen] : [];
 
-    if (!connections || connections.length === 0) {
+    if (connections.length === 0) {
       return new Response(JSON.stringify({ error: "No Xero connection found. Please connect XPM first.", groups: [] }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

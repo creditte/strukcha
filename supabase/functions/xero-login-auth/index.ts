@@ -23,15 +23,19 @@ Deno.serve(async (req) => {
     }
 
     let callerOrigin: string | undefined;
-    let connectionType = "accounting";
+    // "standard" = a plain Xero organisation; "practice_manager" = XPM.
+    let connectionType: "practice_manager" | "standard" = "practice_manager";
 
     try {
       const body = await req.json();
       callerOrigin = typeof body.origin === "string" ? body.origin : undefined;
-      if (body.connection_type === "practice_manager") connectionType = "practice_manager";
+      if (body.connection_type === "accounting" || body.connection_type === "standard") {
+        connectionType = "standard";
+      }
     } catch {
       /* no body */
     }
+
 
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-login-callback`;
     const csrfToken = crypto.randomUUID();
@@ -61,10 +65,12 @@ Deno.serve(async (req) => {
       csrf: csrfToken,
       origin: frontendOrigin,
       flow: "login",
+      connection_type: connectionType,
     }));
 
     const scopes = connectionType === "practice_manager"
       ? "openid profile email offline_access practicemanager.client.read"
+
       : "openid profile email offline_access accounting.contacts.read";
 
     const authUrl =

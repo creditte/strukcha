@@ -54,8 +54,9 @@ Deno.serve(async (req) => {
     try {
       // Force a renewal even when the current key still looks fresh: the point
       // is to exercise the authorisation, not to serve a request.
-      await getXeroAccessToken(supabase, { ...row, expires_at: new Date(0).toISOString() } as any);
+      await getXeroAccessToken(supabase, row as any, { force: true });
       renewed++;
+
     } catch (e) {
       if (e instanceof XeroReauthRequiredError) {
         needsReauth++;

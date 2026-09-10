@@ -47,16 +47,21 @@ serve(async (req) => {
 
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-callback`;
 
-    // Parse request body to get the caller's origin and connection type
+    // Parse request body to get the caller's origin and connection type.
+    // The UI has historically sent "accounting" for a plain Xero organisation;
+    // the stored/validated value is "standard", so normalise here — sending
+    // "accounting" downstream made the callback treat it as Practice Manager
+    // and refuse every plain organisation.
     let callerOrigin: string | undefined;
-    let connectionType: string = "accounting"; // default
+    let connectionType: "practice_manager" | "standard" = "practice_manager";
     try {
       const body = await req.json();
       callerOrigin = body.origin;
-      if (body.connection_type === "practice_manager") {
-        connectionType = "practice_manager";
+      if (body.connection_type === "accounting" || body.connection_type === "standard") {
+        connectionType = "standard";
       }
     } catch { /* no body */ }
+
 
     // Generate CSRF token and store it server-side
     const csrfToken = crypto.randomUUID();
