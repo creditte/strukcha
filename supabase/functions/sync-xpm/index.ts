@@ -890,7 +890,9 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
             warnings: progress.warnings.slice(-50),
           },
         })
-        .eq("id", jobId);
+        .eq("id", jobId)
+        .eq("status", "processing");
+
     }
 
   })();
