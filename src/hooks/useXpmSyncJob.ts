@@ -207,7 +207,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
       lastStatus.current = next.status;
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [running, fetchJob, toast, onFinished, queryClient]);
+  }, [processing, fetchJob, toast, onFinished, queryClient]);
 
   useEffect(() => {
     if (job?.status) lastStatus.current = job.status;
@@ -237,6 +237,12 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
             "Existing diagrams will be refreshed, but new client groups can't be added until you archive a structure or upgrade.",
           variant: "destructive",
         });
+      } else if (data?.resumed) {
+        toast({
+          title: "Sync resumed",
+          description:
+            data.message ?? "The previous sync had stopped responding and was picked up again.",
+        });
       } else {
         toast({
           title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
@@ -244,6 +250,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
         });
       }
       lastStatus.current = "processing";
+      setNowTs(Date.now());
       await fetchJob();
     } catch (err) {
       const payload = xeroToastPayload(err);
@@ -254,14 +261,46 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     }
   }, [fetchJob, toast]);
 
+  /** Stop the running sync. The job row is the source of truth, so the live
+   * worker stands down on its next write. */
+  const stop = useCallback(async () => {
+    setStopping(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm", {
+        body: { cancel_job: true },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      lastStatus.current = "failed";
+      toast({
+        title: data?.cancelled ? "Sync stopped" : "No sync running",
+        description:
+          data?.message ?? "The XPM sync has been stopped. You can start it again at any time.",
+      });
+      await fetchJob();
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
+    } finally {
+      setStopping(false);
+    }
+  }, [fetchJob, toast]);
+
   return {
     job,
     running: running || starting,
     starting,
-    label: xpmSyncLabel(job),
+    /** The job says "processing" but its worker went silent. */
+    stalled,
+    stopping,
+    label: stalled
+      ? "Sync stopped responding — start it again to carry on where it left off"
+      : xpmSyncLabel(job),
     percent: xpmSyncPercent(job),
     limitMessage: xpmSyncLimitMessage(job),
     start,
+    stop,
     refresh: fetchJob,
   };
+
 }
