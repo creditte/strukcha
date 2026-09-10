@@ -9,6 +9,12 @@ import { qk } from "@/lib/queryKeys";
 const JOB_FILE_NAME = "xpm-sync-3.1";
 /** Poll interval while a sync is running. One narrow row read per tick. */
 const POLL_MS = 4000;
+/**
+ * A live sync writes progress every page/batch. Longer silence than this means
+ * its worker died, so the UI stops pretending it is still running.
+ */
+const STALE_MS = 3 * 60_000;
+
 
 export type XpmSyncPhase = "clients" | "groups" | "staff" | "done";
 
