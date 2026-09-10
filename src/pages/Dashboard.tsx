@@ -87,10 +87,13 @@ export default function Dashboard() {
   const {
     job: syncJob,
     running: syncing,
+    stalled: syncStalled,
+    stopping: syncStopping,
     label: syncLabel,
     percent: syncPercent,
     limitMessage: syncLimitMessage,
     start: startXpmSync,
+    stop: stopXpmSync,
   } = useXpmSyncJob({
     onFinished: (finished) => {
       // A failed sync must never reload the page — the reload wipes the error
