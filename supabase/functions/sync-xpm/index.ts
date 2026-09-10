@@ -703,19 +703,26 @@ async function runSlice(
   return p;
 }
 
+/**
+ * Raised when the job row is no longer `processing` — the user cancelled it, or
+ * a watchdog reaped it. The worker stops immediately instead of resurrecting a
+ * cancelled run by writing progress back.
+ */
+class JobCancelledError extends Error {}
+
 async function saveProgress(
   supabase: any,
   jobId: string,
   p: Progress,
   opts?: { releaseLease?: boolean },
-) {
+): Promise<void> {
   const done = p.phase === "done";
   // Hold the lease while this worker is making progress, and hand it over when
   // the slice ends so the next worker in the chain can claim the job.
   p.leaseUntil = done || opts?.releaseLease
     ? ""
     : new Date(Date.now() + LEASE_SECONDS * 1000).toISOString();
-  await supabase
+  const { data } = await supabase
     .from("import_logs")
     .update({
       status: done ? "completed" : "processing",
@@ -747,8 +754,14 @@ async function saveProgress(
         updated_at: p.updated_at,
       },
     })
-    .eq("id", jobId);
+    .eq("id", jobId)
+    // Only a job that is still running may be written to: a cancelled or reaped
+    // job stays terminal.
+    .eq("status", "processing")
+    .select("id");
+  if (!data?.length) throw new JobCancelledError("Sync job is no longer running");
 }
+
 
 
 /**
