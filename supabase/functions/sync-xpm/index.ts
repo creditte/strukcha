@@ -44,6 +44,14 @@ import {
 
 const JOB_FILE_NAME = "xpm-sync-3.1";
 
+/**
+ * A running sync writes progress after every page and batch, and its lease is
+ * 90 seconds. Silence for longer than this means the worker is gone, so the job
+ * is taken over instead of blocking new syncs for ever.
+ */
+const STALE_JOB_MS = 3 * 60_000;
+
+
 type Phase = "clients" | "groups" | "staff" | "done";
 
 interface Stats {
