@@ -838,9 +838,15 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
       if (next.phase !== "done") await continueJob(jobId, next.runs);
       else console.log(`[sync-xpm] job ${jobId} completed in ${next.runs} runs`);
     } catch (e) {
+      if (e instanceof JobCancelledError) {
+        // Stopped from the dashboard (or reaped): leave the terminal row alone.
+        console.log(`[sync-xpm] job ${jobId} stopped: ${e.message}`);
+        return;
+      }
       const reauth = e instanceof XeroReauthRequiredError;
       const fatal = e instanceof FatalXpmError || reauth;
       console.error(`[sync-xpm] slice error${fatal ? " (fatal)" : ""}:`, e);
+
       // Remember a broken connection on the record itself, so every user and
       // device sees the reconnect prompt instead of a healthy-looking link.
       if (fatal) {
