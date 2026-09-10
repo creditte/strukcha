@@ -37,7 +37,7 @@ export default function IntegrationsSettings() {
 
 
   const handleConnect = async (
-    connectionType: "accounting" | "practice_manager" = "practice_manager",
+    connectionType: "standard" | "practice_manager" = "practice_manager",
   ) => {
     setConnecting(true);
     setXeroError(null);
@@ -252,7 +252,7 @@ export default function IntegrationsSettings() {
                   {connecting ? "Redirecting to Xero…" : "Connect Practice Manager"}
                 </Button>
                 <Button
-                  onClick={() => handleConnect("accounting")}
+                  onClick={() => handleConnect("standard")}
                   disabled={connecting}
                   variant="outline"
                   className="gap-2"

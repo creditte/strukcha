@@ -168,24 +168,29 @@ async function doRefresh(supabase: any, row: XeroConnectionRow): Promise<string>
 /**
  * Returns a usable Xero access token for this connection, renewing it if needed.
  * Throws `XeroReauthRequiredError` when the firm must reconnect Xero.
+ *
+ * `force` renews even when the stored token still looks fresh — used by the
+ * keep-alive job, whose whole purpose is to exercise the authorisation.
  */
 export async function getXeroAccessToken(
   supabase: any,
   connection: XeroConnectionRow,
+  opts?: { force?: boolean },
 ): Promise<string> {
+  const force = opts?.force === true;
   let row = connection;
 
   if (row.status === "needs_reauth") throw new XeroReauthRequiredError();
-  if (isFresh(row)) return await decryptToken(row.access_token);
+  if (!force && isFresh(row)) return await decryptToken(row.access_token);
 
   // Always renew from the newest stored token, not the caller's snapshot.
   row = await readConnection(supabase, row.id);
   if (row.status === "needs_reauth") throw new XeroReauthRequiredError();
-  if (isFresh(row)) return await decryptToken(row.access_token);
+  if (!force && isFresh(row)) return await decryptToken(row.access_token);
 
   if (await claimLease(supabase, row.id)) {
     const latest = await readConnection(supabase, row.id);
-    if (isFresh(latest)) {
+    if (!force && isFresh(latest)) {
       await supabase
         .from("xero_connections")
         .update({ refresh_lock_until: null })
@@ -205,6 +210,36 @@ export async function getXeroAccessToken(
   }
   throw new Error("The Xero connection is being renewed. Please try again in a moment.");
 }
+
+/**
+ * The connection a tenant's XPM work should use.
+ *
+ * A firm can end up with more than one row (each staff member may connect), and
+ * `connected_at` can be null on legacy rows — which in Postgres sorts *first*
+ * on a descending sort and used to hand callers the wrong, long-dead record.
+ * Preference order: healthy before broken, Practice Manager before standard,
+ * then most recently connected.
+ */
+export async function loadXeroConnection(
+  supabase: any,
+  tenantId: string,
+): Promise<XeroConnectionRow | null> {
+  const { data } = await supabase
+    .from("xero_connections")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .limit(20);
+  const rows = (data ?? []) as XeroConnectionRow[];
+  if (rows.length === 0) return null;
+  const score = (r: XeroConnectionRow) =>
+    (r.status === "needs_reauth" ? 0 : 2) + (r.connection_type === "practice_manager" ? 1 : 0);
+  const time = (r: XeroConnectionRow) => {
+    const t = new Date((r.connected_at as string) ?? 0).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+  return rows.sort((a, b) => score(b) - score(a) || time(b) - time(a))[0];
+}
+
 
 /** Decrypted tokens for one-off calls such as disconnecting. */
 export async function decryptXeroTokens(

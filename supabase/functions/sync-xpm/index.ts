@@ -16,14 +16,17 @@ import {
   tuning,
   xmlArray,
   xmlText,
+  xpmGetText,
   xpmGetXml,
 } from "./_lib.ts";
 import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
 import { parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
 import {
+  loadXeroConnection,
   markXeroConnectionInvalid,
   XeroReauthRequiredError,
 } from "../_shared/xero-token.ts";
+
 
 /**
  * Chunked, resumable XPM sync.
@@ -88,6 +91,13 @@ interface Stats {
 interface Progress {
   phase: Phase;
   clientPage: number;
+  /**
+   * How many clients of the current page have already been persisted. A single
+   * detailed page can hold well over a thousand clients, which is more than one
+   * worker can process, so a page is handled in chunks and this is the resume
+   * point inside it.
+   */
+  clientOffset: number;
   /** Last processed group `xpm_uuid` — the resume cursor for the group phase. */
   groupCursor: string;
   /** True once the group catalogue has been pulled from XPM into `xpm_groups`. */
@@ -122,6 +132,7 @@ function emptyProgress(): Progress {
   return {
     phase: "clients",
     clientPage: 1,
+    clientOffset: 0,
     groupCursor: "",
     groupsLoaded: false,
     lastPageKey: "",
@@ -235,23 +246,78 @@ interface ParsedClient {
   rels: { type: string; uuid: string; name: string; reverse: boolean }[];
 }
 
-/** Parse one XPM client page down to a minimal shape, then drop the XML. */
-function parseClientPage(pageXml: any, p: Progress): ParsedClient[] {
-  const clients = xmlArray(pageXml?.Response?.Clients, "Client");
-  const out: ParsedClient[] = [];
+/**
+ * Split a raw client-list body into one string per `<Client>` record.
+ *
+ * A plain index scan, not a DOM parse: XPM ignores `pagesize` on detailed
+ * client lists and returns the practice's whole client list (4 MB+, 1,000+
+ * clients) in one response, and parsing that in one go exhausts the worker's
+ * CPU allowance before a single client can be saved.
+ */
+function splitClientSegments(xml: string): string[] {
+  const out: string[] = [];
+  let from = 0;
+  for (;;) {
+    const open = xml.indexOf("<Client>", from);
+    if (open === -1) break;
+    const close = xml.indexOf("</Client>", open);
+    if (close === -1) break;
+    out.push(xml.slice(open + 8, close));
+    from = close + 9;
+  }
+  return out;
+}
 
-  for (const c of clients) {
-    const uuid = xmlText(c, "UUID");
-    const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
-    if (!uuid || !name) continue;
+const ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&apos;": "'",
+};
 
-    const entityType = resolveEntityType(xmlText(c, "BusinessStructure"));
-    const rels: ParsedClient["rels"] = [];
+function decodeXml(s: string): string {
+  if (!s.includes("&")) return s;
+  return s
+    .replace(/&(amp|lt|gt|quot|apos);/g, (m) => ENTITIES[m] ?? m)
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+}
 
-    for (const rel of xmlArray(c?.Relationships, "Relationship")) {
-      const raw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim().toLowerCase();
-      const relatedUuid = xmlText(rel?.RelatedClient, "UUID") || xmlText(rel, "RelatedClientUUID");
-      const relatedName = xmlText(rel?.RelatedClient, "Name") || xmlText(rel, "RelatedClientName");
+/** First `<tag>…</tag>` value inside a fragment, decoded. Empty when absent. */
+function tagText(fragment: string, tag: string): string {
+  const open = `<${tag}>`;
+  const start = fragment.indexOf(open);
+  if (start === -1) return "";
+  const end = fragment.indexOf(`</${tag}>`, start);
+  if (end === -1) return "";
+  return decodeXml(fragment.slice(start + open.length, end)).trim();
+}
+
+/** Parse one `<Client>` fragment down to the minimal shape the sync persists. */
+function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
+  // Client-level fields live before the relationship list; splitting first keeps
+  // a relationship's own UUID/Name from being read as the client's.
+  const relStart = segment.indexOf("<Relationships");
+  const head = relStart === -1 ? segment : segment.slice(0, relStart);
+  const tail = relStart === -1 ? "" : segment.slice(relStart);
+
+  const uuid = tagText(head, "UUID");
+  const name = tagText(head, "Name") ||
+    `${tagText(head, "FirstName")} ${tagText(head, "LastName")}`.trim();
+  if (!uuid || !name) return null;
+
+  const entityType = resolveEntityType(tagText(head, "BusinessStructure"));
+  const rels: ParsedClient["rels"] = [];
+
+  if (tail) {
+    for (const m of tail.matchAll(/<Relationship>([\s\S]*?)<\/Relationship>/g)) {
+      const rel = m[1];
+      const raw = (tagText(rel, "Type") || tagText(rel, "RelationshipType")).toLowerCase();
+      const relatedIdx = rel.indexOf("<RelatedClient");
+      const relatedFragment = relatedIdx === -1 ? rel : rel.slice(relatedIdx);
+      const relatedUuid = tagText(relatedFragment, "UUID") || tagText(rel, "RelatedClientUUID");
+      const relatedName = tagText(relatedFragment, "Name") || tagText(rel, "RelatedClientName");
       if (!raw || !relatedUuid) continue;
       // XPM labels a relationship from either side ("Director" on the company
       // record, "Director of" on the person record), so both forms are mapped
@@ -264,29 +330,31 @@ function parseClientPage(pageXml: any, p: Progress): ParsedClient[] {
       }
       rels.push({ type: rule.type, uuid: relatedUuid, name: relatedName, reverse: rule.reverse });
     }
-
-    out.push({
-      uuid,
-      name,
-      entityType,
-      abn: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
-      acn: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
-      rels,
-    });
   }
 
-  return out;
+  return {
+    uuid,
+    name,
+    entityType,
+    abn: tagText(head, "TaxNumber") || tagText(head, "ABN") || null,
+    acn: tagText(head, "CompanyNumber") || tagText(head, "ACN") || null,
+    rels,
+  };
 }
 
 /**
- * Fetch one client page and persist it with a SINGLE database call.
+ * Fetch one client page and persist it in bounded chunks.
  *
- * Everything the page implies (entity resolution by uuid/name, inserts,
- * field backfills, relationship de-duplication and insertion) happens inside
- * `sync_xpm_upsert_clients`, so a page costs 1 XPM request + 1 DB request
- * instead of the dozens of chunked lookups and per-row fallbacks it used to.
+ * XPM ignores `pagesize` on detailed client lists: one "page" can be the whole
+ * practice (4 MB, 1,300+ clients), which is far more than a single worker can
+ * parse. The body is therefore scanned as text, and clients are parsed and
+ * persisted `clientChunkSize` at a time, saving `clientOffset` after each chunk.
+ * When the slice budget runs out mid-page the function returns "partial" and a
+ * fresh worker resumes at the same offset — nothing is reprocessed and nothing
+ * is lost.
  *
- * Returns true when the page had clients (i.e. more pages may follow).
+ * Entity resolution, inserts, field backfills and relationship de-duplication
+ * all happen inside `sync_xpm_upsert_clients`, so a chunk costs one DB request.
  */
 async function processClientPage(
   supabase: any,
@@ -296,79 +364,100 @@ async function processClientPage(
   page: number,
   p: Progress,
   trusteePairs: { trustee_uuid: string; trust_name: string }[],
-): Promise<"processed" | "empty" | "repeat"> {
+  sliceStartedAt: number,
+  onChunk: () => Promise<void>,
+): Promise<"processed" | "empty" | "repeat" | "partial"> {
   const t = tuning();
-  let pageXml: any = await xpmGetXml(
+  let pageText: string | null = await xpmGetText(
     `/client.api/list?detailed=true&page=${page}&pagesize=${t.clientPageSize}`,
     accessToken,
     xeroTenantId,
   );
-  if (!pageXml) return "empty";
+  if (!pageText) return "empty";
 
-  let parsed: ParsedClient[] | null = parseClientPage(pageXml, p);
-  // Release the parsed XML tree (the biggest allocation in the run) immediately.
-  pageXml = null;
-  if (parsed.length === 0) return "empty";
+  let segments: string[] | null = splitClientSegments(pageText);
+  // Release the 4 MB body as soon as it has been indexed.
+  pageText = null;
+  if (segments.length === 0) return "empty";
 
   // Same page as last time → XPM is not paginating this practice's client list.
-  const pageKey = `${parsed.length}:${parsed[0].uuid}:${parsed[parsed.length - 1].uuid}`;
-  if (pageKey === p.lastPageKey) return "repeat";
+  const firstUuid = tagText(segments[0], "UUID");
+  const lastUuid = tagText(segments[segments.length - 1], "UUID");
+  const pageKey = `${segments.length}:${firstUuid}:${lastUuid}`;
+  if (pageKey === p.lastPageKey && p.clientOffset === 0) return "repeat";
   p.lastPageKey = pageKey;
 
-  p.stats.clientsFetched += parsed.length;
+  const total = segments.length;
+  while (p.clientOffset < total) {
+    const slice = segments.slice(p.clientOffset, p.clientOffset + t.clientChunkSize);
 
-  const clients: Record<string, unknown>[] = [];
-  const related = new Map<string, string>();
-  const rels: Record<string, unknown>[] = [];
+    const clients: Record<string, unknown>[] = [];
+    const related = new Map<string, string>();
+    const rels: Record<string, unknown>[] = [];
 
-  for (const c of parsed) {
-    const isTrustee = isCorporateTrustee(c.name, c.entityType);
-    p.stats.typeCounts[c.entityType] = (p.stats.typeCounts[c.entityType] || 0) + 1;
-    if (isTrustee) {
-      p.stats.trusteesDetected++;
-      const trustName = extractTrustName(c.name);
-      if (trustName) trusteePairs.push({ trustee_uuid: c.uuid, trust_name: trustName });
+    for (const segment of slice) {
+      const c = parseClientSegment(segment, p);
+      if (!c) continue;
+      const isTrustee = isCorporateTrustee(c.name, c.entityType);
+      p.stats.typeCounts[c.entityType] = (p.stats.typeCounts[c.entityType] || 0) + 1;
+      if (isTrustee) {
+        p.stats.trusteesDetected++;
+        const trustName = extractTrustName(c.name);
+        if (trustName) trusteePairs.push({ trustee_uuid: c.uuid, trust_name: trustName });
+      }
+
+      clients.push({
+        uuid: c.uuid,
+        name: c.name,
+        entity_type: c.entityType,
+        abn: c.abn,
+        acn: c.acn,
+        is_trustee: isTrustee,
+      });
+
+      for (const r of c.rels) {
+        if (r.name) related.set(r.uuid, r.name);
+        rels.push(
+          r.reverse
+            ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid }
+            : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid },
+        );
+      }
     }
 
-    clients.push({
-      uuid: c.uuid,
-      name: c.name,
-      entity_type: c.entityType,
-      abn: c.abn,
-      acn: c.acn,
-      is_trustee: isTrustee,
-    });
+    if (clients.length > 0) {
+      const { data, error } = await rpcCall(supabase, "sync_xpm_upsert_clients", {
+        _tenant_id: tenantId,
+        _payload: {
+          clients,
+          related: [...related.entries()].map(([uuid, name]) => ({ uuid, name })),
+          rels,
+        },
+      });
+      if (error) throw new Error(`Client page ${page} failed: ${error.message}`);
 
-    for (const r of c.rels) {
-      if (r.name) related.set(r.uuid, r.name);
-      rels.push(
-        r.reverse
-          ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid }
-          : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid },
-      );
+      const res = (data ?? {}) as any;
+      p.stats.entitiesCreated += res.entitiesCreated ?? 0;
+      p.stats.entitiesUpdated += res.entitiesUpdated ?? 0;
+      p.stats.relationshipsCreated += res.relationshipsCreated ?? 0;
+      p.stats.relationshipsSkipped += res.relationshipsSkipped ?? 0;
+      for (const w of res.warnings ?? []) warn(p, String(w));
+    }
+
+    p.stats.clientsFetched += clients.length;
+    p.clientOffset += slice.length;
+    // Persist after every chunk: the progress bar moves, and a worker that dies
+    // costs at most one chunk of work.
+    await onChunk();
+
+    if (p.clientOffset < total && Date.now() - sliceStartedAt > t.sliceBudgetMs) {
+      segments = null;
+      return "partial";
     }
   }
 
-  // Drop the parsed page before the request so peak memory stays low.
-  parsed = null;
-
-  const { data, error } = await rpcCall(supabase, "sync_xpm_upsert_clients", {
-    _tenant_id: tenantId,
-    _payload: {
-      clients,
-      related: [...related.entries()].map(([uuid, name]) => ({ uuid, name })),
-      rels,
-    },
-  });
-  if (error) throw new Error(`Client page ${page} failed: ${error.message}`);
-
-  const res = (data ?? {}) as any;
-  p.stats.entitiesCreated += res.entitiesCreated ?? 0;
-  p.stats.entitiesUpdated += res.entitiesUpdated ?? 0;
-  p.stats.relationshipsCreated += res.relationshipsCreated ?? 0;
-  p.stats.relationshipsSkipped += res.relationshipsSkipped ?? 0;
-  for (const w of res.warnings ?? []) warn(p, String(w));
-
+  segments = null;
+  p.clientOffset = 0;
   return "processed";
 }
 
@@ -519,9 +608,11 @@ async function processStaff(
   p: Progress,
 ) {
   const t = tuning();
-  const staffXml = await xpmGetXml("/staff.api/list", accessToken, xeroTenantId);
+  const staffXml = await xpmGetXml("/staff.api/list", accessToken, xeroTenantId, 3, {
+    optionalScope: true,
+  });
   if (!staffXml) {
-    warn(p, "Staff endpoint returned no data (may require practicemanager.staff.read scope)");
+    warn(p, "Your Xero connection doesn't include staff access, so staff were skipped.");
     return;
   }
 
@@ -579,13 +670,10 @@ async function runSlice(
   const c0 = { ...counters };
   const sliceStartedAt = Date.now();
 
-  const { data: connections } = await supabase
-    .from("xero_connections")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .order("connected_at", { ascending: false })
-    .limit(1);
-  if (!connections?.length) throw new Error("No Xero connection found");
+  const chosenConnection = await loadXeroConnection(supabase, tenantId);
+  if (!chosenConnection) throw new Error("No Xero connection found");
+  const connections = [chosenConnection];
+
 
   const accessToken = await refreshAccessToken(supabase, connections[0]);
   // Discover the Practice Manager tenant once, then persist it so later slices
@@ -609,23 +697,26 @@ async function runSlice(
 
   if (p.phase === "clients") {
     const trusteePairs: { trustee_uuid: string; trust_name: string }[] = [];
+    // Save after every chunk of clients so the progress counter moves and the
+    // job row's `updated_at` proves this worker is alive.
+    const heartbeat = async () => {
+      p.updated_at = new Date().toISOString();
+      await saveProgress(supabase, jobId, p);
+    };
     for (let i = 0; i < t.clientPagesPerRun; i++) {
       const outcome = await processClientPage(
         supabase, tenantId, accessToken, xeroTenantId, p.clientPage, p, trusteePairs,
+        sliceStartedAt, heartbeat,
       );
+      // Budget spent mid-page: keep the page and offset, hand over to a fresh
+      // worker rather than being killed with "CPU Time exceeded".
+      if (outcome === "partial") break;
       if (outcome !== "processed" || p.clientPage >= t.maxClientPages) {
         p.phase = "groups";
         break;
       }
       p.clientPage++;
-      // Persist after every page: progress is never lost, and the job row's
-      // `updated_at` proves the worker is alive.
-      p.updated_at = new Date().toISOString();
-      await saveProgress(supabase, jobId, p);
-      // XPM ignores `pagesize` on detailed client lists and can return well over
-      // a thousand clients in a single page, so XML parsing — not the network —
-      // is what burns the worker's CPU budget. Hand over to a fresh worker
-      // before the runtime kills this one mid-page.
+      await heartbeat();
       if (Date.now() - sliceStartedAt > t.sliceBudgetMs) break;
     }
 
@@ -740,6 +831,7 @@ async function saveProgress(
         phase: p.phase,
         progress: {
           clientPage: p.clientPage,
+          clientOffset: p.clientOffset,
           groupCursor: p.groupCursor,
           groupsLoaded: p.groupsLoaded,
           lastPageKey: p.lastPageKey,
@@ -798,6 +890,7 @@ function loadProgress(result: any): Progress {
     ...base,
     phase: (result.phase as Phase) ?? base.phase,
     clientPage: result.progress?.clientPage ?? base.clientPage,
+    clientOffset: result.progress?.clientOffset ?? base.clientOffset,
     groupCursor: result.progress?.groupCursor ?? base.groupCursor,
     groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
     lastPageKey: result.progress?.lastPageKey ?? base.lastPageKey,
@@ -862,7 +955,7 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
           .from("xero_connections")
           .select("id")
           .eq("tenant_id", tenantId)
-          .order("connected_at", { ascending: false })
+          .order("connected_at", { ascending: false, nullsFirst: false })
           .limit(1)
           .maybeSingle();
         if (conn) {
@@ -885,6 +978,7 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
             ...progress.stats,
             progress: {
               clientPage: progress.clientPage,
+              clientOffset: progress.clientOffset,
               groupCursor: progress.groupCursor,
               groupsLoaded: progress.groupsLoaded,
               groupsProcessed: progress.stats.groupsProcessed,
@@ -1013,7 +1107,7 @@ Deno.serve(async (req) => {
       .from("xero_connections")
       .select("id, status, connection_type, last_error")
       .eq("tenant_id", tenantId)
-      .order("connected_at", { ascending: false })
+      .order("connected_at", { ascending: false, nullsFirst: false })
       .limit(1);
     if (!connections?.length) {
       return json({ error: "No Xero connection found. Please connect to Xero first." }, 400);

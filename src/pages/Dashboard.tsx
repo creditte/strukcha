@@ -71,7 +71,7 @@ export default function Dashboard() {
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showGroupPicker, setShowGroupPicker] = useState(false);
-  const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
+  const [xeroConnectionType, setXeroConnectionType] = useState<"standard" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
   const { user } = useAuth();
   // The sync runs as a resumable background job; the UI follows the job row so
@@ -234,7 +234,7 @@ export default function Dashboard() {
 
 
   const handleConnectXero = async (
-    connectionType: "accounting" | "practice_manager" = xeroConnectionType,
+    connectionType: "standard" | "practice_manager" = xeroConnectionType,
   ) => {
     setXeroConnectionType(connectionType);
     setXeroLoading(true);
@@ -427,7 +427,7 @@ export default function Dashboard() {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="flex flex-col items-start gap-0.5"
-                      onClick={() => handleConnectXero("accounting")}
+                      onClick={() => handleConnectXero("standard")}
                     >
                       <span className="text-sm font-medium">Xero organisation</span>
                       <span className="text-xs text-muted-foreground">
@@ -558,7 +558,7 @@ export default function Dashboard() {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="flex flex-col items-start gap-0.5"
-                      onClick={() => handleConnectXero("accounting")}
+                      onClick={() => handleConnectXero("standard")}
                     >
                       <span className="text-sm font-medium">Xero organisation</span>
                       <span className="text-xs text-muted-foreground">

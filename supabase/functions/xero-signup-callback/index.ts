@@ -128,6 +128,8 @@ Deno.serve(async (req) => {
       refresh_token?: string;
       expires_in: number;
       id_token?: string;
+      scope?: string;
+
     };
 
     if (!tokens.id_token) {
@@ -266,16 +268,29 @@ Deno.serve(async (req) => {
       console.error("[xero-signup-callback] user_roles:", roleError);
     }
 
+    const connectionType: "practice_manager" | "standard" =
+      pending.connection_type === "standard" || pending.connection_type === "accounting"
+        ? "standard"
+        : "practice_manager";
+
     const connectionsRes = await fetch("https://api.xero.com/connections", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     let xeroTenantId: string | null = null;
     let xeroOrgName: string | null = null;
     if (connectionsRes.ok) {
-      const connections = await connectionsRes.json() as Array<{ tenantId?: string; tenantName?: string }>;
-      if (connections.length > 0) {
-        xeroTenantId = connections[0].tenantId ?? null;
-        xeroOrgName = connections[0].tenantName ?? null;
+      const connections = await connectionsRes.json() as Array<
+        { tenantId?: string; tenantName?: string; tenantType?: string }
+      >;
+      // Match the organisation to what was authorised — a Practice Manager
+      // sign-up must not store a plain organisation, or client sync fails 401.
+      const preferred = connectionType === "practice_manager"
+        ? connections.find((c) => c.tenantType === "PRACTICEMANAGER")
+        : connections.find((c) => c.tenantType !== "PRACTICEMANAGER");
+      const chosen = preferred ?? connections[0];
+      if (chosen) {
+        xeroTenantId = chosen.tenantId ?? null;
+        xeroOrgName = chosen.tenantName ?? null;
       }
     }
 
@@ -293,6 +308,14 @@ Deno.serve(async (req) => {
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
           expires_at: expiresAt,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
+          last_refresh_at: now.toISOString(),
           connected_at: now.toISOString(),
           updated_at: now.toISOString(),
         },
@@ -300,6 +323,7 @@ Deno.serve(async (req) => {
       );
       if (xcError) console.error("[xero-signup-callback] xero_connections:", xcError);
     }
+
 
     await supabase.from("xero_oauth_states").delete().eq("id", csrfRecord.id);
 

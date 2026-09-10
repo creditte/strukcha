@@ -42,16 +42,21 @@ Deno.serve(async (req) => {
 
     let csrfToken: string;
     let frontendUrl: string;
+    let connectionType: "practice_manager" | "standard" = "practice_manager";
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       csrfToken = state.csrf;
       frontendUrl = state.origin || defaultFrontendUrl;
+      if (state.connection_type === "standard" || state.connection_type === "accounting") {
+        connectionType = "standard";
+      }
       if (state.flow !== "login") {
         return Response.redirect(`${frontendUrl}/login?xero_login=error&reason=invalid_flow`, 302);
       }
     } catch {
       return Response.redirect(`${defaultFrontendUrl}/login?xero_login=error&reason=invalid_state`, 302);
     }
+
 
     if (!csrfToken) {
       return Response.redirect(`${frontendUrl}/login?xero_login=error&reason=missing_csrf`, 302);
@@ -111,6 +116,8 @@ Deno.serve(async (req) => {
       refresh_token?: string;
       expires_in: number;
       id_token?: string;
+      scope?: string;
+
     };
 
     if (!tokens.id_token) {
@@ -155,10 +162,19 @@ Deno.serve(async (req) => {
       let xeroTenantId: string | null = null;
       let xeroOrgName: string | null = null;
       if (connectionsRes.ok) {
-        const connections = await connectionsRes.json() as Array<{ tenantId?: string; tenantName?: string }>;
-        if (connections.length > 0) {
-          xeroTenantId = connections[0].tenantId ?? null;
-          xeroOrgName = connections[0].tenantName ?? null;
+        const connections = await connectionsRes.json() as Array<
+          { tenantId?: string; tenantName?: string; tenantType?: string }
+        >;
+        // Pick the organisation that matches what was authorised. Taking the
+        // first entry blindly could store a plain organisation for a Practice
+        // Manager sign-in, and every later client sync would fail with 401.
+        const preferred = connectionType === "practice_manager"
+          ? connections.find((c) => c.tenantType === "PRACTICEMANAGER")
+          : connections.find((c) => c.tenantType !== "PRACTICEMANAGER");
+        const chosen = preferred ?? connections[0];
+        if (chosen) {
+          xeroTenantId = chosen.tenantId ?? null;
+          xeroOrgName = chosen.tenantName ?? null;
         }
       }
 
@@ -175,6 +191,16 @@ Deno.serve(async (req) => {
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
           expires_at: expiresAt,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
+          // A fresh authorisation clears any remembered "needs reconnecting"
+          // state, otherwise signing in through Xero left the firm blocked.
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
+          last_refresh_at: new Date().toISOString(),
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -182,6 +208,7 @@ Deno.serve(async (req) => {
       );
       if (xcError) console.error("[xero-login-callback] xero_connections:", xcError);
     }
+
 
     await supabase.from("xero_oauth_states").delete().eq("id", csrfRecord.id);
 
