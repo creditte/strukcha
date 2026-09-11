@@ -76,6 +76,41 @@ export type Database = {
           },
         ]
       }
+      duplicate_dismissals: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          group_key: string
+          id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          group_key: string
+          id?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          group_key?: string
+          id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duplicate_dismissals_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_send_log: {
         Row: {
           created_at: string
@@ -1573,6 +1608,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      health_review_dataset: { Args: never; Returns: Json }
+      health_review_fingerprint: { Args: never; Returns: string }
       import_xpm_batch: {
         Args: { _payload: Json; _tenant_id: string }
         Returns: Json
