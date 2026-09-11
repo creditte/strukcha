@@ -146,39 +146,25 @@ export default function DuplicatesTab() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [merging, setMerging] = useState(false);
 
-  const loadDuplicates = useCallback(async () => {
-    setLoading(true);
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("tenant_id")
-      .eq("user_id", user?.id ?? "")
-      .single();
-
-    if (!profile) {
-      setLoading(false);
-      return;
-    }
+  const loadDuplicates = useCallback(async (): Promise<DuplicateGroup[]> => {
+    if (!tenantId) return [];
 
     // Try fuzzy matching first, fall back to exact matching
     const { data: fuzzyData, error: fuzzyError } = await supabase.rpc(
       "find_fuzzy_duplicate_entities" as any,
-      { _tenant_id: profile.tenant_id, _threshold: 0.85 }
+      { _tenant_id: tenantId, _threshold: 0.85 }
     );
 
     let rows: any[] = [];
     if (fuzzyError) {
       console.warn("Fuzzy matching unavailable, falling back to exact:", fuzzyError.message);
       const { data: exactData, error: exactError } = await supabase.rpc("find_duplicate_entities", {
-        _tenant_id: profile.tenant_id,
+        _tenant_id: tenantId,
       });
-      if (exactError) {
-        toast({ title: "Failed to find duplicates", description: exactError.message, variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+      if (exactError) throw exactError;
       rows = (exactData ?? []).map((r: any) => ({ ...r, similarity: 1.0 }));
     } else {
-      rows = fuzzyData ?? [];
+      rows = (fuzzyData as any[]) ?? [];
     }
 
     // Collect all entity IDs for enrichment
