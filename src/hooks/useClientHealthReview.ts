@@ -287,14 +287,15 @@ export function useClientHealthReview() {
       };
 
       setReview(result);
-      setLoading(false);
       return result;
-    } catch (e) {
+    } catch (e: any) {
       console.error("Review error:", e);
-      setLoading(false);
+      setError(e?.message ?? "We couldn't check your structures just now.");
       return null;
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  return { review, loading, runReview };
+  return { review, loading, error, runReview };
 }
