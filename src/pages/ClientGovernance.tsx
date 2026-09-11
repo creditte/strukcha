@@ -111,12 +111,9 @@ export default function ClientGovernance() {
   const currentStructurePage = Math.min(structurePage, structurePageCount);
   const structureStart = (currentStructurePage - 1) * STRUCTURE_PAGE_SIZE;
   const pageStructures = filteredStructures.slice(structureStart, structureStart + STRUCTURE_PAGE_SIZE);
-  const insightPageCount = Math.max(1, Math.ceil((review?.crossObservations.length ?? 0) / INSIGHT_PAGE_SIZE));
-  const currentInsightPage = Math.min(insightPage, insightPageCount);
-  const pageInsights = review?.crossObservations.slice(
-    (currentInsightPage - 1) * INSIGHT_PAGE_SIZE,
-    currentInsightPage * INSIGHT_PAGE_SIZE,
-  ) ?? [];
+  const allInsights = review?.crossObservations ?? [];
+  const visibleInsights = showAllInsights ? allInsights : allInsights.slice(0, INSIGHT_CHIP_LIMIT);
+  const hiddenInsightCount = Math.max(allInsights.length - INSIGHT_CHIP_LIMIT, 0);
 
   useEffect(() => {
     setStructurePage(1);
