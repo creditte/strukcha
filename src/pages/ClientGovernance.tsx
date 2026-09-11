@@ -195,8 +195,8 @@ export default function ClientGovernance() {
                   <span className="text-2xl font-bold tabular-nums text-foreground leading-none">
                     {review.clientScore}
                   </span>
-                  <span className={`text-[10px] font-medium mt-0.5 ${getDialLabel(review.clientScore).color}`}>
-                    {getDialLabel(review.clientScore).text}
+                  <span className={`text-[10px] font-medium mt-0.5 ${getScoreBand(review.clientScore).text}`}>
+                    {getScoreBand(review.clientScore).label}
                   </span>
                 </div>
               </div>
@@ -217,18 +217,12 @@ export default function ClientGovernance() {
 
             {/* Score legend */}
             <div className="flex items-center gap-5 text-[11px] text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-success" />
-                <span>90–100 Healthy</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-warning" />
-                <span>50–89 Needs attention</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-destructive" />
-                <span>Below 50 Critical</span>
-              </div>
+              {SCORE_BANDS.map((band) => (
+                <div key={band.status} className="flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full ${band.dot}`} />
+                  <span>{band.range}</span>
+                </div>
+              ))}
             </div>
 
             {structuresChanged && (
