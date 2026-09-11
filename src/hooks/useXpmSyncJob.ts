@@ -262,6 +262,35 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     }
   }, [fetchJob, toast]);
 
+  /**
+   * Read just the list of client groups from Practice Manager. Nothing is
+   * created — this is what a firm needs before it can choose its groups.
+   */
+  const refreshCatalogue = useCallback(async () => {
+    setStarting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm", {
+        body: { catalogue_only: true },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast({
+        title: data?.alreadyRunning ? "Already reading from Xero" : "Loading your client groups",
+        description:
+          data?.message ?? "This only reads the list of client groups — nothing is created yet.",
+      });
+      lastStatus.current = "processing";
+      setNowTs(Date.now());
+      await fetchJob();
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
+      throw err;
+    } finally {
+      setStarting(false);
+    }
+  }, [fetchJob, toast]);
+
   /** Stop the running sync. The job row is the source of truth, so the live
    * worker stands down on its next write. */
   const stop = useCallback(async () => {
