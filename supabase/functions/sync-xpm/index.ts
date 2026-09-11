@@ -957,21 +957,27 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
 
       // Remember a broken connection on the record itself, so every user and
       // device sees the reconnect prompt instead of a healthy-looking link.
-      if (fatal) {
-        const { data: conn } = await supabase
+      const { data: conn } = await supabase
+        .from("xero_connections")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .order("connected_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      const message = e instanceof Error ? e.message : String(e);
+      if (conn && fatal) {
+        await markXeroConnectionInvalid(supabase, conn.id, message);
+      } else if (conn) {
+        // Not fatal, but it did fail: stamping the failure time starts the
+        // cooling-off period so the next click can't fire straight into it.
+        await supabase
           .from("xero_connections")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .order("connected_at", { ascending: false, nullsFirst: false })
-          .limit(1)
-          .maybeSingle();
-        if (conn) {
-          await markXeroConnectionInvalid(
-            supabase,
-            conn.id,
-            e instanceof Error ? e.message : String(e),
-          );
-        }
+          .update({
+            last_error: message.slice(0, 500),
+            last_error_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conn.id);
       }
       await supabase
         .from("import_logs")
