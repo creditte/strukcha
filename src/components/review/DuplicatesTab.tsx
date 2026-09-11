@@ -75,6 +75,8 @@ interface MergePreview {
 
 const DUPLICATE_PAGE_SIZE = 10;
 
+type DuplicateSort = "similarity" | "size" | "name";
+
 function computeConfidence(entities: DuplicateEntity[], similarity: number): ConfidenceLevel {
   // Check for exact identifier matches across any pair
   for (let i = 0; i < entities.length; i++) {
