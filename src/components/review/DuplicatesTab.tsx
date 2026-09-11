@@ -379,16 +379,8 @@ export default function DuplicatesTab() {
       return;
     }
 
-    // Fetch relationships for duplicates
-    const { data: dupRels } = await supabase
-      .from("relationships")
-      .select("id, from_entity_id, to_entity_id, relationship_type")
-      .is("deleted_at", null)
-      .or(
-        duplicateIds.map((id) => `from_entity_id.eq.${id}`).join(",") +
-        "," +
-        duplicateIds.map((id) => `to_entity_id.eq.${id}`).join(",")
-      );
+    // Fetch relationships for duplicates (chunked, no unbounded filter string)
+    const dupRels = await fetchRelationshipsFor(duplicateIds);
 
     // Fetch relationships for primary
     const { data: primaryRels } = await supabase
