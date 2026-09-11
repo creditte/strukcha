@@ -172,6 +172,7 @@ async function doRefresh(supabase: any, row: XeroConnectionRow): Promise<string>
       last_error: null,
       last_error_at: null,
       invalidated_at: null,
+      reauth_notified_at: null,
       updated_at: nowIso,
     })
     .eq("id", row.id);
