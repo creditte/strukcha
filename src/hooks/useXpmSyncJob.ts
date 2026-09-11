@@ -22,6 +22,8 @@ export interface XpmSyncJob {
   id: string;
   status: "pending" | "processing" | "completed" | "failed";
   updatedAt: string;
+  /** When the job row was first created. */
+  startedAt?: string;
   phase: XpmSyncPhase;
   clientsFetched: number;
   entitiesCreated: number;
@@ -48,6 +50,7 @@ function mapJob(row: any): XpmSyncJob {
     id: row.id,
     status: row.status,
     updatedAt: row.updated_at,
+    startedAt: row.created_at ?? row.updated_at,
     phase: (r.phase as XpmSyncPhase) ?? "clients",
     clientsFetched: r.clientsFetched ?? 0,
     entitiesCreated: r.entitiesCreated ?? 0,
