@@ -420,7 +420,7 @@ export default function Dashboard() {
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="outline"
-                      className="gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
+                      className="h-10 gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
                       disabled={xeroLoading}
                     >
                       {xeroLoading ? (
