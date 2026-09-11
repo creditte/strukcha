@@ -91,8 +91,22 @@ export default function ClientGovernance() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
+      {/* ── Load failure ── */}
+      {!loading && error && (
+        <section className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="flex-1 space-y-2">
+            <p className="text-sm font-medium text-foreground">We couldn't run the health check</p>
+            <p className="text-xs text-muted-foreground">{error}</p>
+            <Button size="sm" variant="outline" className="text-xs" onClick={handleRunReview}>
+              Try again
+            </Button>
+          </div>
+        </section>
+      )}
+
       {/* ── Hero / Empty State ── */}
-      {!review && !loading && (
+      {!review && !loading && !error && (
         <section className="text-center py-12 space-y-5">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-success/10">
             <HeartPulse className="h-8 w-8 text-success" />
