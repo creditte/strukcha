@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -84,6 +84,7 @@ export default function Dashboard() {
   const [xeroConnectionType, setXeroConnectionType] = useState<"standard" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   /** True while a "read the group list only" run is in flight. */
   const catalogueRun = useRef(false);
   // The sync runs as a resumable background job; the UI follows the job row so
@@ -117,12 +118,19 @@ export default function Dashboard() {
         if (finished.error) reportXeroError(finished.error);
         return;
       }
-      // A failed sync must never reload the page — the reload wipes the error
-      // message before the user can read it. Only a successful run refreshes
-      // the dashboard data; a failure keeps the message and, when Xero asked
-      // for re-authorisation, raises the reconnect banner instead.
+      // A successful sync refreshes the dashboard data in place — no page
+      // reload, which would blank the screen and lose scroll position. A
+      // failure keeps its message and raises the reconnect banner when Xero
+      // asked for re-authorisation.
       if (finished.status === "completed") {
-        window.location.reload();
+        queryClient.invalidateQueries({ queryKey: qk.dashboardStats(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.recentStructures(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.manualStructures(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.favouriteGroups(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.duplicateCount(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.xpmGroupsCached() });
+        queryClient.invalidateQueries({ queryKey: qk.billing(user?.id) });
+        reloadXeroConnection();
         return;
       }
       if (finished.error) reportXeroError(finished.error);
