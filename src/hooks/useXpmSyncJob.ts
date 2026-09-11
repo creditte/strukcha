@@ -330,6 +330,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     limitMessage: xpmSyncLimitMessage(job),
     start,
     stop,
+    refreshCatalogue,
     refresh: fetchJob,
   };
 
