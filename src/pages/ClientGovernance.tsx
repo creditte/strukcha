@@ -46,7 +46,7 @@ function getScoreMessage(score: number, count: number): string {
 }
 
 const STRUCTURE_PAGE_SIZE = 15;
-const INSIGHT_PAGE_SIZE = 5;
+const INSIGHT_CHIP_LIMIT = 6;
 
 /* ── Page ───────────────────────────────────────────────────────── */
 
@@ -61,7 +61,7 @@ export default function ClientGovernance() {
   const [structureQuery, setStructureQuery] = useState("");
   const [structureSort, setStructureSort] = useState<"attention" | "name" | "score">("attention");
   const [structurePage, setStructurePage] = useState(1);
-  const [insightPage, setInsightPage] = useState(1);
+  const [showAllInsights, setShowAllInsights] = useState(false);
 
   // "Structures changed" now compares a content stamp of the entities and
   // relationships inside structures, not any touch of structures.updated_at.
@@ -111,12 +111,9 @@ export default function ClientGovernance() {
   const currentStructurePage = Math.min(structurePage, structurePageCount);
   const structureStart = (currentStructurePage - 1) * STRUCTURE_PAGE_SIZE;
   const pageStructures = filteredStructures.slice(structureStart, structureStart + STRUCTURE_PAGE_SIZE);
-  const insightPageCount = Math.max(1, Math.ceil((review?.crossObservations.length ?? 0) / INSIGHT_PAGE_SIZE));
-  const currentInsightPage = Math.min(insightPage, insightPageCount);
-  const pageInsights = review?.crossObservations.slice(
-    (currentInsightPage - 1) * INSIGHT_PAGE_SIZE,
-    currentInsightPage * INSIGHT_PAGE_SIZE,
-  ) ?? [];
+  const allInsights = review?.crossObservations ?? [];
+  const visibleInsights = showAllInsights ? allInsights : allInsights.slice(0, INSIGHT_CHIP_LIMIT);
+  const hiddenInsightCount = Math.max(allInsights.length - INSIGHT_CHIP_LIMIT, 0);
 
   useEffect(() => {
     setStructurePage(1);
@@ -246,59 +243,57 @@ export default function ClientGovernance() {
         <>
           {/* ── Score summary (single card) ── */}
           <Card>
-            <CardContent className="space-y-5 p-5 sm:p-6">
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
-                {/* Score dial */}
-                <div className="relative mx-auto flex h-24 w-24 shrink-0 items-center justify-center sm:mx-0">
-                  <svg className="absolute inset-0 h-24 w-24 -rotate-90" viewBox="0 0 96 96">
-                    <circle cx="48" cy="48" r="42" fill="none" stroke="hsl(var(--border))" strokeWidth="6" />
-                    <circle
-                      cx="48" cy="48" r="42" fill="none"
-                      stroke={
-                        review.clientScore >= 90
-                          ? "hsl(var(--success))"
-                          : review.clientScore >= 50
-                            ? "hsl(var(--warning))"
-                            : "hsl(var(--destructive))"
-                      }
-                      strokeWidth="6"
-                      strokeLinecap="round"
-                      strokeDasharray={`${(review.clientScore / 100) * 264} 264`}
-                    />
-                  </svg>
-                  <div className="flex flex-col items-center">
-                    <span className="text-2xl font-bold leading-none tabular-nums text-foreground">
+            <CardContent className="space-y-6 p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-semibold leading-none tabular-nums text-foreground">
                       {review.clientScore}
                     </span>
-                    <span className={`mt-1 text-[10px] font-medium ${getScoreBand(review.clientScore).text}`}>
+                    <span className="text-sm text-muted-foreground">/ 100</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${getScoreBand(review.clientScore).dot}`} />
+                    <span className={`text-sm font-medium ${getScoreBand(review.clientScore).text}`}>
                       {getScoreBand(review.clientScore).label}
                     </span>
                   </div>
                 </div>
 
-                {/* Counts */}
-                <div className="grid flex-1 grid-cols-3 divide-x divide-border/60 rounded-xl border border-border/60 bg-muted/20">
-                  <div className="px-3 py-3 text-center sm:px-4">
-                    <p className="text-xl font-semibold tabular-nums text-foreground sm:text-2xl">
-                      {review.structures.length}
-                    </p>
-                    <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">Checked</p>
-                  </div>
-                  <div className="px-3 py-3 text-center sm:px-4">
-                    <p className="text-xl font-semibold tabular-nums text-success sm:text-2xl">{healthyCount}</p>
-                    <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">Healthy</p>
-                  </div>
-                  <div className="px-3 py-3 text-center sm:px-4">
-                    <p className="text-xl font-semibold tabular-nums text-warning sm:text-2xl">
-                      {review.needsAttention}
-                    </p>
-                    <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">Need updates</p>
-                  </div>
+                {review.needsAttention > 0 && (
+                  <Button
+                    variant="secondary"
+                    className="w-full gap-2 rounded-xl text-sm font-medium sm:ml-auto sm:w-auto sm:px-5"
+                    onClick={() => navigate("/review")}
+                  >
+                    Review issues
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+
+              <Progress value={review.clientScore} className="h-1.5 rounded-full" />
+
+              {/* Counts — spaced, no borders */}
+              <div className="flex flex-wrap gap-x-10 gap-y-4">
+                <div className="space-y-0.5">
+                  <p className="text-2xl font-semibold tabular-nums text-foreground">
+                    {review.structures.length}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Checked</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-2xl font-semibold tabular-nums text-success">{healthyCount}</p>
+                  <p className="text-xs text-muted-foreground">Healthy</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-2xl font-semibold tabular-nums text-warning">{review.needsAttention}</p>
+                  <p className="text-xs text-muted-foreground">Need updates</p>
                 </div>
               </div>
 
               {/* Legend */}
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border/60 pt-4 text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-muted-foreground">
                 {SCORE_BANDS.map((band) => (
                   <div key={band.status} className="flex items-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ${band.dot}`} />
@@ -313,16 +308,6 @@ export default function ClientGovernance() {
                   Your structures have changed since this check — re-run it for up-to-date results.
                 </div>
               )}
-
-              {review.needsAttention > 0 && (
-                <Button
-                  className="w-full gap-2 rounded-xl text-sm font-medium sm:w-auto sm:px-5"
-                  onClick={() => navigate("/review")}
-                >
-                  Review issues
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              )}
             </CardContent>
           </Card>
 
@@ -335,8 +320,8 @@ export default function ClientGovernance() {
                   Patterns across your structures. Tap one to see the structures involved.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {pageInsights.map((obs, idx) => {
+              <div className="flex flex-wrap items-center gap-2">
+                {visibleInsights.map((obs, idx) => {
                   const isActionable =
                     obs.message.includes("missing") ||
                     obs.message.includes("without") ||
@@ -347,6 +332,7 @@ export default function ClientGovernance() {
                   return (
                     <button
                       key={idx}
+                      title={obs.message}
                       onClick={() => {
                         if (affectedStructures.length === 1) {
                           setSelectedStructure(affectedStructures[0]);
@@ -355,7 +341,7 @@ export default function ClientGovernance() {
                           setInsightFilter(active ? null : obs.structureIds);
                         }
                       }}
-                      className={`group inline-flex max-w-full items-center gap-2 rounded-full border px-3.5 py-2 text-left text-xs transition-colors ${
+                      className={`group inline-flex max-w-[18rem] items-center gap-2 rounded-full border px-3.5 py-1.5 text-left text-xs transition-colors ${
                         active
                           ? "border-primary/40 bg-primary/10 text-foreground"
                           : isActionable
@@ -367,31 +353,20 @@ export default function ClientGovernance() {
                         className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActionable ? "bg-warning" : "bg-primary"}`}
                       />
                       <span className="truncate">{obs.message}</span>
-                      <Badge className="shrink-0 border-0 bg-muted px-1.5 py-0 text-[10px] font-medium tabular-nums text-muted-foreground">
-                        {affectedStructures.length}
-                      </Badge>
                     </button>
                   );
                 })}
+                {hiddenInsightCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 rounded-full text-xs"
+                    onClick={() => setShowAllInsights((prev) => !prev)}
+                  >
+                    {showAllInsights ? "Show fewer" : `+${hiddenInsightCount} more`}
+                  </Button>
+                )}
               </div>
-              {insightPageCount > 1 && (
-                <div className="flex items-center justify-between gap-3 pt-1">
-                  <span className="text-xs text-muted-foreground">
-                    Insights {(currentInsightPage - 1) * INSIGHT_PAGE_SIZE + 1}–
-                    {Math.min(currentInsightPage * INSIGHT_PAGE_SIZE, review.crossObservations.length)} of{" "}
-                    {review.crossObservations.length}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Previous insights" disabled={currentInsightPage === 1} onClick={() => setInsightPage(currentInsightPage - 1)}>
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                    </Button>
-                    <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">{currentInsightPage} / {insightPageCount}</span>
-                    <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Next insights" disabled={currentInsightPage === insightPageCount} onClick={() => setInsightPage(currentInsightPage + 1)}>
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
             </section>
           )}
 

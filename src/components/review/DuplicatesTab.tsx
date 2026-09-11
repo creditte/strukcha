@@ -11,7 +11,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import {
@@ -30,7 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle, Merge, Loader2, AlertTriangle, AlertCircle, Shield, Building2, Undo2, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle, Merge, Loader2, AlertTriangle, AlertCircle, Shield, Building2, Undo2, X, Search, SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -65,6 +74,8 @@ interface MergePreview {
 }
 
 const DUPLICATE_PAGE_SIZE = 10;
+
+type DuplicateSort = "similarity" | "size" | "name";
 
 function computeConfidence(entities: DuplicateEntity[], similarity: number): ConfidenceLevel {
   // Check for exact identifier matches across any pair
@@ -151,6 +162,7 @@ export default function DuplicatesTab() {
   const [merging, setMerging] = useState(false);
   const [search, setSearch] = useState("");
   const [confidence, setConfidence] = useState<"all" | ConfidenceLevel>("all");
+  const [sort, setSort] = useState<DuplicateSort>("similarity");
   const [page, setPage] = useState(1);
 
   const loadDuplicates = useCallback(async (): Promise<DuplicateGroup[]> => {
@@ -363,14 +375,20 @@ export default function DuplicatesTab() {
   const dismissedCount = groups.length - visibleGroups.length;
   const filteredGroups = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return visibleGroups.filter((group) => {
+    const list = visibleGroups.filter((group) => {
       if (confidence !== "all" && group.confidence !== confidence) return false;
       if (!needle) return true;
       return group.entities.some((entity) =>
         [entity.name, entity.abn, entity.acn].some((value) => value?.toLowerCase().includes(needle)),
       );
     });
-  }, [visibleGroups, search, confidence]);
+    return [...list].sort((a, b) => {
+      if (sort === "name") return a.normalizedName.localeCompare(b.normalizedName);
+      if (sort === "size")
+        return b.entities.length - a.entities.length || b.similarity - a.similarity;
+      return b.similarity - a.similarity || b.entities.length - a.entities.length;
+    });
+  }, [visibleGroups, search, confidence, sort]);
   const pageCount = Math.max(1, Math.ceil(filteredGroups.length / DUPLICATE_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * DUPLICATE_PAGE_SIZE;
@@ -378,7 +396,7 @@ export default function DuplicatesTab() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, confidence]);
+  }, [search, confidence, sort]);
 
   const openMergeDialog = (group: DuplicateGroup) => {
     const types = new Set(group.entities.map((e) => e.type));
@@ -561,27 +579,57 @@ export default function DuplicatesTab() {
           </div>
 
           {visibleGroups.length > 0 && (
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search name, ABN or ACN…"
-                  className="h-9 pl-9 text-sm"
+                  className="h-10 pl-9 text-sm sm:h-9"
                 />
               </div>
-              <Select value={confidence} onValueChange={(value) => setConfidence(value as "all" | ConfidenceLevel)}>
-                <SelectTrigger className="h-9 w-full text-sm sm:w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All confidence</SelectItem>
-                  <SelectItem value="exact">Exact matches</SelectItem>
-                  <SelectItem value="high">High similarity</SelectItem>
-                  <SelectItem value="medium">Medium similarity</SelectItem>
-                </SelectContent>
-              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-10 shrink-0 gap-2 text-sm sm:h-9">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    <span className="hidden sm:inline">Filter</span>
+                    {confidence !== "all" && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="text-xs">Match confidence</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={confidence}
+                    onValueChange={(value) => setConfidence(value as "all" | ConfidenceLevel)}
+                  >
+                    <DropdownMenuRadioItem value="all">All confidence</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="exact">Exact matches</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="high">High similarity</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="medium">Medium similarity</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={sort} onValueChange={(value) => setSort(value as DuplicateSort)}>
+                    <DropdownMenuRadioItem value="similarity">Closest match first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="size">Most entities first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  {(confidence !== "all" || search) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSearch("");
+                          setConfidence("all");
+                        }}
+                      >
+                        Clear filters
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
 

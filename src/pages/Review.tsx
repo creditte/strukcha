@@ -8,12 +8,15 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertTriangle,
   Copy,
@@ -22,6 +25,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Search,
+  SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -314,47 +318,58 @@ export default function Review() {
           ) : (
             <div className="space-y-4">
               {/* ── Toolbar ── */}
-              <div className="sticky top-0 z-10 -mx-2 space-y-3 bg-background/95 px-2 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="sticky top-0 z-10 -mx-2 bg-background/95 px-2 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+                <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       placeholder="Search a structure or an item…"
-                      className="h-9 pl-9 text-sm"
+                      className="h-10 pl-9 text-sm sm:h-9"
                     />
                   </div>
-                  <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
-                    <SelectTrigger className="h-9 w-full text-sm sm:w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="critical">Critical first</SelectItem>
-                      <SelectItem value="most">Most items first</SelectItem>
-                      <SelectItem value="name">Name A–Z</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {SEVERITY_TABS.map((tab) => (
-                    <Button
-                      key={tab.value}
-                      size="sm"
-                      variant={severity === tab.value ? "secondary" : "ghost"}
-                      className="h-8 gap-1.5 rounded-lg text-xs"
-                      onClick={() => setSeverity(tab.value)}
-                    >
-                      {tab.label}
-                      <span className="tabular-nums text-muted-foreground">{tab.count}</span>
-                    </Button>
-                  ))}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="h-10 shrink-0 gap-2 text-sm sm:h-9">
+                        <SlidersHorizontal className="h-4 w-4" />
+                        <span className="hidden sm:inline">Filter</span>
+                        {severity !== "all" && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-60">
+                      <DropdownMenuLabel className="text-xs">Severity</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={severity}
+                        onValueChange={(v) => setSeverity(v as SeverityFilter)}
+                      >
+                        {SEVERITY_TABS.map((tab) => (
+                          <DropdownMenuRadioItem key={tab.value} value={tab.value}>
+                            {tab.label} ({tab.count})
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v as SortMode)}>
+                        <DropdownMenuRadioItem value="critical">Critical first</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="most">Most items first</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                      {(severity !== "all" || query) && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={clearFilters}>Clear filters</DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
                   {pageGroups.length > 0 && (
                     <Button
-                      size="sm"
                       variant="ghost"
-                      className="ml-auto h-8 text-xs"
+                      className="h-10 shrink-0 text-xs sm:h-9"
                       onClick={toggleAllOnPage}
                     >
                       {allExpanded ? "Collapse all" : "Expand all"}
