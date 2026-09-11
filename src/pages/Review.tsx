@@ -25,11 +25,8 @@ const SEVERITY_STYLES: Record<string, { bg: string; text: string; icon: typeof A
 
 export default function Review() {
   const navigate = useNavigate();
-  const { review, loading, error, runReview } = useClientHealthReview();
+  const { review, loading, error, progress, runReview } = useClientHealthReview();
 
-  useEffect(() => {
-    runReview();
-  }, []);
 
   const issueCount = review?.allIssues.length ?? 0;
   const totalStructures = review?.structures.length ?? 0;
