@@ -311,66 +311,120 @@ export default function Review() {
               </Button>
             </div>
           ) : (
-            /* ── Issue list grouped by structure ── */
             <div className="space-y-4">
-              {Array.from(issuesByStructure.entries()).map(([structureId, issues]) => {
-                const structureName = issues[0]?.structure_name ?? "Unknown";
-                const criticalCount = issues.filter((i) => i.severity === "critical").length;
-                return (
-                  <Card key={structureId} className="overflow-hidden">
-                    {/* Structure header */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/30 px-5 py-3">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold text-foreground">{structureName}</h3>
-                        <Badge className="border-0 bg-muted px-2 py-0 text-[11px] font-medium text-muted-foreground">
-                          {issues.length} item{issues.length !== 1 ? "s" : ""}
-                        </Badge>
-                        {criticalCount > 0 && (
-                          <Badge className="border-0 bg-destructive/10 px-2 py-0 text-[11px] font-medium text-destructive">
-                            {criticalCount} critical
-                          </Badge>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 gap-1 text-xs"
-                        onClick={() => navigate(`/structures/${structureId}`)}
-                      >
-                        Open structure
-                        <ArrowRight className="h-3 w-3" />
-                      </Button>
-                    </div>
+              {/* ── Toolbar ── */}
+              <div className="sticky top-0 z-10 -mx-2 space-y-3 bg-background/95 px-2 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search a structure or an item…"
+                      className="h-9 pl-9 text-sm"
+                    />
+                  </div>
+                  <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
+                    <SelectTrigger className="h-9 w-full text-sm sm:w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="critical">Critical first</SelectItem>
+                      <SelectItem value="most">Most items first</SelectItem>
+                      <SelectItem value="name">Name A–Z</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                    {/* Issues for this structure */}
-                    <ul className="divide-y divide-border/60">
-                      {issues.map((issue, idx) => {
-                        const style = SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor;
-                        const Icon = style.icon;
-                        return (
-                          <li
-                            key={`${issue.code}-${issue.entity_id ?? idx}`}
-                            className="flex items-start gap-3 px-5 py-3.5"
-                          >
-                            <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.iconClass}`} />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm text-foreground">{issue.message}</p>
-                              <p className="mt-0.5 text-xs capitalize text-muted-foreground">
-                                {issue.category}
-                              </p>
-                            </div>
-                            <Badge
-                              className={`shrink-0 border-0 px-2 py-0 text-[11px] font-medium ${style.badgeClass}`}
-                            >
-                              {style.label}
-                            </Badge>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </Card>
-                );
-              })}
+                <div className="flex flex-wrap items-center gap-2">
+                  {SEVERITY_TABS.map((tab) => (
+                    <Button
+                      key={tab.value}
+                      size="sm"
+                      variant={severity === tab.value ? "secondary" : "ghost"}
+                      className="h-8 gap-1.5 rounded-lg text-xs"
+                      onClick={() => setSeverity(tab.value)}
+                    >
+                      {tab.label}
+                      <span className="tabular-nums text-muted-foreground">{tab.count}</span>
+                    </Button>
+                  ))}
+                  {pageGroups.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="ml-auto h-8 text-xs"
+                      onClick={toggleAllOnPage}
+                    >
+                      {allExpanded ? "Collapse all" : "Expand all"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {groups.length === 0 ? (
+                <Card>
+                  <CardContent className="space-y-3 p-8 text-center">
+                    <p className="text-sm font-medium text-foreground">Nothing matches your filters</p>
+                    <p className="text-xs text-muted-foreground">
+                      Try a different search or choose another severity.
+                    </p>
+                    <Button size="sm" variant="outline" className="text-xs" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {pageGroups.map((group) => (
+                      <StructureIssueGroup
+                        key={group.id}
+                        structureId={group.id}
+                        structureName={group.name}
+                        issues={group.issues}
+                        open={expandedIds.has(group.id)}
+                        onOpenChange={(open) => toggleGroup(group.id, open)}
+                        onOpenStructure={() => navigate(`/structures/${group.id}`)}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, groups.length)} of{" "}
+                      {groups.length} structure{groups.length !== 1 ? "s" : ""}
+                    </p>
+                    {pageCount > 1 && (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1 text-xs"
+                          disabled={currentPage === 1}
+                          onClick={() => setPage(currentPage - 1)}
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                          Previous
+                        </Button>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          Page {currentPage} of {pageCount}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1 text-xs"
+                          disabled={currentPage === pageCount}
+                          onClick={() => setPage(currentPage + 1)}
+                        >
+                          Next
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
