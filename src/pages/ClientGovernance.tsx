@@ -13,9 +13,9 @@ import {
   ArrowRight,
   AlertCircle,
 } from "lucide-react";
-import { getHealthStatus } from "@/lib/structureScoring";
+import { SCORE_BANDS, getScoreBand } from "@/lib/structureScoring";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
-import type { StructureResult, ClientReview, CrossObservation } from "@/hooks/useClientHealthReview";
+import type { StructureResult } from "@/hooks/useClientHealthReview";
 import StructureIssuesPanel from "@/components/health/StructureIssuesPanel";
 
 /* ── Friendly labels ────────────────────────────────────────────── */
@@ -26,25 +26,6 @@ function getScoreMessage(score: number, count: number): string {
   if (score >= 50) return "Some improvements needed across your structures.";
   return "Your structures need attention.";
 }
-
-function getDialLabel(score: number): { text: string; color: string } {
-  if (score >= 90) return { text: "Healthy", color: "text-success" };
-  if (score >= 70) return { text: "Minor gaps", color: "text-warning" };
-  if (score >= 41) return { text: "Needs attention", color: "text-warning" };
-  return { text: "Critical", color: "text-destructive" };
-}
-
-const STATUS_DOT: Record<string, string> = {
-  good: "bg-success",
-  warning: "bg-warning",
-  critical: "bg-destructive",
-};
-
-const STATUS_PILL: Record<string, string> = {
-  good: "bg-success/15 text-success",
-  warning: "bg-warning/15 text-warning",
-  critical: "bg-destructive/15 text-destructive",
-};
 
 /* ── Page ───────────────────────────────────────────────────────── */
 
