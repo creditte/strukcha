@@ -1105,7 +1105,7 @@ Deno.serve(async (req) => {
 
     const { data: connections } = await supabase
       .from("xero_connections")
-      .select("id, status, connection_type, last_error")
+      .select("id, status, connection_type, last_error, last_error_at")
       .eq("tenant_id", tenantId)
       .order("connected_at", { ascending: false, nullsFirst: false })
       .limit(1);
