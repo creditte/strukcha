@@ -64,11 +64,6 @@ export default function AppSidebar() {
           >
             <item.icon className="h-4 w-4" />
             <span className="flex-1">{item.label}</span>
-            {item.badgeKey === "review" && duplicateCount > 0 && (
-              <Badge className="h-5 min-w-5 px-1.5 text-[10px] font-semibold rounded-full bg-warning/15 text-warning border-0">
-                {duplicateCount}
-              </Badge>
-            )}
           </NavLink>
         ))}
       </nav>
