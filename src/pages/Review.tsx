@@ -1,51 +1,56 @@
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertTriangle,
   Copy,
   Download,
   ListChecks,
   AlertCircle,
-  CircleDot,
-  ArrowRight,
   CheckCircle2,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import DuplicatesTab from "@/components/review/DuplicatesTab";
+import StructureIssueGroup from "@/components/review/StructureIssueGroup";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
 import type { StructureIssue } from "@/hooks/useClientHealthReview";
 
-const SEVERITY_STYLES: Record<
-  string,
-  { label: string; icon: typeof AlertCircle; iconClass: string; badgeClass: string }
-> = {
-  critical: {
-    label: "Critical",
-    icon: AlertCircle,
-    iconClass: "text-destructive",
-    badgeClass: "bg-destructive/10 text-destructive",
-  },
-  gap: {
-    label: "Warning",
-    icon: AlertTriangle,
-    iconClass: "text-warning",
-    badgeClass: "bg-warning/10 text-warning",
-  },
-  minor: {
-    label: "Minor",
-    icon: CircleDot,
-    iconClass: "text-muted-foreground",
-    badgeClass: "bg-muted text-muted-foreground",
-  },
-};
+type SeverityFilter = "all" | "critical" | "gap" | "minor";
+type SortMode = "most" | "critical" | "name";
+
+const PAGE_SIZE = 20;
+
+interface StructureGroup {
+  id: string;
+  name: string;
+  issues: StructureIssue[];
+  criticalCount: number;
+}
 
 export default function Review() {
   const navigate = useNavigate();
   const { review, loading, error, progress, runReview } = useClientHealthReview();
+
+  const [query, setQuery] = useState("");
+  const [severity, setSeverity] = useState<SeverityFilter>("all");
+  const [sort, setSort] = useState<SortMode>("critical");
+  const [page, setPage] = useState(1);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const issueCount = review?.allIssues.length ?? 0;
   const totalStructures = review?.structures.length ?? 0;
@@ -54,13 +59,102 @@ export default function Review() {
   const allResolved = !loading && review !== null && issueCount === 0;
   const healthyPct = totalStructures > 0 ? Math.round((healthyCount / totalStructures) * 100) : 100;
 
-  // Group issues by structure for display
-  const issuesByStructure = new Map<string, StructureIssue[]>();
-  for (const issue of review?.allIssues ?? []) {
-    const arr = issuesByStructure.get(issue.structure_id) ?? [];
-    arr.push(issue);
-    issuesByStructure.set(issue.structure_id, arr);
-  }
+  /* Severity counts always reflect the full, unfiltered set */
+  const severityCounts = useMemo(() => {
+    const counts = { all: 0, critical: 0, gap: 0, minor: 0 };
+    for (const issue of review?.allIssues ?? []) {
+      counts.all += 1;
+      if (issue.severity === "critical") counts.critical += 1;
+      else if (issue.severity === "gap") counts.gap += 1;
+      else counts.minor += 1;
+    }
+    return counts;
+  }, [review?.allIssues]);
+
+  /* Filter → group → sort */
+  const groups = useMemo<StructureGroup[]>(() => {
+    const needle = query.trim().toLowerCase();
+    const map = new Map<string, StructureGroup>();
+
+    for (const issue of review?.allIssues ?? []) {
+      if (severity !== "all" && issue.severity !== severity) continue;
+      if (
+        needle &&
+        !issue.structure_name.toLowerCase().includes(needle) &&
+        !issue.message.toLowerCase().includes(needle)
+      )
+        continue;
+
+      let group = map.get(issue.structure_id);
+      if (!group) {
+        group = {
+          id: issue.structure_id,
+          name: issue.structure_name,
+          issues: [],
+          criticalCount: 0,
+        };
+        map.set(issue.structure_id, group);
+      }
+      group.issues.push(issue);
+      if (issue.severity === "critical") group.criticalCount += 1;
+    }
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name);
+      if (sort === "most") return b.issues.length - a.issues.length || a.name.localeCompare(b.name);
+      return (
+        b.criticalCount - a.criticalCount ||
+        b.issues.length - a.issues.length ||
+        a.name.localeCompare(b.name)
+      );
+    });
+    return list;
+  }, [review?.allIssues, query, severity, sort]);
+
+  const pageCount = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageGroups = groups.slice(pageStart, pageStart + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, severity, sort]);
+
+  const allExpanded = pageGroups.length > 0 && pageGroups.every((g) => expandedIds.has(g.id));
+
+  const toggleGroup = (id: string, open: boolean) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllOnPage = () => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      for (const g of pageGroups) {
+        if (allExpanded) next.delete(g.id);
+        else next.add(g.id);
+      }
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setQuery("");
+    setSeverity("all");
+  };
+
+  const SEVERITY_TABS: { value: SeverityFilter; label: string; count: number }[] = [
+    { value: "all", label: "All", count: severityCounts.all },
+    { value: "critical", label: "Critical", count: severityCounts.critical },
+    { value: "gap", label: "Warning", count: severityCounts.gap },
+    { value: "minor", label: "Minor", count: severityCounts.minor },
+  ];
+
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10 space-y-8">
