@@ -101,14 +101,25 @@ export function useClientHealthReview() {
 
   const runReview = useCallback(async (): Promise<ClientReview | null> => {
     setLoading(true);
+    setError(null);
     try {
-      const { data: structures } = await supabase
-        .from("structures")
-        .select("id, name")
-        .is("deleted_at", null)
-        .eq("is_scenario", false);
+      const structures: { id: string; name: string }[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error: sErr } = await supabase
+          .from("structures")
+          .select("id, name")
+          .is("deleted_at", null)
+          .eq("is_scenario", false)
+          .range(from, from + PAGE_SIZE - 1);
+        if (sErr) throw sErr;
+        const batch = data ?? [];
+        structures.push(...batch);
+        if (batch.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
 
-      if (!structures || structures.length === 0) {
+      if (structures.length === 0) {
         const empty: ClientReview = {
           timestamp: new Date().toISOString(),
           clientScore: 100,
