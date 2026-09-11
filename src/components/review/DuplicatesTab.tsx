@@ -160,6 +160,7 @@ export default function DuplicatesTab() {
   const [merging, setMerging] = useState(false);
   const [search, setSearch] = useState("");
   const [confidence, setConfidence] = useState<"all" | ConfidenceLevel>("all");
+  const [sort, setSort] = useState<DuplicateSort>("similarity");
   const [page, setPage] = useState(1);
 
   const loadDuplicates = useCallback(async (): Promise<DuplicateGroup[]> => {
