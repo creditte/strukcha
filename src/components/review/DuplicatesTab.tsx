@@ -177,26 +177,19 @@ export default function DuplicatesTab() {
     // Fetch full entity details
     let entityDetails = new Map<string, any>();
     if (allEntityIds.size > 0) {
-      const { data: entities } = await supabase
-        .from("entities")
-      .select("id, name, entity_type, abn, acn, xpm_uuid, is_trustee_company, is_operating_entity, updated_at, created_at")
-      .in("id", Array.from(allEntityIds))
-      .is("deleted_at", null);
-
-      for (const e of entities ?? []) {
-        entityDetails.set(e.id, e);
+      const ids = Array.from(allEntityIds);
+      for (const part of chunk(ids, 150)) {
+        const { data: entities, error: entErr } = await supabase
+          .from("entities")
+          .select("id, name, entity_type, abn, acn, xpm_uuid, is_trustee_company, is_operating_entity, updated_at, created_at")
+          .in("id", part)
+          .is("deleted_at", null);
+        if (entErr) throw entErr;
+        for (const e of entities ?? []) entityDetails.set(e.id, e);
       }
 
-      // Fetch relationship counts
-      const { data: rels } = await supabase
-        .from("relationships")
-        .select("id, from_entity_id, to_entity_id")
-        .is("deleted_at", null)
-        .or(
-          Array.from(allEntityIds).map((id) => `from_entity_id.eq.${id}`).join(",") +
-          "," +
-          Array.from(allEntityIds).map((id) => `to_entity_id.eq.${id}`).join(",")
-        );
+      // Fetch relationship counts in bounded chunks
+      const rels = await fetchRelationshipsFor(ids);
 
       const outboundCounts = new Map<string, number>();
       const inboundCounts = new Map<string, number>();
