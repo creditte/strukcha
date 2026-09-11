@@ -33,7 +33,7 @@ import type { StructureIssue } from "@/hooks/useClientHealthReview";
 type SeverityFilter = "all" | "critical" | "gap" | "minor";
 type SortMode = "most" | "critical" | "name";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 interface StructureGroup {
   id: string;
@@ -130,12 +130,7 @@ export default function Review() {
   const allExpanded = pageGroups.length > 0 && pageGroups.every((g) => expandedIds.has(g.id));
 
   const toggleGroup = (id: string, open: boolean) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (open) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+    setExpandedIds(open ? new Set([id]) : new Set());
   };
 
   const toggleAllOnPage = () => {
@@ -408,7 +403,11 @@ export default function Review() {
                           variant="outline"
                           className="h-8 gap-1 text-xs"
                           disabled={currentPage === 1}
-                          onClick={() => setPage(currentPage - 1)}
+                        onClick={() => {
+                          setPage(currentPage - 1);
+                          setExpandedIds(new Set());
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
                         >
                           <ChevronLeft className="h-3.5 w-3.5" />
                           Previous
@@ -421,7 +420,11 @@ export default function Review() {
                           variant="outline"
                           className="h-8 gap-1 text-xs"
                           disabled={currentPage === pageCount}
-                          onClick={() => setPage(currentPage + 1)}
+                          onClick={() => {
+                            setPage(currentPage + 1);
+                            setExpandedIds(new Set());
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
                         >
                           Next
                           <ChevronRight className="h-3.5 w-3.5" />
