@@ -186,8 +186,9 @@ export default function TenantSettings({ isAdmin = false }: Props) {
         </p>
       </div>
 
+      <div className="grid items-start gap-4 lg:grid-cols-2">
       {/* Firm Identity */}
-      <Card className="max-w-lg">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Building2 className="h-5 w-5 text-muted-foreground" />
