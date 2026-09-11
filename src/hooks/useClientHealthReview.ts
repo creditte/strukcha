@@ -98,6 +98,7 @@ function getFriendlyLabel(score: number): string {
 export function useClientHealthReview() {
   const [review, setReview] = useState<ClientReview | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const runReview = useCallback(async (): Promise<ClientReview | null> => {
     setLoading(true);
