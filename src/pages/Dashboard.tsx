@@ -385,7 +385,7 @@ export default function Dashboard() {
   const isStale = (updatedAt: string) => differenceInDays(new Date(), new Date(updatedAt)) > 14;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-1 py-6 sm:px-2 sm:py-10 lg:py-14 space-y-10 sm:space-y-14">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8 space-y-8 sm:space-y-10">
       {/* ── Hero Section ── */}
       <section className="space-y-5">
         {dashboardLoading ? (
@@ -454,7 +454,7 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-1.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
+                <div className="flex items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 py-2 pl-3 pr-2">
                   {syncing || disconnecting ? (
                     <Loader2 className="h-4 w-4 animate-spin text-[#0d8ab8]" />
                   ) : (
@@ -502,8 +502,6 @@ export default function Dashboard() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-
-
               )}
               {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
@@ -594,7 +592,7 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-1.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
+                <div className="flex items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 py-2 pl-3 pr-2">
                   {syncing || disconnecting ? (
                     <Loader2 className="h-4 w-4 animate-spin text-[#0d8ab8]" />
                   ) : (
@@ -642,8 +640,6 @@ export default function Dashboard() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-
-
               )}
               {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
@@ -677,13 +673,14 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* ── Sync ran out of structure space ── */}
-      {syncLimitMessage && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
-          <div className="flex items-start gap-3">
+      {/* ── Notices ── */}
+      <div className="space-y-3">
+        {/* Sync ran out of structure space */}
+        {syncLimitMessage && (
+          <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3.5">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-            <div className="space-y-2 text-sm">
-              <p className="font-medium text-foreground">Some client groups were not added</p>
+            <div className="min-w-0 flex-1 space-y-1.5 text-sm">
+              <p className="font-semibold text-foreground">Some client groups were not added</p>
               <p className="text-muted-foreground">{syncLimitMessage}</p>
               {syncJob && syncJob.blockedGroups.length > 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -691,38 +688,38 @@ export default function Dashboard() {
                   {syncJob.groupsBlockedByLimit > 5 ? "…" : ""}
                 </p>
               )}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+              <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                <Button asChild size="sm" variant="outline" className="h-7 rounded-lg text-xs">
                   <Link to="/structures">Manage structures</Link>
                 </Button>
-                <Button asChild size="sm" className="h-7 text-xs">
+                <Button asChild size="sm" className="h-7 rounded-lg text-xs">
                   <Link to="/settings?tab=billing">Upgrade plan</Link>
                 </Button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Billing Banner ── */}
-      <BillingBanner />
+        {/* Billing */}
+        <BillingBanner />
 
-      {/* ── Duplicate Entities Callout ── */}
-      {duplicateCount > 0 && (
-        <Link
-          to="/review?tab=duplicates"
-          className="group flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-5 py-3.5 transition-all hover:border-warning/50 hover:shadow-sm"
-        >
-          <Copy className="h-4 w-4 text-warning shrink-0" />
-          <span className="flex-1 text-sm text-foreground">
-            <span className="font-semibold">
-              {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
-            </span>{" "}
-            detected — review and merge to keep data clean.
-          </span>
-          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-        </Link>
-      )}
+        {/* Duplicate entities */}
+        {duplicateCount > 0 && (
+          <Link
+            to="/review?tab=duplicates"
+            className="group flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3.5 transition-all hover:border-warning/50 hover:shadow-sm"
+          >
+            <Copy className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <span className="min-w-0 flex-1 text-sm leading-relaxed text-foreground">
+              <span className="font-semibold">
+                {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
+              </span>{" "}
+              detected — review and merge to keep data clean.
+            </span>
+            <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        )}
+      </div>
 
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
