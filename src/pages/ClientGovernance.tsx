@@ -146,18 +146,18 @@ export default function ClientGovernance() {
           </p>
         </div>
         {review && (
-          <div className="flex flex-col items-end gap-1.5">
+          <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:items-end">
             <Button
               variant="outline"
               size="sm"
-              className="h-9 gap-2"
+              className="h-10 w-full gap-2 sm:h-9 sm:w-auto"
               onClick={handleRunReview}
               disabled={loading}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               Re-run check
             </Button>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground sm:text-right">
               Last checked{" "}
               {new Date(review.timestamp).toLocaleString("en-AU", {
                 day: "2-digit",
