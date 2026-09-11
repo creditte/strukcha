@@ -545,7 +545,7 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="lg"
-                  className="gap-2 rounded-xl px-6 text-sm font-medium"
+                  className="h-11 gap-2 rounded-xl px-6 text-sm font-medium"
                   onClick={handleCreateNew}
                 >
                   <Plus className="h-4 w-4" />
