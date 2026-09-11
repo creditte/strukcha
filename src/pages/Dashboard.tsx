@@ -454,7 +454,7 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-1.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
+                <div className="flex items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 py-2 pl-3 pr-2">
                   {syncing || disconnecting ? (
                     <Loader2 className="h-4 w-4 animate-spin text-[#0d8ab8]" />
                   ) : (
@@ -502,8 +502,6 @@ export default function Dashboard() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-
-
               )}
               {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
@@ -594,7 +592,7 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-1.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
+                <div className="flex items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 py-2 pl-3 pr-2">
                   {syncing || disconnecting ? (
                     <Loader2 className="h-4 w-4 animate-spin text-[#0d8ab8]" />
                   ) : (
@@ -642,8 +640,6 @@ export default function Dashboard() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-
-
               )}
               {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
