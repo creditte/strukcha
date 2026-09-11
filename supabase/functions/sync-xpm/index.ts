@@ -1229,8 +1229,11 @@ Deno.serve(async (req) => {
     // Pre-flight capacity: refuse outright when the subscription cannot create
     // structures at all, and flag a full workspace so the caller can warn the
     // user before a long run that will not produce new diagrams.
+    // A catalogue-only run just refreshes the list of client groups, so plan
+    // capacity and the current selection are irrelevant to it.
+    const catalogueOnly = body.catalogue_only === true;
     const capacity = await readCapacity(supabase, tenantId);
-    if (capacity.enforced && !capacity.accessEnabled) {
+    if (!catalogueOnly && capacity.enforced && !capacity.accessEnabled) {
       return json({
         error:
           "Your subscription is not active, so client groups cannot be turned into diagrams. Please reactivate your plan and try again.",
