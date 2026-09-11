@@ -208,6 +208,7 @@ export default function IntegrationsSettings() {
                   stopping={syncStopping}
                   onStop={() => stopXpmSync()}
                   onResume={handleSync}
+                  className="w-full sm:w-1/2"
                 />
               )}
 

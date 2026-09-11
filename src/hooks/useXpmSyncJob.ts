@@ -329,7 +329,9 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     label: stalled
       ? "Sync stopped responding — start it again to carry on where it left off"
       : xpmSyncLabel(job),
-    percent: xpmSyncPercent(job),
+    // While a new run is being kicked off, the last job row may still say
+    // "completed" (100%). Never show a full bar for a sync that just began.
+    percent: job?.status === "processing" ? xpmSyncPercent(job) : starting ? 0 : xpmSyncPercent(job),
     limitMessage: xpmSyncLimitMessage(job),
     start,
     stop,
