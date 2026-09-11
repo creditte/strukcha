@@ -561,27 +561,57 @@ export default function DuplicatesTab() {
           </div>
 
           {visibleGroups.length > 0 && (
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search name, ABN or ACN…"
-                  className="h-9 pl-9 text-sm"
+                  className="h-10 pl-9 text-sm sm:h-9"
                 />
               </div>
-              <Select value={confidence} onValueChange={(value) => setConfidence(value as "all" | ConfidenceLevel)}>
-                <SelectTrigger className="h-9 w-full text-sm sm:w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All confidence</SelectItem>
-                  <SelectItem value="exact">Exact matches</SelectItem>
-                  <SelectItem value="high">High similarity</SelectItem>
-                  <SelectItem value="medium">Medium similarity</SelectItem>
-                </SelectContent>
-              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-10 shrink-0 gap-2 text-sm sm:h-9">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    <span className="hidden sm:inline">Filter</span>
+                    {confidence !== "all" && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="text-xs">Match confidence</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={confidence}
+                    onValueChange={(value) => setConfidence(value as "all" | ConfidenceLevel)}
+                  >
+                    <DropdownMenuRadioItem value="all">All confidence</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="exact">Exact matches</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="high">High similarity</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="medium">Medium similarity</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={sort} onValueChange={(value) => setSort(value as DuplicateSort)}>
+                    <DropdownMenuRadioItem value="similarity">Closest match first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="size">Most entities first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  {(confidence !== "all" || search) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSearch("");
+                          setConfidence("all");
+                        }}
+                      >
+                        Clear filters
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
 
