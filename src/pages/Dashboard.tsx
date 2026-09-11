@@ -568,6 +568,7 @@ export default function Dashboard() {
           <>
             <Skeleton className="h-[200px] rounded-2xl" />
             <Skeleton className="h-[200px] rounded-2xl" />
+            {duplicateCount > 0 && <Skeleton className="h-[200px] rounded-2xl" />}
           </>
         ) : structureCount === 0 ? (
           <>
