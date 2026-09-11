@@ -410,7 +410,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {isOwnerOrAdmin && (
-                <Button variant="outline" className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
+                <Button variant="outline" className="h-10 gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
                   <Plus className="h-4 w-4" />
                   Create New Structure
                 </Button>
