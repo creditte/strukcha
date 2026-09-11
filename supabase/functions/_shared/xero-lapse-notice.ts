@@ -24,9 +24,10 @@ export async function notifyXeroConnectionLapsed(
     if (!conn || conn.reauth_notified_at) return;
 
     // Claim the notification first: two workers can fail at the same moment.
+    const notifiedAt = new Date().toISOString();
     const { data: claimed } = await supabase
       .from("xero_connections")
-      .update({ reauth_notified_at: new Date().toISOString() })
+      .update({ reauth_notified_at: notifiedAt })
       .eq("id", connectionId)
       .is("reauth_notified_at", null)
       .select("id");
@@ -49,7 +50,7 @@ export async function notifyXeroConnectionLapsed(
           orgName: conn.xero_org_name ?? undefined,
           reason: reason.slice(0, 240),
         },
-        idempotencyKey: `xero-lapsed:${connectionId}:${claimed[0].id}:${r.email.toLowerCase()}`,
+        idempotencyKey: `xero-lapsed:${connectionId}:${notifiedAt}:${r.email.toLowerCase()}`,
       });
     }
   } catch (e) {
