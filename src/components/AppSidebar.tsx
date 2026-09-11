@@ -25,7 +25,7 @@ const navItems = [
 export default function AppSidebar() {
   const { signOut, user } = useAuth();
   const { tenant } = useSharedTenantSettings();
-  const { duplicateCount } = useDuplicateCount();
+  
 
   const firmName = tenant?.firm_name || tenant?.name;
   const logoUrl = tenant?.logo_url;
