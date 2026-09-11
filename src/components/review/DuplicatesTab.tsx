@@ -484,6 +484,21 @@ export default function DuplicatesTab() {
     );
   }
 
+  if (groupsError) {
+    return (
+      <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="flex-1 space-y-2">
+          <p className="text-sm font-medium text-foreground">We couldn't check for duplicates</p>
+          <p className="text-xs text-muted-foreground">{(groupsError as any)?.message ?? "Please try again."}</p>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => refetchGroups()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (visibleGroups.length === 0 && groups.length === 0) {
     return (
       <Card className="max-w-lg">
