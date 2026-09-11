@@ -563,7 +563,7 @@ export default function Dashboard() {
       </section>
 
       {/* ── Workflow Insight Cards ── */}
-      <section className="grid gap-5 sm:grid-cols-2">
+      <section className={`grid gap-5 sm:grid-cols-2 ${duplicateCount > 0 ? "lg:grid-cols-3" : ""}`}>
         {dashboardLoading ? (
           <>
             <Skeleton className="h-[200px] rounded-2xl" />
