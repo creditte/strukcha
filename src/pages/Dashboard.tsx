@@ -479,6 +479,18 @@ export default function Dashboard() {
             </div>
           </>
         )}
+        {/* Live XPM sync progress — sits with the controls that started it */}
+        {(syncing || syncStalled) && (
+          <XpmSyncProgressCard
+            job={syncJob}
+            label={syncLabel}
+            percent={syncPercent}
+            stalled={syncStalled}
+            stopping={syncStopping}
+            onStop={() => stopXpmSync()}
+            onResume={handleSyncXpm}
+          />
+        )}
       </section>
 
       {/* ── Notices ── */}
