@@ -754,6 +754,14 @@ async function runSlice(
       p.updated_at = new Date().toISOString();
       await saveProgress(supabase, jobId, p);
     }
+    // Catalogue-only: the list is what was asked for, so stop before touching
+    // clients, diagrams or staff.
+    if (p.catalogueOnly) {
+      p.phase = "done";
+      p.stats.wallMs += Date.now() - sliceStartedAt;
+      p.updated_at = new Date().toISOString();
+      return p;
+    }
     const slice = await fetchGroupSlice(supabase, tenantId, p.groupCursor, t.groupsPerRun);
     if (slice.length === 0) {
       p.phase = "staff";
