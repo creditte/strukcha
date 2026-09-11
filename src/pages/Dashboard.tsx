@@ -479,11 +479,7 @@ export default function Dashboard() {
             </div>
           </>
         )}
-      </section>
-
-      {/* ── Notices ── */}
-      <div className="space-y-3">
-        {/* Live XPM sync progress */}
+        {/* Live XPM sync progress — sits with the controls that started it */}
         {(syncing || syncStalled) && (
           <XpmSyncProgressCard
             job={syncJob}
@@ -495,7 +491,10 @@ export default function Dashboard() {
             onResume={handleSyncXpm}
           />
         )}
+      </section>
 
+      {/* ── Notices ── */}
+      <div className="space-y-3">
         {/* Sync ran out of structure space */}
         {syncLimitMessage && <XpmSyncLimitNotice message={syncLimitMessage} job={syncJob} />}
 
