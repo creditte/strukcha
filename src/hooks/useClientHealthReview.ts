@@ -125,13 +125,17 @@ export function useClientHealthReview() {
 
       const structureIds = structures.map((s) => s.id);
 
-      const [seResult, srResult] = await Promise.all([
-        supabase.from("structure_entities").select("structure_id, entity_id").in("structure_id", structureIds),
-        supabase.from("structure_relationships").select("structure_id, relationship_id").in("structure_id", structureIds),
+      const [seRows, srRows] = await Promise.all([
+        fetchAllByIds<{ structure_id: string; entity_id: string }>(
+          "structure_entities", "structure_id, entity_id", "structure_id", structureIds,
+        ),
+        fetchAllByIds<{ structure_id: string; relationship_id: string }>(
+          "structure_relationships", "structure_id, relationship_id", "structure_id", structureIds,
+        ),
       ]);
 
       const seByStruct = new Map<string, string[]>();
-      for (const row of seResult.data ?? []) {
+      for (const row of seRows) {
         const arr = seByStruct.get(row.structure_id) ?? [];
         arr.push(row.entity_id);
         seByStruct.set(row.structure_id, arr);
