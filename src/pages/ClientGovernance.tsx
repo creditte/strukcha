@@ -32,27 +32,27 @@ function getScoreMessage(score: number, count: number): string {
 export default function ClientGovernance() {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { review, loading, runReview: doReview } = useClientHealthReview();
+  const { review, loading, error, progress, runReview: doReview } = useClientHealthReview();
   const [structuresChanged, setStructuresChanged] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [insightFilter, setInsightFilter] = useState<string[] | null>(null);
   const [selectedStructure, setSelectedStructure] = useState<StructureResult | null>(null);
 
+  // "Structures changed" now compares a content stamp of the entities and
+  // relationships inside structures, not any touch of structures.updated_at.
   useEffect(() => {
-    if (!review) return;
-    async function checkChanges() {
-      const { data } = await supabase
-        .from("structures")
-        .select("updated_at")
-        .is("deleted_at", null)
-        .order("updated_at", { ascending: false })
-        .limit(1);
-      if (data?.[0]) {
-        setStructuresChanged(new Date(data[0].updated_at) > new Date(review!.timestamp));
+    if (!review?.fingerprint) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("health_review_fingerprint" as any);
+      if (!cancelled && typeof data === "string") {
+        setStructuresChanged(data !== review.fingerprint);
       }
-    }
-    checkChanges();
-  }, [review]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [review?.fingerprint]);
 
   const handleRunReview = async () => {
     const result = await doReview();
