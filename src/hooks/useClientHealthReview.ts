@@ -45,6 +45,47 @@ export interface StructureIssue extends ScoringIssue {
 
 /* ── Helpers ────────────────────────────────────────────────────── */
 
+/** Chunk a list of ids so request URLs stay well below server limits. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+const ID_CHUNK = 150;
+const PAGE_SIZE = 1000;
+
+/**
+ * Fetch every matching row for a set of ids: ids are chunked (URL length) and
+ * each chunk is paged through (PostgREST caps responses at 1000 rows).
+ */
+async function fetchAllByIds<T = any>(
+  table: string,
+  select: string,
+  column: string,
+  ids: string[],
+  notDeleted = false,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (const ids_ of chunk(ids, ID_CHUNK)) {
+    let from = 0;
+    while (true) {
+      let q = (supabase.from(table as any) as any)
+        .select(select)
+        .in(column, ids_)
+        .range(from, from + PAGE_SIZE - 1);
+      if (notDeleted) q = q.is("deleted_at", null);
+      const { data, error } = await q;
+      if (error) throw error;
+      const batch = (data ?? []) as T[];
+      rows.push(...batch);
+      if (batch.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+  }
+  return rows;
+}
+
 function getFriendlyLabel(score: number): string {
   if (score >= 90) return "Healthy";
   if (score >= 70) return "Minor gaps";
