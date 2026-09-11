@@ -281,26 +281,71 @@ export default function DuplicatesTab() {
     }
 
     result.sort((a, b) => b.similarity - a.similarity);
-    setGroups(result);
-    setLoading(false);
-  }, [user?.id, toast]);
+    return result;
+  }, [tenantId]);
 
-  useEffect(() => {
-    if (user?.id) loadDuplicates();
-  }, [user?.id, loadDuplicates]);
+  const {
+    data: groups = [],
+    isLoading: groupsLoading,
+    error: groupsError,
+    refetch: refetchGroups,
+  } = useQuery({
+    queryKey: qk.duplicateGroups(tenantId),
+    queryFn: loadDuplicates,
+    enabled: !!tenantId,
+    staleTime: staleTimes.stats,
+    retry: false,
+  });
 
-  const dismissGroup = (group: DuplicateGroup) => {
+  const { data: dismissedKeyList = [], isLoading: dismissalsLoading } = useQuery({
+    queryKey: qk.duplicateDismissals(tenantId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("duplicate_dismissals")
+        .select("group_key")
+        .order("group_key");
+      if (error) throw error;
+      return (data ?? []).map((r) => r.group_key);
+    },
+    enabled: !!tenantId,
+    staleTime: staleTimes.stats,
+    retry: false,
+  });
+
+  const dismissedKeys = new Set(dismissedKeyList);
+  const loading = groupsLoading || dismissalsLoading;
+
+  const invalidateDismissals = () =>
+    queryClient.invalidateQueries({ queryKey: qk.duplicateDismissals(tenantId) });
+
+  const dismissGroup = async (group: DuplicateGroup) => {
+    if (!tenantId) return;
     const key = buildGroupKey(group.entities);
-    const next = new Set(dismissedKeys);
-    next.add(key);
-    setDismissedKeys(next);
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+    const { error } = await supabase
+      .from("duplicate_dismissals")
+      .upsert(
+        { tenant_id: tenantId, group_key: key, created_by: user?.id ?? null },
+        { onConflict: "tenant_id,group_key" },
+      );
+    if (error) {
+      toast({ title: "Couldn't dismiss", description: error.message, variant: "destructive" });
+      return;
+    }
+    await invalidateDismissals();
     toast({ title: "Dismissed", description: `"${group.normalizedName}" marked as not a duplicate.` });
   };
 
-  const restoreDismissed = () => {
-    setDismissedKeys(new Set());
-    localStorage.removeItem(DISMISSED_KEY);
+  const restoreDismissed = async () => {
+    if (!tenantId) return;
+    const { error } = await supabase
+      .from("duplicate_dismissals")
+      .delete()
+      .eq("tenant_id", tenantId);
+    if (error) {
+      toast({ title: "Couldn't restore", description: error.message, variant: "destructive" });
+      return;
+    }
+    await invalidateDismissals();
     toast({ title: "Restored", description: "All dismissed groups are visible again." });
   };
 
