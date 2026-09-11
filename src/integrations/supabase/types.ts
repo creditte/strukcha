@@ -1366,6 +1366,7 @@ export type Database = {
           last_error: string | null
           last_error_at: string | null
           last_refresh_at: string | null
+          reauth_notified_at: string | null
           refresh_lock_until: string | null
           refresh_token: string
           scopes: string | null
@@ -1388,6 +1389,7 @@ export type Database = {
           last_error?: string | null
           last_error_at?: string | null
           last_refresh_at?: string | null
+          reauth_notified_at?: string | null
           refresh_lock_until?: string | null
           refresh_token: string
           scopes?: string | null
@@ -1410,6 +1412,7 @@ export type Database = {
           last_error?: string | null
           last_error_at?: string | null
           last_refresh_at?: string | null
+          reauth_notified_at?: string | null
           refresh_lock_until?: string | null
           refresh_token?: string
           scopes?: string | null
@@ -1420,7 +1423,15 @@ export type Database = {
           xero_org_name?: string | null
           xero_tenant_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "xero_connections_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       xero_oauth_states: {
         Row: {
