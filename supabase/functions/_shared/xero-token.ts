@@ -54,7 +54,10 @@ function isFresh(row: XeroConnectionRow): boolean {
   return Number.isFinite(expires) && expires - Date.now() > RENEW_WINDOW_MS;
 }
 
-/** Record that the connection can no longer be used without reconnecting. */
+/**
+ * Record that the connection can no longer be used without reconnecting, and
+ * warn the firm's owner/admins once so a paused firm isn't left in the dark.
+ */
 export async function markXeroConnectionInvalid(
   supabase: any,
   connectionId: string,
@@ -71,6 +74,15 @@ export async function markXeroConnectionInvalid(
       updated_at: new Date().toISOString(),
     })
     .eq("id", connectionId);
+
+  // Loaded on demand: the email renderer is heavy and only needed when a
+  // connection actually breaks.
+  try {
+    const { notifyXeroConnectionLapsed } = await import("./xero-lapse-notice.ts");
+    await notifyXeroConnectionLapsed(supabase, connectionId, reason);
+  } catch (e) {
+    console.error("[xero-token] lapse warning failed:", e);
+  }
 }
 
 /** Clear a previous failure once Xero answers normally again. */
@@ -85,6 +97,8 @@ export async function markXeroConnectionHealthy(
       last_error: null,
       last_error_at: null,
       invalidated_at: null,
+      // Cleared so the next breakage warns again.
+      reauth_notified_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", connectionId);
