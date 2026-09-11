@@ -39,7 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle, Merge, Loader2, AlertTriangle, AlertCircle, Shield, Building2, Undo2, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle, Merge, Loader2, AlertTriangle, AlertCircle, Shield, Building2, Undo2, X, Search, SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
