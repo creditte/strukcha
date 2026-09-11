@@ -142,7 +142,7 @@ export function useClientHealthReview() {
       }
 
       const srByStruct = new Map<string, string[]>();
-      for (const row of srResult.data ?? []) {
+      for (const row of srRows) {
         const arr = srByStruct.get(row.structure_id) ?? [];
         arr.push(row.relationship_id);
         srByStruct.set(row.structure_id, arr);
@@ -153,26 +153,24 @@ export function useClientHealthReview() {
       for (const ids of seByStruct.values()) ids.forEach((id) => allEntityIds.add(id));
       for (const ids of srByStruct.values()) ids.forEach((id) => allRelIds.add(id));
 
-      const [entResult, relResult] = await Promise.all([
-        allEntityIds.size > 0
-          ? supabase.from("entities")
-              .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
-              .in("id", Array.from(allEntityIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
-        allRelIds.size > 0
-          ? supabase.from("relationships")
-              .select("id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at")
-              .in("id", Array.from(allRelIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
+      const [entRows, relRows] = await Promise.all([
+        fetchAllByIds<any>(
+          "entities",
+          "id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at",
+          "id", Array.from(allEntityIds), true,
+        ),
+        fetchAllByIds<any>(
+          "relationships",
+          "id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at",
+          "id", Array.from(allRelIds), true,
+        ),
       ]);
 
       const entityById = new Map<string, EntityNode>();
-      for (const e of (entResult.data ?? []) as any[]) entityById.set(e.id, e as EntityNode);
+      for (const e of entRows) entityById.set(e.id, e as EntityNode);
 
       const relById = new Map<string, RelationshipEdge>();
-      for (const r of (relResult.data ?? []) as any[]) {
+      for (const r of relRows) {
         relById.set(r.id, {
           id: r.id, from_entity_id: r.from_entity_id, to_entity_id: r.to_entity_id,
           relationship_type: r.relationship_type, source_data: r.source,
