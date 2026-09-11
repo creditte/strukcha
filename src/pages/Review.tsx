@@ -25,7 +25,7 @@ const SEVERITY_STYLES: Record<string, { bg: string; text: string; icon: typeof A
 
 export default function Review() {
   const navigate = useNavigate();
-  const { review, loading, runReview } = useClientHealthReview();
+  const { review, loading, error, runReview } = useClientHealthReview();
 
   useEffect(() => {
     runReview();
