@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,11 +24,8 @@ const SEVERITY_STYLES: Record<string, { bg: string; text: string; icon: typeof A
 
 export default function Review() {
   const navigate = useNavigate();
-  const { review, loading, error, runReview } = useClientHealthReview();
+  const { review, loading, error, progress, runReview } = useClientHealthReview();
 
-  useEffect(() => {
-    runReview();
-  }, []);
 
   const issueCount = review?.allIssues.length ?? 0;
   const totalStructures = review?.structures.length ?? 0;
@@ -52,7 +48,11 @@ export default function Review() {
           Review &amp; Improve
         </h1>
         {loading ? (
-          <Skeleton className="h-5 w-48" />
+          <p className="text-sm text-muted-foreground">
+            {progress
+              ? `Checking structures — ${progress.scored} of ${progress.total}`
+              : "Loading your structures…"}
+          </p>
         ) : allResolved ? (
           <p className="text-base text-muted-foreground">
             All issues resolved. Your structures are ready.

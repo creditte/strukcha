@@ -13,9 +13,9 @@ import {
   ArrowRight,
   AlertCircle,
 } from "lucide-react";
-import { getHealthStatus } from "@/lib/structureScoring";
+import { SCORE_BANDS, getScoreBand } from "@/lib/structureScoring";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
-import type { StructureResult, ClientReview, CrossObservation } from "@/hooks/useClientHealthReview";
+import type { StructureResult } from "@/hooks/useClientHealthReview";
 import StructureIssuesPanel from "@/components/health/StructureIssuesPanel";
 
 /* ── Friendly labels ────────────────────────────────────────────── */
@@ -27,51 +27,32 @@ function getScoreMessage(score: number, count: number): string {
   return "Your structures need attention.";
 }
 
-function getDialLabel(score: number): { text: string; color: string } {
-  if (score >= 90) return { text: "Healthy", color: "text-success" };
-  if (score >= 70) return { text: "Minor gaps", color: "text-warning" };
-  if (score >= 41) return { text: "Needs attention", color: "text-warning" };
-  return { text: "Critical", color: "text-destructive" };
-}
-
-const STATUS_DOT: Record<string, string> = {
-  good: "bg-success",
-  warning: "bg-warning",
-  critical: "bg-destructive",
-};
-
-const STATUS_PILL: Record<string, string> = {
-  good: "bg-success/15 text-success",
-  warning: "bg-warning/15 text-warning",
-  critical: "bg-destructive/15 text-destructive",
-};
-
 /* ── Page ───────────────────────────────────────────────────────── */
 
 export default function ClientGovernance() {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { review, loading, runReview: doReview } = useClientHealthReview();
+  const { review, loading, error, progress, runReview: doReview } = useClientHealthReview();
   const [structuresChanged, setStructuresChanged] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [insightFilter, setInsightFilter] = useState<string[] | null>(null);
   const [selectedStructure, setSelectedStructure] = useState<StructureResult | null>(null);
 
+  // "Structures changed" now compares a content stamp of the entities and
+  // relationships inside structures, not any touch of structures.updated_at.
   useEffect(() => {
-    if (!review) return;
-    async function checkChanges() {
-      const { data } = await supabase
-        .from("structures")
-        .select("updated_at")
-        .is("deleted_at", null)
-        .order("updated_at", { ascending: false })
-        .limit(1);
-      if (data?.[0]) {
-        setStructuresChanged(new Date(data[0].updated_at) > new Date(review!.timestamp));
+    if (!review?.fingerprint) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("health_review_fingerprint" as any);
+      if (!cancelled && typeof data === "string") {
+        setStructuresChanged(data !== review.fingerprint);
       }
-    }
-    checkChanges();
-  }, [review]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [review?.fingerprint]);
 
   const handleRunReview = async () => {
     const result = await doReview();
@@ -110,8 +91,22 @@ export default function ClientGovernance() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 space-y-14">
+      {/* ── Load failure ── */}
+      {!loading && error && (
+        <section className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="flex-1 space-y-2">
+            <p className="text-sm font-medium text-foreground">We couldn't run the health check</p>
+            <p className="text-xs text-muted-foreground">{error}</p>
+            <Button size="sm" variant="outline" className="text-xs" onClick={handleRunReview}>
+              Try again
+            </Button>
+          </div>
+        </section>
+      )}
+
       {/* ── Hero / Empty State ── */}
-      {!review && !loading && (
+      {!review && !loading && !error && (
         <section className="text-center py-12 space-y-5">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-success/10">
             <HeartPulse className="h-8 w-8 text-success" />
@@ -143,6 +138,11 @@ export default function ClientGovernance() {
               <Skeleton className="h-5 w-72" />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            {progress
+              ? `Checking structures — ${progress.scored} of ${progress.total}`
+              : "Loading your structures…"}
+          </p>
           <div className="flex items-center gap-8">
             <Skeleton className="h-24 w-24 rounded-full" />
             <div className="flex gap-0 rounded-xl border border-border/60">
@@ -214,8 +214,8 @@ export default function ClientGovernance() {
                   <span className="text-2xl font-bold tabular-nums text-foreground leading-none">
                     {review.clientScore}
                   </span>
-                  <span className={`text-[10px] font-medium mt-0.5 ${getDialLabel(review.clientScore).color}`}>
-                    {getDialLabel(review.clientScore).text}
+                  <span className={`text-[10px] font-medium mt-0.5 ${getScoreBand(review.clientScore).text}`}>
+                    {getScoreBand(review.clientScore).label}
                   </span>
                 </div>
               </div>
@@ -236,18 +236,12 @@ export default function ClientGovernance() {
 
             {/* Score legend */}
             <div className="flex items-center gap-5 text-[11px] text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-success" />
-                <span>90–100 Healthy</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-warning" />
-                <span>50–89 Needs attention</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-destructive" />
-                <span>Below 50 Critical</span>
-              </div>
+              {SCORE_BANDS.map((band) => (
+                <div key={band.status} className="flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full ${band.dot}`} />
+                  <span>{band.range}</span>
+                </div>
+              ))}
             </div>
 
             {structuresChanged && (
@@ -401,13 +395,13 @@ export default function ClientGovernance() {
                   className="group w-full flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm text-left"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div className={`h-2 w-2 rounded-full shrink-0 ${STATUS_DOT[s.status]}`} />
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${getScoreBand(s.score).dot}`} />
                     <span className="text-sm font-medium text-foreground">{s.name}</span>
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm font-semibold tabular-nums text-foreground w-12 text-right">{s.score}</span>
                     <Badge
-                      className={`text-[11px] rounded-full border-0 font-medium w-24 justify-center ${STATUS_PILL[s.status]}`}
+                      className={`text-[11px] rounded-full border-0 font-medium w-28 justify-center ${getScoreBand(s.score).pill}`}
                     >
                       {s.friendlyLabel}
                     </Badge>
