@@ -376,13 +376,13 @@ export default function ClientGovernance() {
                   className="group w-full flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 transition-all hover:border-border hover:shadow-sm text-left"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div className={`h-2 w-2 rounded-full shrink-0 ${STATUS_DOT[s.status]}`} />
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${getScoreBand(s.score).dot}`} />
                     <span className="text-sm font-medium text-foreground">{s.name}</span>
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm font-semibold tabular-nums text-foreground w-12 text-right">{s.score}</span>
                     <Badge
-                      className={`text-[11px] rounded-full border-0 font-medium w-24 justify-center ${STATUS_PILL[s.status]}`}
+                      className={`text-[11px] rounded-full border-0 font-medium w-28 justify-center ${getScoreBand(s.score).pill}`}
                     >
                       {s.friendlyLabel}
                     </Badge>
