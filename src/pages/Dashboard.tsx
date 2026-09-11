@@ -483,19 +483,6 @@ export default function Dashboard() {
 
       {/* ── Notices ── */}
       <div className="space-y-3">
-        {/* Live XPM sync progress */}
-        {(syncing || syncStalled) && (
-          <XpmSyncProgressCard
-            job={syncJob}
-            label={syncLabel}
-            percent={syncPercent}
-            stalled={syncStalled}
-            stopping={syncStopping}
-            onStop={() => stopXpmSync()}
-            onResume={handleSyncXpm}
-          />
-        )}
-
         {/* Sync ran out of structure space */}
         {syncLimitMessage && <XpmSyncLimitNotice message={syncLimitMessage} job={syncJob} />}
 
