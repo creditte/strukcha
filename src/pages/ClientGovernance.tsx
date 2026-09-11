@@ -46,7 +46,7 @@ function getScoreMessage(score: number, count: number): string {
 }
 
 const STRUCTURE_PAGE_SIZE = 15;
-const INSIGHT_PAGE_SIZE = 5;
+const INSIGHT_CHIP_LIMIT = 6;
 
 /* ── Page ───────────────────────────────────────────────────────── */
 
