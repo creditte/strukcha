@@ -717,20 +717,23 @@ export default function Dashboard() {
             {duplicateCount > 0 && (
               <Link
                 to="/review?tab=duplicates"
-                className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+                className="group rounded-2xl border border-warning/30 bg-warning/5 p-6 transition-all hover:border-warning/50 hover:shadow-sm"
               >
                 <div className="mb-3 flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
-                    <Copy className="h-5 w-5 text-muted-foreground" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-warning/10">
+                    <AlertTriangle className="h-5 w-5 text-warning" />
                   </div>
-                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 font-medium border-border text-muted-foreground">
-                    {duplicateCount} potential
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 font-medium border-warning/40 text-warning">
+                    {duplicateCount} to review
                   </Badge>
                 </div>
                 <h3 className="text-[15px] font-semibold text-foreground">Duplicates</h3>
                 <div className="mt-1.5 space-y-1">
                   <p className="text-sm text-muted-foreground">
-                    {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""} detected.
+                    <span className="font-medium text-warning">
+                      {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
+                    </span>{" "}
+                    detected.
                   </p>
                   <p className="text-[11px] text-muted-foreground/70">
                     Review and merge to keep data clean.
