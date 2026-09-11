@@ -61,7 +61,7 @@ export default function ClientGovernance() {
   const [structureQuery, setStructureQuery] = useState("");
   const [structureSort, setStructureSort] = useState<"attention" | "name" | "score">("attention");
   const [structurePage, setStructurePage] = useState(1);
-  const [insightPage, setInsightPage] = useState(1);
+  const [showAllInsights, setShowAllInsights] = useState(false);
 
   // "Structures changed" now compares a content stamp of the entities and
   // relationships inside structures, not any touch of structures.updated_at.
