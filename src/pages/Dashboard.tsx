@@ -13,6 +13,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -38,6 +40,8 @@ import {
   Copy,
   ListChecks,
   X,
+  ChevronDown,
+
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
@@ -448,47 +452,51 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-2 rounded-xl border border-[#13B5EA]/30 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
-                  <XeroLogo className="h-4 w-4 shrink-0" />
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">Connected to Xero</span>
-                    {xeroConnection.xero_org_name && (
-                      <span className="max-w-[180px] truncate text-xs font-medium text-foreground sm:max-w-[240px]">
-                        {xeroConnection.xero_org_name}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="gap-2 rounded-xl px-4 text-sm font-medium border-[#13B5EA]/40 bg-[#13B5EA]/5 hover:bg-[#13B5EA]/10 hover:border-[#13B5EA]"
+                      disabled={disconnecting}
+                    >
+                      {syncing || disconnecting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <XeroLogo className="h-4 w-4" />
+                      )}
+                      <span className="max-w-[180px] truncate">
+                        {syncing ? "Syncing XPM…" : disconnecting ? "Disconnecting…" : "Connected to Xero"}
                       </span>
-                    )}
-                  </div>
-                  <div className="mx-1 h-6 w-px bg-[#13B5EA]/20" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
-                    onClick={handleSyncXpm}
-                    disabled={syncing || xeroInvalid}
-                  >
-                    {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {syncing ? "Syncing XPM…" : "Sync XPM"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-foreground hover:bg-[#13B5EA]/10"
-                    onClick={() => setShowGroupPicker(true)}
-                  >
-                    <ListChecks className="h-3.5 w-3.5" />
-                    Choose groups
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
-                    onClick={handleDisconnectXero}
-                    disabled={disconnecting}
-                  >
-                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                    {disconnecting ? "Disconnecting…" : "Disconnect"}
-                  </Button>
-                </div>
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuLabel className="flex flex-col gap-0.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">
+                        Connected to Xero
+                      </span>
+                      <span className="truncate text-xs font-normal text-muted-foreground">
+                        {xeroConnection.xero_org_name || "Xero organisation"}
+                      </span>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSyncXpm} disabled={syncing || xeroInvalid}>
+                      <RefreshCw className="mr-2 h-3.5 w-3.5" /> Sync XPM
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowGroupPicker(true)}>
+                      <ListChecks className="mr-2 h-3.5 w-3.5" /> Choose groups
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleDisconnectXero}
+                      disabled={disconnecting}
+                      className="text-muted-foreground focus:text-destructive"
+                    >
+                      <Unplug className="mr-2 h-3.5 w-3.5" /> Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
               )}
               {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
@@ -579,47 +587,51 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-2 rounded-xl border border-[#13B5EA]/30 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
-                  <XeroLogo className="h-4 w-4 shrink-0" />
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">Connected to Xero</span>
-                    {xeroConnection.xero_org_name && (
-                      <span className="max-w-[180px] truncate text-xs font-medium text-foreground sm:max-w-[240px]">
-                        {xeroConnection.xero_org_name}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="gap-2 rounded-xl px-4 text-sm font-medium border-[#13B5EA]/40 bg-[#13B5EA]/5 hover:bg-[#13B5EA]/10 hover:border-[#13B5EA]"
+                      disabled={disconnecting}
+                    >
+                      {syncing || disconnecting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <XeroLogo className="h-4 w-4" />
+                      )}
+                      <span className="max-w-[180px] truncate">
+                        {syncing ? "Syncing XPM…" : disconnecting ? "Disconnecting…" : "Connected to Xero"}
                       </span>
-                    )}
-                  </div>
-                  <div className="mx-1 h-6 w-px bg-[#13B5EA]/20" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
-                    onClick={handleSyncXpm}
-                    disabled={syncing || xeroInvalid}
-                  >
-                    {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {syncing ? "Syncing XPM…" : "Sync XPM"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-foreground hover:bg-[#13B5EA]/10"
-                    onClick={() => setShowGroupPicker(true)}
-                  >
-                    <ListChecks className="h-3.5 w-3.5" />
-                    Choose groups
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
-                    onClick={handleDisconnectXero}
-                    disabled={disconnecting}
-                  >
-                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                    {disconnecting ? "Disconnecting…" : "Disconnect"}
-                  </Button>
-                </div>
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuLabel className="flex flex-col gap-0.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">
+                        Connected to Xero
+                      </span>
+                      <span className="truncate text-xs font-normal text-muted-foreground">
+                        {xeroConnection.xero_org_name || "Xero organisation"}
+                      </span>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSyncXpm} disabled={syncing || xeroInvalid}>
+                      <RefreshCw className="mr-2 h-3.5 w-3.5" /> Sync XPM
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowGroupPicker(true)}>
+                      <ListChecks className="mr-2 h-3.5 w-3.5" /> Choose groups
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleDisconnectXero}
+                      disabled={disconnecting}
+                      className="text-muted-foreground focus:text-destructive"
+                    >
+                      <Unplug className="mr-2 h-3.5 w-3.5" /> Disconnect
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
               )}
               {(syncing || syncStalled) && (
                 <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
