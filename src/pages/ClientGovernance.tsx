@@ -363,6 +363,124 @@ export default function ClientGovernance() {
                   );
                 })}
               </div>
+              {insightPageCount > 1 && (
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    Insights {(currentInsightPage - 1) * INSIGHT_PAGE_SIZE + 1}–
+                    {Math.min(currentInsightPage * INSIGHT_PAGE_SIZE, review.crossObservations.length)} of{" "}
+                    {review.crossObservations.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Previous insights" disabled={currentInsightPage === 1} onClick={() => setInsightPage(currentInsightPage - 1)}>
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">{currentInsightPage} / {insightPageCount}</span>
+                    <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Next insights" disabled={currentInsightPage === insightPageCount} onClick={() => setInsightPage(currentInsightPage + 1)}>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── Structures list ── */}
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold text-foreground">
+                {filterLabel ? "Filtered structures" : "All structures"}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {filterLabel ?? "Select a structure to see its issues in detail."}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={structureQuery}
+                  onChange={(event) => setStructureQuery(event.target.value)}
+                  placeholder="Search structures…"
+                  className="h-10 pl-9 text-sm sm:h-9"
+                />
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-10 shrink-0 gap-2 text-sm sm:h-9">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    <span className="hidden sm:inline">Filter</span>
+                    {(statusFilter || insightFilter) && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="text-xs">Status</DropdownMenuLabel>
+                  {review.criticalStructures > 0 && (
+                    <DropdownMenuCheckboxItem
+                      checked={statusFilter === "critical"}
+                      onCheckedChange={(checked) => {
+                        setInsightFilter(null);
+                        setStatusFilter(checked ? "critical" : null);
+                      }}
+                    >
+                      <AlertCircle className="mr-2 h-3.5 w-3.5 text-destructive" />
+                      Critical ({review.criticalStructures})
+                    </DropdownMenuCheckboxItem>
+                  )}
+                  {review.needsAttention > review.criticalStructures && (
+                    <DropdownMenuCheckboxItem
+                      checked={statusFilter === "warning"}
+                      onCheckedChange={(checked) => {
+                        setInsightFilter(null);
+                        setStatusFilter(checked ? "warning" : null);
+                      }}
+                    >
+                      <AlertTriangle className="mr-2 h-3.5 w-3.5 text-warning" />
+                      Need improvements ({review.needsAttention - review.criticalStructures})
+                    </DropdownMenuCheckboxItem>
+                  )}
+                  {healthyCount > 0 && (
+                    <DropdownMenuCheckboxItem
+                      checked={statusFilter === "good"}
+                      onCheckedChange={(checked) => {
+                        setInsightFilter(null);
+                        setStatusFilter(checked ? "good" : null);
+                      }}
+                    >
+                      <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-success" />
+                      Healthy ({healthyCount})
+                    </DropdownMenuCheckboxItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={structureSort}
+                    onValueChange={(value) => setStructureSort(value as "attention" | "name" | "score")}
+                  >
+                    <DropdownMenuRadioItem value="attention">Needs attention first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="score">Highest score first</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  {(statusFilter || insightFilter) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setStatusFilter(null);
+                          setInsightFilter(null);
+                        }}
+                      >
+                        Clear filters
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+
 
 
             <Card className="overflow-hidden">
