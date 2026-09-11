@@ -375,14 +375,20 @@ export default function DuplicatesTab() {
   const dismissedCount = groups.length - visibleGroups.length;
   const filteredGroups = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return visibleGroups.filter((group) => {
+    const list = visibleGroups.filter((group) => {
       if (confidence !== "all" && group.confidence !== confidence) return false;
       if (!needle) return true;
       return group.entities.some((entity) =>
         [entity.name, entity.abn, entity.acn].some((value) => value?.toLowerCase().includes(needle)),
       );
     });
-  }, [visibleGroups, search, confidence]);
+    return [...list].sort((a, b) => {
+      if (sort === "name") return a.normalizedName.localeCompare(b.normalizedName);
+      if (sort === "size")
+        return b.entities.length - a.entities.length || b.similarity - a.similarity;
+      return b.similarity - a.similarity || b.entities.length - a.entities.length;
+    });
+  }, [visibleGroups, search, confidence, sort]);
   const pageCount = Math.max(1, Math.ceil(filteredGroups.length / DUPLICATE_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * DUPLICATE_PAGE_SIZE;
@@ -390,7 +396,7 @@ export default function DuplicatesTab() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, confidence]);
+  }, [search, confidence, sort]);
 
   const openMergeDialog = (group: DuplicateGroup) => {
     const types = new Set(group.entities.map((e) => e.type));
