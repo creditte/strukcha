@@ -511,22 +511,6 @@ export default function Dashboard() {
         {/* Billing */}
         <BillingBanner />
 
-        {/* Duplicate entities */}
-        {duplicateCount > 0 && (
-          <Link
-            to="/review?tab=duplicates"
-            className="group flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3.5 transition-all hover:border-warning/50 hover:shadow-sm"
-          >
-            <Copy className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <span className="min-w-0 flex-1 text-sm leading-relaxed text-foreground">
-              <span className="font-semibold">
-                {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
-              </span>{" "}
-              detected — review and merge to keep data clean.
-            </span>
-            <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-          </Link>
-        )}
       </div>
 
       {/* ── Metric Cards ── */}
@@ -579,7 +563,7 @@ export default function Dashboard() {
       </section>
 
       {/* ── Workflow Insight Cards ── */}
-      <section className="grid gap-5 sm:grid-cols-2">
+      <section className={`grid gap-5 sm:grid-cols-2 ${duplicateCount > 0 ? "lg:grid-cols-3" : ""}`}>
         {dashboardLoading ? (
           <>
             <Skeleton className="h-[200px] rounded-2xl" />
@@ -728,6 +712,37 @@ export default function Dashboard() {
                 </span>
               </Button>
             </Link>
+
+            {/* Duplicates — grouped with the other quality cards */}
+            {duplicateCount > 0 && (
+              <Link
+                to="/review?tab=duplicates"
+                className="group rounded-2xl border border-border/60 bg-card p-6 transition-all hover:border-border hover:shadow-sm"
+              >
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+                    <Copy className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 font-medium border-border text-muted-foreground">
+                    {duplicateCount} potential
+                  </Badge>
+                </div>
+                <h3 className="text-[15px] font-semibold text-foreground">Duplicates</h3>
+                <div className="mt-1.5 space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""} detected.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/70">
+                    Review and merge to keep data clean.
+                  </p>
+                </div>
+                <Button variant="secondary" size="sm" className="mt-4 gap-1.5 text-xs" asChild>
+                  <span>
+                    Review Duplicates <ArrowRight className="h-3 w-3" />
+                  </span>
+                </Button>
+              </Link>
+            )}
           </>
         )}
       </section>
