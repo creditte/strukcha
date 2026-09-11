@@ -283,7 +283,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
 
       {/* Export Defaults (admin only) */}
       {isAdmin && (
-        <Card className="max-w-lg">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="h-5 w-5 text-muted-foreground" />
