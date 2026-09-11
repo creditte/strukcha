@@ -1256,6 +1256,11 @@ Deno.serve(async (req) => {
     // freshness window. Routine syncs leave recently read groups alone.
     progress.fullSync = body.full_sync === true;
     progress.capacityRemaining = capacity.remaining;
+    if (catalogueOnly) {
+      progress.catalogueOnly = true;
+      // Skip straight to the group list: no clients, diagrams or staff.
+      progress.phase = "groups";
+    }
     const { data: jobRow, error: jobErr } = await supabase
       .from("import_logs")
       .insert({
@@ -1285,7 +1290,10 @@ Deno.serve(async (req) => {
       atCapacity: noCapacity,
       selectedGroups: selectedCount ?? 0,
       nothingSelected,
-      message: nothingSelected
+      catalogueOnly,
+      message: catalogueOnly
+        ? "Loading your client group list from Xero Practice Manager. This only reads the list — nothing is created yet."
+        : nothingSelected
         ? "Sync started, but no client groups are selected yet. Choose the client groups you want as diagrams, then run the sync again."
         : noCapacity
         ? `Sync started, but your workspace is full (${capacity.used} of ${capacity.limit} structures). Existing diagrams will be refreshed; new client groups can't be added until you archive a structure or upgrade.`
