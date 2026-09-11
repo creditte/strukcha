@@ -95,8 +95,16 @@ export default function Dashboard() {
     limitMessage: syncLimitMessage,
     start: startXpmSync,
     stop: stopXpmSync,
+    refreshCatalogue: refreshXpmCatalogue,
   } = useXpmSyncJob({
     onFinished: (finished) => {
+      // Loading just the group list happens while the picker is open — a page
+      // reload there would throw away what the user is doing.
+      if (catalogueRun.current) {
+        catalogueRun.current = false;
+        if (finished.error) reportXeroError(finished.error);
+        return;
+      }
       // A failed sync must never reload the page — the reload wipes the error
       // message before the user can read it. Only a successful run refreshes
       // the dashboard data; a failure keeps the message and, when Xero asked
