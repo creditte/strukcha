@@ -1,51 +1,56 @@
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertTriangle,
   Copy,
   Download,
   ListChecks,
   AlertCircle,
-  CircleDot,
-  ArrowRight,
   CheckCircle2,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import DuplicatesTab from "@/components/review/DuplicatesTab";
+import StructureIssueGroup from "@/components/review/StructureIssueGroup";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
 import type { StructureIssue } from "@/hooks/useClientHealthReview";
 
-const SEVERITY_STYLES: Record<
-  string,
-  { label: string; icon: typeof AlertCircle; iconClass: string; badgeClass: string }
-> = {
-  critical: {
-    label: "Critical",
-    icon: AlertCircle,
-    iconClass: "text-destructive",
-    badgeClass: "bg-destructive/10 text-destructive",
-  },
-  gap: {
-    label: "Warning",
-    icon: AlertTriangle,
-    iconClass: "text-warning",
-    badgeClass: "bg-warning/10 text-warning",
-  },
-  minor: {
-    label: "Minor",
-    icon: CircleDot,
-    iconClass: "text-muted-foreground",
-    badgeClass: "bg-muted text-muted-foreground",
-  },
-};
+type SeverityFilter = "all" | "critical" | "gap" | "minor";
+type SortMode = "most" | "critical" | "name";
+
+const PAGE_SIZE = 20;
+
+interface StructureGroup {
+  id: string;
+  name: string;
+  issues: StructureIssue[];
+  criticalCount: number;
+}
 
 export default function Review() {
   const navigate = useNavigate();
   const { review, loading, error, progress, runReview } = useClientHealthReview();
+
+  const [query, setQuery] = useState("");
+  const [severity, setSeverity] = useState<SeverityFilter>("all");
+  const [sort, setSort] = useState<SortMode>("critical");
+  const [page, setPage] = useState(1);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const issueCount = review?.allIssues.length ?? 0;
   const totalStructures = review?.structures.length ?? 0;
@@ -54,13 +59,108 @@ export default function Review() {
   const allResolved = !loading && review !== null && issueCount === 0;
   const healthyPct = totalStructures > 0 ? Math.round((healthyCount / totalStructures) * 100) : 100;
 
-  // Group issues by structure for display
-  const issuesByStructure = new Map<string, StructureIssue[]>();
-  for (const issue of review?.allIssues ?? []) {
-    const arr = issuesByStructure.get(issue.structure_id) ?? [];
-    arr.push(issue);
-    issuesByStructure.set(issue.structure_id, arr);
-  }
+  /* Severity counts always reflect the full, unfiltered set */
+  const severityCounts = useMemo(() => {
+    const counts = { all: 0, critical: 0, gap: 0, minor: 0 };
+    for (const issue of review?.allIssues ?? []) {
+      counts.all += 1;
+      if (issue.severity === "critical") counts.critical += 1;
+      else if (issue.severity === "gap") counts.gap += 1;
+      else counts.minor += 1;
+    }
+    return counts;
+  }, [review?.allIssues]);
+
+  /* Filter → group → sort */
+  const groups = useMemo<StructureGroup[]>(() => {
+    const needle = query.trim().toLowerCase();
+    const map = new Map<string, StructureGroup>();
+
+    for (const issue of review?.allIssues ?? []) {
+      if (severity !== "all" && issue.severity !== severity) continue;
+      if (
+        needle &&
+        !issue.structure_name.toLowerCase().includes(needle) &&
+        !issue.message.toLowerCase().includes(needle)
+      )
+        continue;
+
+      let group = map.get(issue.structure_id);
+      if (!group) {
+        group = {
+          id: issue.structure_id,
+          name: issue.structure_name,
+          issues: [],
+          criticalCount: 0,
+        };
+        map.set(issue.structure_id, group);
+      }
+      group.issues.push(issue);
+      if (issue.severity === "critical") group.criticalCount += 1;
+    }
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => {
+      if (sort === "name") return a.name.localeCompare(b.name);
+      if (sort === "most") return b.issues.length - a.issues.length || a.name.localeCompare(b.name);
+      return (
+        b.criticalCount - a.criticalCount ||
+        b.issues.length - a.issues.length ||
+        a.name.localeCompare(b.name)
+      );
+    });
+    return list;
+  }, [review?.allIssues, query, severity, sort]);
+
+  const pageCount = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageGroups = groups.slice(pageStart, pageStart + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, severity, sort]);
+
+  /* Keep the first structure open so the list never looks empty */
+  const firstGroupId = groups[0]?.id;
+  useEffect(() => {
+    if (firstGroupId) setExpandedIds((prev) => (prev.size === 0 ? new Set([firstGroupId]) : prev));
+  }, [firstGroupId]);
+
+  const allExpanded = pageGroups.length > 0 && pageGroups.every((g) => expandedIds.has(g.id));
+
+  const toggleGroup = (id: string, open: boolean) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllOnPage = () => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      for (const g of pageGroups) {
+        if (allExpanded) next.delete(g.id);
+        else next.add(g.id);
+      }
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setQuery("");
+    setSeverity("all");
+  };
+
+  const SEVERITY_TABS: { value: SeverityFilter; label: string; count: number }[] = [
+    { value: "all", label: "All", count: severityCounts.all },
+    { value: "critical", label: "Critical", count: severityCounts.critical },
+    { value: "gap", label: "Warning", count: severityCounts.gap },
+    { value: "minor", label: "Minor", count: severityCounts.minor },
+  ];
+
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10 space-y-8">
@@ -217,66 +317,120 @@ export default function Review() {
               </Button>
             </div>
           ) : (
-            /* ── Issue list grouped by structure ── */
             <div className="space-y-4">
-              {Array.from(issuesByStructure.entries()).map(([structureId, issues]) => {
-                const structureName = issues[0]?.structure_name ?? "Unknown";
-                const criticalCount = issues.filter((i) => i.severity === "critical").length;
-                return (
-                  <Card key={structureId} className="overflow-hidden">
-                    {/* Structure header */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/30 px-5 py-3">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold text-foreground">{structureName}</h3>
-                        <Badge className="border-0 bg-muted px-2 py-0 text-[11px] font-medium text-muted-foreground">
-                          {issues.length} item{issues.length !== 1 ? "s" : ""}
-                        </Badge>
-                        {criticalCount > 0 && (
-                          <Badge className="border-0 bg-destructive/10 px-2 py-0 text-[11px] font-medium text-destructive">
-                            {criticalCount} critical
-                          </Badge>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 gap-1 text-xs"
-                        onClick={() => navigate(`/structures/${structureId}`)}
-                      >
-                        Open structure
-                        <ArrowRight className="h-3 w-3" />
-                      </Button>
-                    </div>
+              {/* ── Toolbar ── */}
+              <div className="sticky top-0 z-10 -mx-2 space-y-3 bg-background/95 px-2 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search a structure or an item…"
+                      className="h-9 pl-9 text-sm"
+                    />
+                  </div>
+                  <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
+                    <SelectTrigger className="h-9 w-full text-sm sm:w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="critical">Critical first</SelectItem>
+                      <SelectItem value="most">Most items first</SelectItem>
+                      <SelectItem value="name">Name A–Z</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                    {/* Issues for this structure */}
-                    <ul className="divide-y divide-border/60">
-                      {issues.map((issue, idx) => {
-                        const style = SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor;
-                        const Icon = style.icon;
-                        return (
-                          <li
-                            key={`${issue.code}-${issue.entity_id ?? idx}`}
-                            className="flex items-start gap-3 px-5 py-3.5"
-                          >
-                            <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.iconClass}`} />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm text-foreground">{issue.message}</p>
-                              <p className="mt-0.5 text-xs capitalize text-muted-foreground">
-                                {issue.category}
-                              </p>
-                            </div>
-                            <Badge
-                              className={`shrink-0 border-0 px-2 py-0 text-[11px] font-medium ${style.badgeClass}`}
-                            >
-                              {style.label}
-                            </Badge>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </Card>
-                );
-              })}
+                <div className="flex flex-wrap items-center gap-2">
+                  {SEVERITY_TABS.map((tab) => (
+                    <Button
+                      key={tab.value}
+                      size="sm"
+                      variant={severity === tab.value ? "secondary" : "ghost"}
+                      className="h-8 gap-1.5 rounded-lg text-xs"
+                      onClick={() => setSeverity(tab.value)}
+                    >
+                      {tab.label}
+                      <span className="tabular-nums text-muted-foreground">{tab.count}</span>
+                    </Button>
+                  ))}
+                  {pageGroups.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="ml-auto h-8 text-xs"
+                      onClick={toggleAllOnPage}
+                    >
+                      {allExpanded ? "Collapse all" : "Expand all"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {groups.length === 0 ? (
+                <Card>
+                  <CardContent className="space-y-3 p-8 text-center">
+                    <p className="text-sm font-medium text-foreground">Nothing matches your filters</p>
+                    <p className="text-xs text-muted-foreground">
+                      Try a different search or choose another severity.
+                    </p>
+                    <Button size="sm" variant="outline" className="text-xs" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {pageGroups.map((group) => (
+                      <StructureIssueGroup
+                        key={group.id}
+                        structureId={group.id}
+                        structureName={group.name}
+                        issues={group.issues}
+                        open={expandedIds.has(group.id)}
+                        onOpenChange={(open) => toggleGroup(group.id, open)}
+                        onOpenStructure={() => navigate(`/structures/${group.id}`)}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, groups.length)} of{" "}
+                      {groups.length} structure{groups.length !== 1 ? "s" : ""}
+                    </p>
+                    {pageCount > 1 && (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1 text-xs"
+                          disabled={currentPage === 1}
+                          onClick={() => setPage(currentPage - 1)}
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                          Previous
+                        </Button>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          Page {currentPage} of {pageCount}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1 text-xs"
+                          disabled={currentPage === pageCount}
+                          onClick={() => setPage(currentPage + 1)}
+                        >
+                          Next
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
