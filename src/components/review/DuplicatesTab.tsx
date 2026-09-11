@@ -215,8 +215,10 @@ export default function DuplicatesTab() {
     const parent = new Map<string, string>();
     function find(x: string): string {
       if (!parent.has(x)) parent.set(x, x);
-      if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
-      return parent.get(x)!;
+      const current = parent.get(x);
+      if (!current) return x;
+      if (current !== x) parent.set(x, find(current));
+      return parent.get(x) ?? x;
     }
     function union(a: string, b: string) {
       const pa = find(a), pb = find(b);
@@ -247,7 +249,8 @@ export default function DuplicatesTab() {
       if (!clusterMap.has(root)) {
         clusterMap.set(root, { entityIds: new Set(), maxSimilarity: 0 });
       }
-      const cluster = clusterMap.get(root)!;
+      const cluster = clusterMap.get(root);
+      if (!cluster) continue;
       cluster.entityIds.add(row.entity_id_a);
       cluster.entityIds.add(row.entity_id_b);
       cluster.maxSimilarity = Math.max(cluster.maxSimilarity, row.similarity ?? 1.0);
