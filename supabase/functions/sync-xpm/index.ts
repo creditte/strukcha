@@ -54,6 +54,13 @@ const JOB_FILE_NAME = "xpm-sync-3.1";
  */
 const STALE_JOB_MS = 3 * 60_000;
 
+/**
+ * How long to refuse a new sync after Xero rejected the last one. Five failed
+ * runs once landed inside a single minute because nothing stopped an immediate
+ * retry after an authorisation failure.
+ */
+const AUTH_FAILURE_COOLDOWN_MS = 5 * 60_000;
+
 
 type Phase = "clients" | "groups" | "staff" | "done";
 
@@ -1128,6 +1135,22 @@ Deno.serve(async (req) => {
           "The connected Xero organisation doesn't include Practice Manager, so client groups can't be read. Please reconnect using the Practice Manager option.",
         code: "xero_practice_manager_required",
       }, 409);
+    }
+
+    // Cooling-off: after an authorisation failure, an immediate retry only
+    // produces an identical failure and burns Xero's rate limit.
+    const lastErrorAt = connections[0].last_error_at
+      ? new Date(connections[0].last_error_at as string).getTime()
+      : 0;
+    const cooldownLeftMs = lastErrorAt + AUTH_FAILURE_COOLDOWN_MS - Date.now();
+    if (body.full_sync !== true && cooldownLeftMs > 0) {
+      const seconds = Math.ceil(cooldownLeftMs / 1000);
+      return json({
+        error:
+          `The last sync failed while talking to Xero. Please wait ${seconds > 60 ? `${Math.ceil(seconds / 60)} minute(s)` : `${seconds} seconds`} before trying again.`,
+        code: "xero_cooldown",
+        retryAfterSeconds: seconds,
+      }, 429);
     }
 
     // Clean up long-dead jobs across the project so nothing sits in
