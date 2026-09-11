@@ -332,14 +332,8 @@ export default function Dashboard() {
 
   const hasStructures = structureCount > 0;
 
-  // Auto-run health review once, when structures are loaded
-  const healthRunRef = useRef(false);
-  useEffect(() => {
-    if (!dashboardLoading && hasStructures && !healthRunRef.current) {
-      healthRunRef.current = true;
-      runReview();
-    }
-  }, [dashboardLoading, hasStructures, runReview]);
+  // The health review is a cached React Query — it loads itself once per firm
+  // and is shared with Health Check / Review & Improve. No manual kick-off here.
 
   const getEntityIcon = (type: string) => {
     switch (type) {
