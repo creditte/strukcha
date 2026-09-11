@@ -454,7 +454,7 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 py-2 pl-3 pr-2">
+                <div className="flex h-10 items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 pl-3 pr-2">
                   {syncing || disconnecting ? (
                     <Loader2 className="h-4 w-4 animate-spin text-[#0d8ab8]" />
                   ) : (
