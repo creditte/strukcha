@@ -137,7 +137,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
   const fetchJob = useCallback(async () => {
     const { data, error } = await supabase
       .from("import_logs")
-      .select("id, status, updated_at, result")
+      .select("id, status, created_at, updated_at, result")
       .eq("file_name", JOB_FILE_NAME)
       .order("created_at", { ascending: false })
       .limit(1)
