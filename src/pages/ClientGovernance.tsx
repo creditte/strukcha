@@ -138,6 +138,11 @@ export default function ClientGovernance() {
               <Skeleton className="h-5 w-72" />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            {progress
+              ? `Checking structures — ${progress.scored} of ${progress.total}`
+              : "Loading your structures…"}
+          </p>
           <div className="flex items-center gap-8">
             <Skeleton className="h-24 w-24 rounded-full" />
             <div className="flex gap-0 rounded-xl border border-border/60">
