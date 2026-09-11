@@ -858,6 +858,7 @@ async function saveProgress(
           groupsLoaded: p.groupsLoaded,
           lastPageKey: p.lastPageKey,
           fullSync: p.fullSync,
+          catalogueOnly: p.catalogueOnly,
           leaseUntil: p.leaseUntil,
           groupsProcessed: p.stats.groupsProcessed,
           groupsTotal: p.stats.groupsFound,
@@ -917,6 +918,7 @@ function loadProgress(result: any): Progress {
     groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
     lastPageKey: result.progress?.lastPageKey ?? base.lastPageKey,
     fullSync: result.progress?.fullSync ?? base.fullSync,
+    catalogueOnly: result.progress?.catalogueOnly ?? base.catalogueOnly,
     leaseUntil: result.progress?.leaseUntil ?? base.leaseUntil,
 
     runs: result.progress?.runs ?? 0,
