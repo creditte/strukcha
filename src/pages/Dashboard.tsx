@@ -41,6 +41,8 @@ import {
   ListChecks,
   X,
   ChevronDown,
+  Settings2,
+
 
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
