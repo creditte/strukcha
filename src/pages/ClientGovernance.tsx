@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   HeartPulse,
   RefreshCw,
@@ -14,6 +16,9 @@ import {
   CheckCircle2,
   ArrowRight,
   AlertCircle,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { SCORE_BANDS, getScoreBand } from "@/lib/structureScoring";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
@@ -29,6 +34,9 @@ function getScoreMessage(score: number, count: number): string {
   return "Your structures need attention.";
 }
 
+const STRUCTURE_PAGE_SIZE = 15;
+const INSIGHT_PAGE_SIZE = 5;
+
 /* ── Page ───────────────────────────────────────────────────────── */
 
 export default function ClientGovernance() {
@@ -39,6 +47,10 @@ export default function ClientGovernance() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [insightFilter, setInsightFilter] = useState<string[] | null>(null);
   const [selectedStructure, setSelectedStructure] = useState<StructureResult | null>(null);
+  const [structureQuery, setStructureQuery] = useState("");
+  const [structureSort, setStructureSort] = useState<"attention" | "name" | "score">("attention");
+  const [structurePage, setStructurePage] = useState(1);
+  const [insightPage, setInsightPage] = useState(1);
 
   // "Structures changed" now compares a content stamp of the entities and
   // relationships inside structures, not any touch of structures.updated_at.
@@ -70,13 +82,34 @@ export default function ClientGovernance() {
     }
   };
 
-  const filteredStructures = review
-    ? insightFilter
-      ? review.structures.filter((s) => insightFilter.includes(s.id))
-      : statusFilter
-        ? review.structures.filter((s) => s.status === statusFilter)
-        : review.structures
-    : [];
+  const filteredStructures = useMemo(() => {
+    if (!review) return [];
+    const needle = structureQuery.trim().toLowerCase();
+    const list = review.structures.filter((structure) => {
+      if (insightFilter && !insightFilter.includes(structure.id)) return false;
+      if (!insightFilter && statusFilter && structure.status !== statusFilter) return false;
+      return !needle || structure.name.toLowerCase().includes(needle);
+    });
+    return list.sort((a, b) => {
+      if (structureSort === "name") return a.name.localeCompare(b.name);
+      if (structureSort === "score") return b.score - a.score || a.name.localeCompare(b.name);
+      return a.score - b.score || a.name.localeCompare(b.name);
+    });
+  }, [review, insightFilter, statusFilter, structureQuery, structureSort]);
+  const structurePageCount = Math.max(1, Math.ceil(filteredStructures.length / STRUCTURE_PAGE_SIZE));
+  const currentStructurePage = Math.min(structurePage, structurePageCount);
+  const structureStart = (currentStructurePage - 1) * STRUCTURE_PAGE_SIZE;
+  const pageStructures = filteredStructures.slice(structureStart, structureStart + STRUCTURE_PAGE_SIZE);
+  const insightPageCount = Math.max(1, Math.ceil((review?.crossObservations.length ?? 0) / INSIGHT_PAGE_SIZE));
+  const currentInsightPage = Math.min(insightPage, insightPageCount);
+  const pageInsights = review?.crossObservations.slice(
+    (currentInsightPage - 1) * INSIGHT_PAGE_SIZE,
+    currentInsightPage * INSIGHT_PAGE_SIZE,
+  ) ?? [];
+
+  useEffect(() => {
+    setStructurePage(1);
+  }, [statusFilter, insightFilter, structureQuery, structureSort]);
 
   const healthyCount = review ? review.structures.filter((s) => s.status === "good").length : 0;
   const filterLabel = insightFilter
@@ -289,7 +322,7 @@ export default function ClientGovernance() {
                 </p>
               </div>
               <div className="space-y-2">
-                {review.crossObservations.map((obs, idx) => {
+                {pageInsights.map((obs, idx) => {
                   const isActionable =
                     obs.message.includes("missing") ||
                     obs.message.includes("without") ||
@@ -323,6 +356,22 @@ export default function ClientGovernance() {
                   );
                 })}
               </div>
+              {insightPageCount > 1 && (
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    Insights {(currentInsightPage - 1) * INSIGHT_PAGE_SIZE + 1}–{Math.min(currentInsightPage * INSIGHT_PAGE_SIZE, review.crossObservations.length)} of {review.crossObservations.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Previous insights" disabled={currentInsightPage === 1} onClick={() => setInsightPage(currentInsightPage - 1)}>
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">{currentInsightPage} / {insightPageCount}</span>
+                    <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Next insights" disabled={currentInsightPage === insightPageCount} onClick={() => setInsightPage(currentInsightPage + 1)}>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </section>
           )}
 
@@ -421,6 +470,21 @@ export default function ClientGovernance() {
               )}
             </div>
 
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={structureQuery} onChange={(event) => setStructureQuery(event.target.value)} placeholder="Search structures…" className="h-9 pl-9 text-sm" />
+              </div>
+              <Select value={structureSort} onValueChange={(value) => setStructureSort(value as "attention" | "name" | "score")}>
+                <SelectTrigger className="h-9 w-full text-sm sm:w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="attention">Needs attention first</SelectItem>
+                  <SelectItem value="name">Name A–Z</SelectItem>
+                  <SelectItem value="score">Highest score first</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <Card className="overflow-hidden">
               <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-5 py-2.5">
                 <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -438,7 +502,7 @@ export default function ClientGovernance() {
               </div>
 
               <div className="divide-y divide-border/60">
-                {filteredStructures.map((s) => (
+                {pageStructures.map((s) => (
                   <button
                     key={s.id}
                     onClick={() => setSelectedStructure(s)}
@@ -468,6 +532,24 @@ export default function ClientGovernance() {
                 )}
               </div>
             </Card>
+            {filteredStructures.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">
+                  Showing {structureStart + 1}–{Math.min(structureStart + STRUCTURE_PAGE_SIZE, filteredStructures.length)} of {filteredStructures.length} structures
+                </span>
+                {structurePageCount > 1 && (
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentStructurePage === 1} onClick={() => setStructurePage(currentStructurePage - 1)}>
+                      <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                    </Button>
+                    <span className="text-xs tabular-nums text-muted-foreground">Page {currentStructurePage} of {structurePageCount}</span>
+                    <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentStructurePage === structurePageCount} onClick={() => setStructurePage(currentStructurePage + 1)}>
+                      Next <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         </>
       )}

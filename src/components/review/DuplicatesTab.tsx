@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatAbn, formatAcn } from "@/components/structure/EntityInfoFields";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import {
@@ -28,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle, Merge, Loader2, AlertTriangle, AlertCircle, Shield, Building2, Undo2, X } from "lucide-react";
+import { CheckCircle, Merge, Loader2, AlertTriangle, AlertCircle, Shield, Building2, Undo2, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -61,6 +63,8 @@ interface MergePreview {
   potential_collisions: number;
   entities_to_delete: number;
 }
+
+const DUPLICATE_PAGE_SIZE = 10;
 
 function computeConfidence(entities: DuplicateEntity[], similarity: number): ConfidenceLevel {
   // Check for exact identifier matches across any pair
@@ -145,6 +149,9 @@ export default function DuplicatesTab() {
   const [mergePreview, setMergePreview] = useState<MergePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [search, setSearch] = useState("");
+  const [confidence, setConfidence] = useState<"all" | ConfidenceLevel>("all");
+  const [page, setPage] = useState(1);
 
   const loadDuplicates = useCallback(async (): Promise<DuplicateGroup[]> => {
     if (!tenantId) return [];
@@ -208,8 +215,10 @@ export default function DuplicatesTab() {
     const parent = new Map<string, string>();
     function find(x: string): string {
       if (!parent.has(x)) parent.set(x, x);
-      if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
-      return parent.get(x)!;
+      const current = parent.get(x);
+      if (!current) return x;
+      if (current !== x) parent.set(x, find(current));
+      return parent.get(x) ?? x;
     }
     function union(a: string, b: string) {
       const pa = find(a), pb = find(b);
@@ -240,7 +249,8 @@ export default function DuplicatesTab() {
       if (!clusterMap.has(root)) {
         clusterMap.set(root, { entityIds: new Set(), maxSimilarity: 0 });
       }
-      const cluster = clusterMap.get(root)!;
+      const cluster = clusterMap.get(root);
+      if (!cluster) continue;
       cluster.entityIds.add(row.entity_id_a);
       cluster.entityIds.add(row.entity_id_b);
       cluster.maxSimilarity = Math.max(cluster.maxSimilarity, row.similarity ?? 1.0);
@@ -351,6 +361,24 @@ export default function DuplicatesTab() {
 
   const visibleGroups = groups.filter(g => !dismissedKeys.has(buildGroupKey(g.entities)));
   const dismissedCount = groups.length - visibleGroups.length;
+  const filteredGroups = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return visibleGroups.filter((group) => {
+      if (confidence !== "all" && group.confidence !== confidence) return false;
+      if (!needle) return true;
+      return group.entities.some((entity) =>
+        [entity.name, entity.abn, entity.acn].some((value) => value?.toLowerCase().includes(needle)),
+      );
+    });
+  }, [visibleGroups, search, confidence]);
+  const pageCount = Math.max(1, Math.ceil(filteredGroups.length / DUPLICATE_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * DUPLICATE_PAGE_SIZE;
+  const pageGroups = filteredGroups.slice(pageStart, pageStart + DUPLICATE_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, confidence]);
 
   const openMergeDialog = (group: DuplicateGroup) => {
     const types = new Set(group.entities.map((e) => e.type));
@@ -519,7 +547,7 @@ export default function DuplicatesTab() {
     <TooltipProvider>
       <>
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               {visibleGroups.length} potential duplicate {visibleGroups.length === 1 ? "group" : "groups"} detected.
               Review and merge to keep your data clean.
@@ -531,6 +559,31 @@ export default function DuplicatesTab() {
               </Button>
             )}
           </div>
+
+          {visibleGroups.length > 0 && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name, ABN or ACN…"
+                  className="h-9 pl-9 text-sm"
+                />
+              </div>
+              <Select value={confidence} onValueChange={(value) => setConfidence(value as "all" | ConfidenceLevel)}>
+                <SelectTrigger className="h-9 w-full text-sm sm:w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All confidence</SelectItem>
+                  <SelectItem value="exact">Exact matches</SelectItem>
+                  <SelectItem value="high">High similarity</SelectItem>
+                  <SelectItem value="medium">Medium similarity</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {visibleGroups.length === 0 && dismissedCount > 0 && (
             <Card className="max-w-lg">
@@ -546,13 +599,25 @@ export default function DuplicatesTab() {
             </Card>
           )}
 
-          {visibleGroups.map((group, idx) => {
+          {visibleGroups.length > 0 && filteredGroups.length === 0 && (
+            <Card>
+              <CardContent className="space-y-2 p-8 text-center">
+                <p className="text-sm font-medium text-foreground">No duplicate groups match</p>
+                <p className="text-xs text-muted-foreground">Change the search or confidence filter.</p>
+                <Button size="sm" variant="outline" onClick={() => { setSearch(""); setConfidence("all"); }}>
+                  Clear filters
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {pageGroups.map((group, idx) => {
             const types = new Set(group.entities.map((e) => e.type));
             const crossType = types.size > 1;
             const conf = CONFIDENCE_CONFIG[group.confidence];
 
             return (
-              <Card key={idx}>
+              <Card key={buildGroupKey(group.entities)}>
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -645,6 +710,25 @@ export default function DuplicatesTab() {
               </Card>
             );
           })}
+
+          {filteredGroups.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <p className="text-xs text-muted-foreground">
+                Showing {pageStart + 1}–{Math.min(pageStart + DUPLICATE_PAGE_SIZE, filteredGroups.length)} of {filteredGroups.length} groups
+              </p>
+              {pageCount > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                    <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                  </Button>
+                  <span className="text-xs tabular-nums text-muted-foreground">Page {currentPage} of {pageCount}</span>
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
+                    Next <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
       {/* Merge Dialog */}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   ArrowRight,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleDot,
 } from "lucide-react";
 import type { StructureIssue } from "@/hooks/useClientHealthReview";
@@ -36,7 +38,7 @@ const SEVERITY_STYLES: Record<
   },
 };
 
-const PREVIEW_LIMIT = 8;
+const ISSUE_PAGE_SIZE = 6;
 
 interface Props {
   structureId: string;
@@ -54,9 +56,16 @@ export default function StructureIssueGroup({
   onOpenChange,
   onOpenStructure,
 }: Props) {
-  const [showAll, setShowAll] = useState(false);
+  const [issuePage, setIssuePage] = useState(1);
   const criticalCount = issues.filter((i) => i.severity === "critical").length;
-  const visible = showAll ? issues : issues.slice(0, PREVIEW_LIMIT);
+  const issuePageCount = Math.max(1, Math.ceil(issues.length / ISSUE_PAGE_SIZE));
+  const currentIssuePage = Math.min(issuePage, issuePageCount);
+  const issueStart = (currentIssuePage - 1) * ISSUE_PAGE_SIZE;
+  const visible = issues.slice(issueStart, issueStart + ISSUE_PAGE_SIZE);
+
+  useEffect(() => {
+    setIssuePage(1);
+  }, [issues]);
 
   return (
     <Card className="overflow-hidden">
@@ -117,16 +126,36 @@ export default function StructureIssueGroup({
               );
             })}
           </ul>
-          {issues.length > PREVIEW_LIMIT && (
-            <div className="border-t border-border/60 px-3 py-2 sm:px-5">
-              <Button
-                variant="link"
-                size="sm"
-                className="h-7 px-0 text-xs"
-                onClick={() => setShowAll((v) => !v)}
-              >
-                {showAll ? "Show fewer items" : `Show all ${issues.length} items`}
-              </Button>
+          {issues.length > ISSUE_PAGE_SIZE && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-3 py-2 sm:px-5">
+              <span className="text-xs text-muted-foreground">
+                Items {issueStart + 1}–{Math.min(issueStart + ISSUE_PAGE_SIZE, issues.length)} of {issues.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  disabled={currentIssuePage === 1}
+                  aria-label="Previous issue page"
+                  onClick={() => setIssuePage(currentIssuePage - 1)}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">
+                  {currentIssuePage} / {issuePageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  disabled={currentIssuePage === issuePageCount}
+                  aria-label="Next issue page"
+                  onClick={() => setIssuePage(currentIssuePage + 1)}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           )}
         </CollapsibleContent>
