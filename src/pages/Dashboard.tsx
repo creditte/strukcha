@@ -483,30 +483,22 @@ export default function Dashboard() {
 
       {/* ── Notices ── */}
       <div className="space-y-3">
-        {/* Sync ran out of structure space */}
-        {syncLimitMessage && (
-          <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3.5">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-            <div className="min-w-0 flex-1 space-y-1.5 text-sm">
-              <p className="font-semibold text-foreground">Some client groups were not added</p>
-              <p className="text-muted-foreground">{syncLimitMessage}</p>
-              {syncJob && syncJob.blockedGroups.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  For example: {syncJob.blockedGroups.slice(0, 5).join(", ")}
-                  {syncJob.groupsBlockedByLimit > 5 ? "…" : ""}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-2 pt-1.5">
-                <Button asChild size="sm" variant="outline" className="h-7 rounded-lg text-xs">
-                  <Link to="/structures">Manage structures</Link>
-                </Button>
-                <Button asChild size="sm" className="h-7 rounded-lg text-xs">
-                  <Link to="/settings?tab=billing">Upgrade plan</Link>
-                </Button>
-              </div>
-            </div>
-          </div>
+        {/* Live XPM sync progress */}
+        {(syncing || syncStalled) && (
+          <XpmSyncProgressCard
+            job={syncJob}
+            label={syncLabel}
+            percent={syncPercent}
+            stalled={syncStalled}
+            stopping={syncStopping}
+            onStop={() => stopXpmSync()}
+            onResume={handleSyncXpm}
+          />
         )}
+
+        {/* Sync ran out of structure space */}
+        {syncLimitMessage && <XpmSyncLimitNotice message={syncLimitMessage} job={syncJob} />}
+
 
         {/* Billing */}
         <BillingBanner />
