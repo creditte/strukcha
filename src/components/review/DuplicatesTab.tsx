@@ -458,7 +458,7 @@ export default function DuplicatesTab() {
         ),
       });
       setMergeGroup(null);
-      loadDuplicates();
+      refetchGroups();
     } catch (err: any) {
       console.error("Merge failed:", err);
       toast({ title: "Merge failed", description: err.message, variant: "destructive" });
