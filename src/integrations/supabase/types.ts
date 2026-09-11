@@ -1685,6 +1685,10 @@ export type Database = {
         Returns: boolean
       }
       tenant_structure_capacity: { Args: { _tenant_id: string }; Returns: Json }
+      xpm_archive_group_structures: {
+        Args: { _group_uuids: string[] }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin" | "editor" | "viewer" | "user"
