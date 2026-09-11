@@ -121,6 +121,12 @@ export default function Review() {
     setPage(1);
   }, [query, severity, sort]);
 
+  /* Keep the first structure open so the list never looks empty */
+  const firstGroupId = groups[0]?.id;
+  useEffect(() => {
+    if (firstGroupId) setExpandedIds((prev) => (prev.size === 0 ? new Set([firstGroupId]) : prev));
+  }, [firstGroupId]);
+
   const allExpanded = pageGroups.length > 0 && pageGroups.every((g) => expandedIds.has(g.id));
 
   const toggleGroup = (id: string, open: boolean) => {
