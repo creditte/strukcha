@@ -8,7 +8,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   HeartPulse,
   RefreshCw,
@@ -17,6 +27,7 @@ import {
   ArrowRight,
   AlertCircle,
   Search,
+  SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -146,18 +157,18 @@ export default function ClientGovernance() {
           </p>
         </div>
         {review && (
-          <div className="flex flex-col items-end gap-1.5">
+          <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:items-end">
             <Button
               variant="outline"
               size="sm"
-              className="h-9 gap-2"
+              className="h-10 w-full gap-2 sm:h-9 sm:w-auto"
               onClick={handleRunReview}
               disabled={loading}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               Re-run check
             </Button>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground sm:text-right">
               Last checked{" "}
               {new Date(review.timestamp).toLocaleString("en-AU", {
                 day: "2-digit",
@@ -233,12 +244,12 @@ export default function ClientGovernance() {
 
       {review && (
         <>
-          {/* ── Score summary ── */}
+          {/* ── Score summary (single card) ── */}
           <Card>
-            <CardContent className="space-y-6 p-6">
-              <div className="flex flex-wrap items-center gap-8">
+            <CardContent className="space-y-5 p-5 sm:p-6">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
                 {/* Score dial */}
-                <div className="relative flex h-24 w-24 shrink-0 items-center justify-center">
+                <div className="relative mx-auto flex h-24 w-24 shrink-0 items-center justify-center sm:mx-0">
                   <svg className="absolute inset-0 h-24 w-24 -rotate-90" viewBox="0 0 96 96">
                     <circle cx="48" cy="48" r="42" fill="none" stroke="hsl(var(--border))" strokeWidth="6" />
                     <circle
@@ -266,22 +277,22 @@ export default function ClientGovernance() {
                 </div>
 
                 {/* Counts */}
-                <div className="flex flex-1 flex-wrap gap-x-10 gap-y-4">
-                  <div>
-                    <p className="text-2xl font-semibold tabular-nums text-foreground">
+                <div className="grid flex-1 grid-cols-3 divide-x divide-border/60 rounded-xl border border-border/60 bg-muted/20">
+                  <div className="px-3 py-3 text-center sm:px-4">
+                    <p className="text-xl font-semibold tabular-nums text-foreground sm:text-2xl">
                       {review.structures.length}
                     </p>
-                    <p className="text-xs text-muted-foreground">Structures checked</p>
+                    <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">Checked</p>
                   </div>
-                  <div>
-                    <p className="text-2xl font-semibold tabular-nums text-foreground">{healthyCount}</p>
-                    <p className="text-xs text-muted-foreground">Healthy</p>
+                  <div className="px-3 py-3 text-center sm:px-4">
+                    <p className="text-xl font-semibold tabular-nums text-success sm:text-2xl">{healthyCount}</p>
+                    <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">Healthy</p>
                   </div>
-                  <div>
-                    <p className="text-2xl font-semibold tabular-nums text-foreground">
+                  <div className="px-3 py-3 text-center sm:px-4">
+                    <p className="text-xl font-semibold tabular-nums text-warning sm:text-2xl">
                       {review.needsAttention}
                     </p>
-                    <p className="text-xs text-muted-foreground">Need updates</p>
+                    <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">Need updates</p>
                   </div>
                 </div>
               </div>
@@ -304,7 +315,10 @@ export default function ClientGovernance() {
               )}
 
               {review.needsAttention > 0 && (
-                <Button className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={() => navigate("/review")}>
+                <Button
+                  className="w-full gap-2 rounded-xl text-sm font-medium sm:w-auto sm:px-5"
+                  onClick={() => navigate("/review")}
+                >
                   Review issues
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
@@ -312,22 +326,24 @@ export default function ClientGovernance() {
             </CardContent>
           </Card>
 
-          {/* ── Key insights ── */}
+          {/* ── Key insights (chips) ── */}
           {review.crossObservations.length > 0 && (
             <section className="space-y-3">
               <div className="space-y-1">
                 <h2 className="text-sm font-semibold text-foreground">Key insights</h2>
                 <p className="text-xs text-muted-foreground">
-                  Patterns we noticed across your structures. Select one to see the structures involved.
+                  Patterns across your structures. Tap one to see the structures involved.
                 </p>
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
                 {pageInsights.map((obs, idx) => {
                   const isActionable =
                     obs.message.includes("missing") ||
                     obs.message.includes("without") ||
                     obs.message.includes("circular");
                   const affectedStructures = review.structures.filter((s) => obs.structureIds.includes(s.id));
+                  const active =
+                    !!insightFilter && insightFilter.join(",") === obs.structureIds.join(",");
                   return (
                     <button
                       key={idx}
@@ -336,22 +352,24 @@ export default function ClientGovernance() {
                           setSelectedStructure(affectedStructures[0]);
                         } else {
                           setStatusFilter(null);
-                          setInsightFilter(obs.structureIds);
+                          setInsightFilter(active ? null : obs.structureIds);
                         }
                       }}
-                      className={`group w-full rounded-xl border border-l-[3px] border-border/60 bg-card px-5 py-3.5 text-left text-sm text-foreground transition-all hover:border-border hover:shadow-sm ${
-                        isActionable ? "border-l-warning" : "border-l-primary"
+                      className={`group inline-flex max-w-full items-center gap-2 rounded-full border px-3.5 py-2 text-left text-xs transition-colors ${
+                        active
+                          ? "border-primary/40 bg-primary/10 text-foreground"
+                          : isActionable
+                            ? "border-warning/30 bg-warning/5 text-foreground hover:bg-warning/10"
+                            : "border-border/60 bg-card text-foreground hover:bg-muted/50"
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <span>{obs.message}</span>
-                        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                          <span>
-                            {affectedStructures.length} structure{affectedStructures.length !== 1 ? "s" : ""}
-                          </span>
-                          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-                        </div>
-                      </div>
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActionable ? "bg-warning" : "bg-primary"}`}
+                      />
+                      <span className="truncate">{obs.message}</span>
+                      <Badge className="shrink-0 border-0 bg-muted px-1.5 py-0 text-[10px] font-medium tabular-nums text-muted-foreground">
+                        {affectedStructures.length}
+                      </Badge>
                     </button>
                   );
                 })}
@@ -359,7 +377,9 @@ export default function ClientGovernance() {
               {insightPageCount > 1 && (
                 <div className="flex items-center justify-between gap-3 pt-1">
                   <span className="text-xs text-muted-foreground">
-                    Insights {(currentInsightPage - 1) * INSIGHT_PAGE_SIZE + 1}–{Math.min(currentInsightPage * INSIGHT_PAGE_SIZE, review.crossObservations.length)} of {review.crossObservations.length}
+                    Insights {(currentInsightPage - 1) * INSIGHT_PAGE_SIZE + 1}–
+                    {Math.min(currentInsightPage * INSIGHT_PAGE_SIZE, review.crossObservations.length)} of{" "}
+                    {review.crossObservations.length}
                   </span>
                   <div className="flex items-center gap-2">
                     <Button size="icon" variant="outline" className="h-8 w-8" aria-label="Previous insights" disabled={currentInsightPage === 1} onClick={() => setInsightPage(currentInsightPage - 1)}>
@@ -375,115 +395,104 @@ export default function ClientGovernance() {
             </section>
           )}
 
-          {/* ── Filters by status ── */}
-          <section className="space-y-3">
-            <div className="space-y-1">
-              <h2 className="text-sm font-semibold text-foreground">Filter by status</h2>
-              <p className="text-xs text-muted-foreground">
-                Select a group to narrow the list of structures below.
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {review.criticalStructures > 0 && (
-                <button
-                  onClick={() => {
-                    setInsightFilter(null);
-                    setStatusFilter(statusFilter === "critical" ? null : "critical");
-                  }}
-                  className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all ${
-                    statusFilter === "critical"
-                      ? "border-destructive/40 bg-destructive/10 ring-1 ring-destructive/20"
-                      : "border-destructive/20 bg-destructive/5 hover:border-destructive/30"
-                  }`}
-                >
-                  <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
-                  <span className="text-sm text-foreground">
-                    <span className="font-semibold tabular-nums">{review.criticalStructures}</span> critical
-                  </span>
-                </button>
-              )}
-              {review.needsAttention > review.criticalStructures && (
-                <button
-                  onClick={() => {
-                    setInsightFilter(null);
-                    setStatusFilter(statusFilter === "warning" ? null : "warning");
-                  }}
-                  className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all ${
-                    statusFilter === "warning"
-                      ? "border-warning/40 bg-warning/10 ring-1 ring-warning/20"
-                      : "border-warning/20 bg-warning/5 hover:border-warning/30"
-                  }`}
-                >
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-                  <span className="text-sm text-foreground">
-                    <span className="font-semibold tabular-nums">
-                      {review.needsAttention - review.criticalStructures}
-                    </span>{" "}
-                    need improvements
-                  </span>
-                </button>
-              )}
-              {healthyCount > 0 && (
-                <button
-                  onClick={() => {
-                    setInsightFilter(null);
-                    setStatusFilter(statusFilter === "good" ? null : "good");
-                  }}
-                  className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all ${
-                    statusFilter === "good"
-                      ? "border-success/40 bg-success/10 ring-1 ring-success/20"
-                      : "border-success/20 bg-success/5 hover:border-success/30"
-                  }`}
-                >
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                  <span className="text-sm text-foreground">
-                    <span className="font-semibold tabular-nums">{healthyCount}</span> healthy
-                  </span>
-                </button>
-              )}
-            </div>
-          </section>
-
           {/* ── Structures list ── */}
           <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold text-foreground">
-                  {filterLabel ? "Filtered structures" : "All structures"}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {filterLabel ?? "Select a structure to see its issues in detail."}
-                </p>
-              </div>
-              {(statusFilter || insightFilter) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => {
-                    setStatusFilter(null);
-                    setInsightFilter(null);
-                  }}
-                >
-                  Clear filter
-                </Button>
-              )}
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold text-foreground">
+                {filterLabel ? "Filtered structures" : "All structures"}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {filterLabel ?? "Select a structure to see its issues in detail."}
+              </p>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={structureQuery} onChange={(event) => setStructureQuery(event.target.value)} placeholder="Search structures…" className="h-9 pl-9 text-sm" />
+                <Input
+                  value={structureQuery}
+                  onChange={(event) => setStructureQuery(event.target.value)}
+                  placeholder="Search structures…"
+                  className="h-10 pl-9 text-sm sm:h-9"
+                />
               </div>
-              <Select value={structureSort} onValueChange={(value) => setStructureSort(value as "attention" | "name" | "score")}>
-                <SelectTrigger className="h-9 w-full text-sm sm:w-44"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="attention">Needs attention first</SelectItem>
-                  <SelectItem value="name">Name A–Z</SelectItem>
-                  <SelectItem value="score">Highest score first</SelectItem>
-                </SelectContent>
-              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-10 shrink-0 gap-2 text-sm sm:h-9">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    <span className="hidden sm:inline">Filter</span>
+                    {(statusFilter || insightFilter) && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="text-xs">Status</DropdownMenuLabel>
+                  {review.criticalStructures > 0 && (
+                    <DropdownMenuCheckboxItem
+                      checked={statusFilter === "critical"}
+                      onCheckedChange={(checked) => {
+                        setInsightFilter(null);
+                        setStatusFilter(checked ? "critical" : null);
+                      }}
+                    >
+                      <AlertCircle className="mr-2 h-3.5 w-3.5 text-destructive" />
+                      Critical ({review.criticalStructures})
+                    </DropdownMenuCheckboxItem>
+                  )}
+                  {review.needsAttention > review.criticalStructures && (
+                    <DropdownMenuCheckboxItem
+                      checked={statusFilter === "warning"}
+                      onCheckedChange={(checked) => {
+                        setInsightFilter(null);
+                        setStatusFilter(checked ? "warning" : null);
+                      }}
+                    >
+                      <AlertTriangle className="mr-2 h-3.5 w-3.5 text-warning" />
+                      Need improvements ({review.needsAttention - review.criticalStructures})
+                    </DropdownMenuCheckboxItem>
+                  )}
+                  {healthyCount > 0 && (
+                    <DropdownMenuCheckboxItem
+                      checked={statusFilter === "good"}
+                      onCheckedChange={(checked) => {
+                        setInsightFilter(null);
+                        setStatusFilter(checked ? "good" : null);
+                      }}
+                    >
+                      <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-success" />
+                      Healthy ({healthyCount})
+                    </DropdownMenuCheckboxItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={structureSort}
+                    onValueChange={(value) => setStructureSort(value as "attention" | "name" | "score")}
+                  >
+                    <DropdownMenuRadioItem value="attention">Needs attention first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="score">Highest score first</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  {(statusFilter || insightFilter) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setStatusFilter(null);
+                          setInsightFilter(null);
+                        }}
+                      >
+                        Clear filters
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+
+
+
 
             <Card className="overflow-hidden">
               <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-5 py-2.5">
