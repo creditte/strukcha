@@ -558,7 +558,7 @@ export default function Dashboard() {
                     <Button
                       size="lg"
                       variant="outline"
-                      className="gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
+                      className="h-11 gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
                       disabled={xeroLoading}
                     >
                       {xeroLoading ? (
