@@ -118,6 +118,12 @@ interface Progress {
   lastPageKey: string;
   /** When true, every group is re-read from XPM instead of honouring freshness. */
   fullSync: boolean;
+  /**
+   * Catalogue-only run: refresh the list of client groups from XPM and stop.
+   * A brand-new firm needs the list before it can choose which groups become
+   * diagrams, and choosing has to come before any diagram is built.
+   */
+  catalogueOnly: boolean;
   /** Worker lease expiry — only the lease holder may talk to XPM. */
   leaseUntil: string;
   runs: number;
@@ -144,6 +150,7 @@ function emptyProgress(): Progress {
     groupsLoaded: false,
     lastPageKey: "",
     fullSync: false,
+    catalogueOnly: false,
     leaseUntil: "",
     runs: 0,
     started_at: new Date().toISOString(),
