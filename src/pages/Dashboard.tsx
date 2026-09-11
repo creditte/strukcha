@@ -57,11 +57,15 @@ import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import XeroLogo from "@/components/XeroLogo";
+import XeroConnectButton from "@/components/xero/XeroConnectButton";
+import XeroStatusPill from "@/components/xero/XeroStatusPill";
+import XpmSyncProgressCard from "@/components/xero/XpmSyncProgressCard";
+import XpmSyncLimitNotice from "@/components/xero/XpmSyncLimitNotice";
 import XpmGroupSelectionDialog from "@/components/structure/XpmGroupSelectionDialog";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 import { useXpmSyncJob } from "@/hooks/useXpmSyncJob";
-import { Progress } from "@/components/ui/progress";
+
 
 export default function Dashboard() {
   const [disconnecting, setDisconnecting] = useState(false);
@@ -416,119 +420,21 @@ export default function Dashboard() {
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="h-10 gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
-                      disabled={xeroLoading}
-                    >
-                      {xeroLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <XeroLogo className="h-4 w-4" />
-                      )}
-                      Connect to Xero
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-72">
-                    <DropdownMenuItem
-                      className="flex flex-col items-start gap-0.5"
-                      onClick={() => handleConnectXero("practice_manager")}
-                    >
-                      <span className="text-sm font-medium">Xero Practice Manager</span>
-                      <span className="text-xs text-muted-foreground">
-                        Import client groups and relationships (needs XPM access).
-                      </span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="flex flex-col items-start gap-0.5"
-                      onClick={() => handleConnectXero("standard")}
-                    >
-                      <span className="text-sm font-medium">Xero organisation</span>
-                      <span className="text-xs text-muted-foreground">
-                        Works for any Xero account — imports your contacts.
-                      </span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <XeroConnectButton onConnect={handleConnectXero} loading={xeroLoading} />
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex h-10 items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 pl-3 pr-2">
-                  {syncing || disconnecting ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-[#0d8ab8]" />
-                  ) : (
-                    <XeroLogo className="h-4 w-4" />
-                  )}
-                  <div className="flex min-w-0 flex-col leading-tight">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">
-                      {syncing ? "Syncing XPM…" : disconnecting ? "Disconnecting…" : "Connected to Xero"}
-                    </span>
-                    <span className="max-w-[180px] truncate text-xs font-medium text-foreground">
-                      {xeroConnection.xero_org_name || "Xero organisation"}
-                    </span>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Xero options"
-                        className="ml-1 h-7 w-7 shrink-0 text-muted-foreground hover:bg-[#13B5EA]/10 hover:text-foreground"
-                        disabled={disconnecting}
-                      >
-                        <Settings2 className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                        Xero options
-                      </DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleSyncXpm} disabled={syncing || xeroInvalid}>
-                        <RefreshCw className="mr-2 h-3.5 w-3.5" /> Sync XPM
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setShowGroupPicker(true)}>
-                        <ListChecks className="mr-2 h-3.5 w-3.5" /> Choose groups
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={handleDisconnectXero}
-                        disabled={disconnecting}
-                        className="text-muted-foreground focus:text-destructive"
-                      >
-                        <Unplug className="mr-2 h-3.5 w-3.5" /> Disconnect
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <XeroStatusPill
+                  orgName={xeroConnection.xero_org_name}
+                  syncing={syncing}
+                  disconnecting={disconnecting}
+                  invalid={xeroInvalid}
+                  onSync={handleSyncXpm}
+                  onChooseGroups={() => setShowGroupPicker(true)}
+                  onDisconnect={handleDisconnectXero}
+                  onReconnect={() => handleConnectXero("practice_manager")}
+                />
               )}
-              {(syncing || syncStalled) && (
-                <div className="w-full max-w-md space-y-1.5 rounded-xl border border-border bg-card/60 px-3 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-foreground">{syncLabel || "Starting XPM sync…"}</span>
-                    {!syncStalled && <span className="text-xs text-muted-foreground">{syncPercent}%</span>}
-                  </div>
-                  {!syncStalled && <Progress value={syncPercent} className="h-1.5" />}
-                  {syncJob && syncJob.groupsSkippedUnchanged > 0 && (
-                    <p className="text-[11px] text-muted-foreground">
-                      {syncJob.groupsSkippedUnchanged} unchanged groups skipped
-                    </p>
-                  )}
-                  <div className="flex justify-end">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-destructive"
-                      onClick={() => stopXpmSync()}
-                      disabled={syncStopping}
-                    >
-                      {syncStopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
-                      {syncStopping ? "Stopping…" : "Stop sync"}
-                    </Button>
-                  </div>
-                </div>
-              )}
+
 
             </div>
           </>
