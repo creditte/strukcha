@@ -311,65 +311,68 @@ export default function MfaSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Current method display */}
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-3">
-              <MethodIcon className="h-5 w-5 text-primary" />
-              <div>
-                <p className="text-sm font-medium">Current Method</p>
-                <p className="text-xs text-muted-foreground">{methodLabel}</p>
-              </div>
-            </div>
-            <Badge variant="secondary" className="gap-1">
-              <Check className="h-3 w-3" /> Active
-            </Badge>
-          </div>
-
-          {/* Switch options (only show when idle) */}
-          {step === "idle" && (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground text-center">or switch to</p>
-              {currentMethod !== "totp" && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-between h-14"
-                  onClick={startSwitchToTotp}
-                  disabled={submitting}
-                >
-                  <span className="flex items-center gap-3">
-                    <Smartphone className="h-5 w-5 text-primary" />
-                    <span className="text-left">
-                      <span className="block text-sm font-medium">Authenticator App</span>
-                      <span className="block text-xs text-muted-foreground">Google Authenticator, Authy, etc.</span>
-                    </span>
-                  </span>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              )}
-              {currentMethod !== "email" && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-between h-14"
-                  onClick={startSwitchToEmail}
-                  disabled={submitting}
-                >
-                  <span className="flex items-center gap-3">
-                    <Mail className="h-5 w-5 text-primary" />
-                    <span className="text-left">
-                      <span className="block text-sm font-medium">Email Verification</span>
-                      <span className="block text-xs text-muted-foreground">Code sent to {user?.email}</span>
-                    </span>
-                  </span>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              )}
-              {submitting && (
-                <div className="flex justify-center pt-2">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Current method display */}
+            <div className="flex h-full items-center justify-between gap-3 rounded-lg border p-4">
+              <div className="flex items-center gap-3">
+                <MethodIcon className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Current Method</p>
+                  <p className="text-xs text-muted-foreground">{methodLabel}</p>
                 </div>
-              )}
+              </div>
+              <Badge variant="secondary" className="gap-1">
+                <Check className="h-3 w-3" /> Active
+              </Badge>
             </div>
-          )}
+
+            {/* Switch options (only show when idle) */}
+            {step === "idle" && (
+              <div className="space-y-2">
+                {currentMethod !== "totp" && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between h-auto min-h-[4.5rem] py-3"
+                    onClick={startSwitchToTotp}
+                    disabled={submitting}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Smartphone className="h-5 w-5 shrink-0 text-primary" />
+                      <span className="text-left">
+                        <span className="block text-sm font-medium">Switch to Authenticator App</span>
+                        <span className="block text-xs text-muted-foreground">Google Authenticator, Authy, etc.</span>
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </Button>
+                )}
+                {currentMethod !== "email" && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between h-auto min-h-[4.5rem] py-3"
+                    onClick={startSwitchToEmail}
+                    disabled={submitting}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Mail className="h-5 w-5 shrink-0 text-primary" />
+                      <span className="text-left">
+                        <span className="block text-sm font-medium">Switch to Email Verification</span>
+                        <span className="block max-w-[14rem] truncate text-xs text-muted-foreground">
+                          Code sent to {user?.email}
+                        </span>
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </Button>
+                )}
+                {submitting && (
+                  <div className="flex justify-center pt-2">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* TOTP verification step */}
           {step === "totp-verify" && (
