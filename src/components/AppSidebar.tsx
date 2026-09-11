@@ -1,9 +1,7 @@
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
 import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
-import { useDuplicateCount } from "@/hooks/useDuplicateCount";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import FeedbackModal from "@/components/FeedbackModal";
 import {
   Home,
