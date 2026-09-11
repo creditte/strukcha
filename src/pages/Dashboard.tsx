@@ -489,7 +489,7 @@ export default function Dashboard() {
             stopping={syncStopping}
             onStop={() => stopXpmSync()}
             onResume={handleSyncXpm}
-            className="max-w-xl"
+            className="w-full sm:w-1/2"
           />
         )}
       </section>
