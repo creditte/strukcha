@@ -1,4 +1,3 @@
-import { useNavigate as _unusedNavigate } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
