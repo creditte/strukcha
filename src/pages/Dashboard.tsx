@@ -1038,6 +1038,23 @@ export default function Dashboard() {
         open={showGroupPicker}
         onOpenChange={setShowGroupPicker}
         syncing={syncing}
+        onRefreshCatalogue={async () => {
+          catalogueRun.current = true;
+          try {
+            await refreshXpmCatalogue();
+          } catch (err) {
+            catalogueRun.current = false;
+            throw err;
+          }
+        }}
+        onSaved={(count) => {
+          if (count > 0 && !syncing && !xeroInvalid) {
+            toast({
+              title: "Selection saved",
+              description: "Run Sync XPM to build the diagrams for the groups you picked.",
+            });
+          }
+        }}
       />
       <CreateStructureModal
         open={showCreateModal}
