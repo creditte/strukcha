@@ -84,6 +84,7 @@ export default function Dashboard() {
   const [xeroConnectionType, setXeroConnectionType] = useState<"standard" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   /** True while a "read the group list only" run is in flight. */
   const catalogueRun = useRef(false);
   // The sync runs as a resumable background job; the UI follows the job row so
