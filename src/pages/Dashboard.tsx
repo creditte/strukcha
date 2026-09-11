@@ -410,7 +410,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {isOwnerOrAdmin && (
-                <Button variant="outline" className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
+                <Button variant="outline" className="h-10 gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
                   <Plus className="h-4 w-4" />
                   Create New Structure
                 </Button>
@@ -420,7 +420,7 @@ export default function Dashboard() {
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="outline"
-                      className="gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
+                      className="h-10 gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
                       disabled={xeroLoading}
                     >
                       {xeroLoading ? (
@@ -454,7 +454,7 @@ export default function Dashboard() {
                 </DropdownMenu>
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 py-2 pl-3 pr-2">
+                <div className="flex h-10 items-center gap-2.5 rounded-xl border border-[#13B5EA]/40 bg-[#13B5EA]/5 pl-3 pr-2">
                   {syncing || disconnecting ? (
                     <Loader2 className="h-4 w-4 animate-spin text-[#0d8ab8]" />
                   ) : (
@@ -545,7 +545,7 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="lg"
-                  className="gap-2 rounded-xl px-6 text-sm font-medium"
+                  className="h-11 gap-2 rounded-xl px-6 text-sm font-medium"
                   onClick={handleCreateNew}
                 >
                   <Plus className="h-4 w-4" />
@@ -558,7 +558,7 @@ export default function Dashboard() {
                     <Button
                       size="lg"
                       variant="outline"
-                      className="gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
+                      className="h-11 gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
                       disabled={xeroLoading}
                     >
                       {xeroLoading ? (
