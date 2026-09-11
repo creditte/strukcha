@@ -45,6 +45,47 @@ export interface StructureIssue extends ScoringIssue {
 
 /* ── Helpers ────────────────────────────────────────────────────── */
 
+/** Chunk a list of ids so request URLs stay well below server limits. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+const ID_CHUNK = 150;
+const PAGE_SIZE = 1000;
+
+/**
+ * Fetch every matching row for a set of ids: ids are chunked (URL length) and
+ * each chunk is paged through (PostgREST caps responses at 1000 rows).
+ */
+async function fetchAllByIds<T = any>(
+  table: string,
+  select: string,
+  column: string,
+  ids: string[],
+  notDeleted = false,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (const ids_ of chunk(ids, ID_CHUNK)) {
+    let from = 0;
+    while (true) {
+      let q = (supabase.from(table as any) as any)
+        .select(select)
+        .in(column, ids_)
+        .range(from, from + PAGE_SIZE - 1);
+      if (notDeleted) q = q.is("deleted_at", null);
+      const { data, error } = await q;
+      if (error) throw error;
+      const batch = (data ?? []) as T[];
+      rows.push(...batch);
+      if (batch.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+  }
+  return rows;
+}
+
 function getFriendlyLabel(score: number): string {
   if (score >= 90) return "Healthy";
   if (score >= 70) return "Minor gaps";
@@ -57,17 +98,29 @@ function getFriendlyLabel(score: number): string {
 export function useClientHealthReview() {
   const [review, setReview] = useState<ClientReview | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const runReview = useCallback(async (): Promise<ClientReview | null> => {
     setLoading(true);
+    setError(null);
     try {
-      const { data: structures } = await supabase
-        .from("structures")
-        .select("id, name")
-        .is("deleted_at", null)
-        .eq("is_scenario", false);
+      const structures: { id: string; name: string }[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error: sErr } = await supabase
+          .from("structures")
+          .select("id, name")
+          .is("deleted_at", null)
+          .eq("is_scenario", false)
+          .range(from, from + PAGE_SIZE - 1);
+        if (sErr) throw sErr;
+        const batch = data ?? [];
+        structures.push(...batch);
+        if (batch.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
 
-      if (!structures || structures.length === 0) {
+      if (structures.length === 0) {
         const empty: ClientReview = {
           timestamp: new Date().toISOString(),
           clientScore: 100,
@@ -84,20 +137,24 @@ export function useClientHealthReview() {
 
       const structureIds = structures.map((s) => s.id);
 
-      const [seResult, srResult] = await Promise.all([
-        supabase.from("structure_entities").select("structure_id, entity_id").in("structure_id", structureIds),
-        supabase.from("structure_relationships").select("structure_id, relationship_id").in("structure_id", structureIds),
+      const [seRows, srRows] = await Promise.all([
+        fetchAllByIds<{ structure_id: string; entity_id: string }>(
+          "structure_entities", "structure_id, entity_id", "structure_id", structureIds,
+        ),
+        fetchAllByIds<{ structure_id: string; relationship_id: string }>(
+          "structure_relationships", "structure_id, relationship_id", "structure_id", structureIds,
+        ),
       ]);
 
       const seByStruct = new Map<string, string[]>();
-      for (const row of seResult.data ?? []) {
+      for (const row of seRows) {
         const arr = seByStruct.get(row.structure_id) ?? [];
         arr.push(row.entity_id);
         seByStruct.set(row.structure_id, arr);
       }
 
       const srByStruct = new Map<string, string[]>();
-      for (const row of srResult.data ?? []) {
+      for (const row of srRows) {
         const arr = srByStruct.get(row.structure_id) ?? [];
         arr.push(row.relationship_id);
         srByStruct.set(row.structure_id, arr);
@@ -108,26 +165,24 @@ export function useClientHealthReview() {
       for (const ids of seByStruct.values()) ids.forEach((id) => allEntityIds.add(id));
       for (const ids of srByStruct.values()) ids.forEach((id) => allRelIds.add(id));
 
-      const [entResult, relResult] = await Promise.all([
-        allEntityIds.size > 0
-          ? supabase.from("entities")
-              .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
-              .in("id", Array.from(allEntityIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
-        allRelIds.size > 0
-          ? supabase.from("relationships")
-              .select("id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at")
-              .in("id", Array.from(allRelIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
+      const [entRows, relRows] = await Promise.all([
+        fetchAllByIds<any>(
+          "entities",
+          "id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at",
+          "id", Array.from(allEntityIds), true,
+        ),
+        fetchAllByIds<any>(
+          "relationships",
+          "id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at",
+          "id", Array.from(allRelIds), true,
+        ),
       ]);
 
       const entityById = new Map<string, EntityNode>();
-      for (const e of (entResult.data ?? []) as any[]) entityById.set(e.id, e as EntityNode);
+      for (const e of entRows) entityById.set(e.id, e as EntityNode);
 
       const relById = new Map<string, RelationshipEdge>();
-      for (const r of (relResult.data ?? []) as any[]) {
+      for (const r of relRows) {
         relById.set(r.id, {
           id: r.id, from_entity_id: r.from_entity_id, to_entity_id: r.to_entity_id,
           relationship_type: r.relationship_type, source_data: r.source,
@@ -232,14 +287,15 @@ export function useClientHealthReview() {
       };
 
       setReview(result);
-      setLoading(false);
       return result;
-    } catch (e) {
+    } catch (e: any) {
       console.error("Review error:", e);
-      setLoading(false);
+      setError(e?.message ?? "We couldn't check your structures just now.");
       return null;
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  return { review, loading, runReview };
+  return { review, loading, error, runReview };
 }

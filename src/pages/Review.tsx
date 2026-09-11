@@ -25,7 +25,7 @@ const SEVERITY_STYLES: Record<string, { bg: string; text: string; icon: typeof A
 
 export default function Review() {
   const navigate = useNavigate();
-  const { review, loading, runReview } = useClientHealthReview();
+  const { review, loading, error, runReview } = useClientHealthReview();
 
   useEffect(() => {
     runReview();
@@ -64,6 +64,20 @@ export default function Review() {
           </p>
         )}
       </section>
+
+      {/* ── Load failure ── */}
+      {!loading && error && (
+        <section className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="flex-1 space-y-2">
+            <p className="text-sm font-medium text-foreground">We couldn't load your review</p>
+            <p className="text-xs text-muted-foreground">{error}</p>
+            <Button size="sm" variant="outline" className="text-xs" onClick={() => runReview()}>
+              Try again
+            </Button>
+          </div>
+        </section>
+      )}
 
       {/* ── Progress ── */}
       {!loading && totalStructures > 0 && (
