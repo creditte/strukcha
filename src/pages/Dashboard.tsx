@@ -511,22 +511,6 @@ export default function Dashboard() {
         {/* Billing */}
         <BillingBanner />
 
-        {/* Duplicate entities */}
-        {duplicateCount > 0 && (
-          <Link
-            to="/review?tab=duplicates"
-            className="group flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3.5 transition-all hover:border-warning/50 hover:shadow-sm"
-          >
-            <Copy className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <span className="min-w-0 flex-1 text-sm leading-relaxed text-foreground">
-              <span className="font-semibold">
-                {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
-              </span>{" "}
-              detected — review and merge to keep data clean.
-            </span>
-            <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-          </Link>
-        )}
       </div>
 
       {/* ── Metric Cards ── */}
