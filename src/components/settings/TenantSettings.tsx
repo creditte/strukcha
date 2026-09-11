@@ -351,6 +351,7 @@ export default function TenantSettings({ isAdmin = false }: Props) {
           </CardContent>
         </Card>
       )}
+      </div>
 
       {/* Sticky save bar */}
       {isAdmin && isDirty && (
