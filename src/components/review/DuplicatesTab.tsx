@@ -99,25 +99,45 @@ const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; variant: "defa
   medium: { label: "Medium similarity", variant: "outline", helper: "Names are 85–89% similar. Check carefully." },
 };
 
-const DISMISSED_KEY = "dismissed-duplicate-groups";
-
-function getDismissedGroups(): Set<string> {
-  try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch { return new Set(); }
-}
-
 function buildGroupKey(entities: DuplicateEntity[]): string {
   return entities.map(e => e.id).sort().join("|");
+}
+
+/** Chunked `in()` lookup — replaces the old unbounded `.or(...)` filter string. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+async function fetchRelationshipsFor(ids: string[]) {
+  const rows: { id: string; from_entity_id: string; to_entity_id: string; relationship_type: string }[] = [];
+  const seen = new Set<string>();
+  for (const part of chunk(ids, 150)) {
+    for (const column of ["from_entity_id", "to_entity_id"] as const) {
+      const { data, error } = await supabase
+        .from("relationships")
+        .select("id, from_entity_id, to_entity_id, relationship_type")
+        .is("deleted_at", null)
+        .in(column, part)
+        .order("id");
+      if (error) throw error;
+      for (const r of data ?? []) {
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        rows.push(r as any);
+      }
+    }
+  }
+  return rows;
 }
 
 export default function DuplicatesTab() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [groups, setGroups] = useState<DuplicateGroup[]>([]);
-  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(getDismissedGroups);
-  const [loading, setLoading] = useState(true);
+  const tenantId = useTenantId();
+  const queryClient = useQueryClient();
+
 
   // Merge dialog state
   const [mergeGroup, setMergeGroup] = useState<DuplicateGroup | null>(null);
