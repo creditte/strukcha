@@ -48,7 +48,11 @@ export default function Review() {
           Review &amp; Improve
         </h1>
         {loading ? (
-          <Skeleton className="h-5 w-48" />
+          <p className="text-sm text-muted-foreground">
+            {progress
+              ? `Checking structures — ${progress.scored} of ${progress.total}`
+              : "Loading your structures…"}
+          </p>
         ) : allResolved ? (
           <p className="text-base text-muted-foreground">
             All issues resolved. Your structures are ready.
