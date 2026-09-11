@@ -87,10 +87,49 @@ export function getHealthLabel(score: number): string {
   return "Critical Issues";
 }
 
+/**
+ * Single source of truth for score bands. The Health Check legend, structure
+ * pills, dial label and Review page all read from here so wording and
+ * thresholds can never drift apart again.
+ */
+export const SCORE_BANDS = [
+  {
+    min: 90,
+    status: "good" as const,
+    label: "Healthy",
+    range: "90–100 Healthy",
+    text: "text-success",
+    dot: "bg-success",
+    pill: "bg-success/15 text-success",
+  },
+  {
+    min: 50,
+    status: "warning" as const,
+    label: "Needs attention",
+    range: "50–89 Needs attention",
+    text: "text-warning",
+    dot: "bg-warning",
+    pill: "bg-warning/15 text-warning",
+  },
+  {
+    min: 0,
+    status: "critical" as const,
+    label: "Critical",
+    range: "Below 50 Critical",
+    text: "text-destructive",
+    dot: "bg-destructive",
+    pill: "bg-destructive/15 text-destructive",
+  },
+];
+
+export type ScoreBand = (typeof SCORE_BANDS)[number];
+
+export function getScoreBand(score: number): ScoreBand {
+  return SCORE_BANDS.find((b) => score >= b.min) ?? SCORE_BANDS[SCORE_BANDS.length - 1];
+}
+
 export function getHealthStatus(score: number): "good" | "warning" | "critical" {
-  if (score >= 90) return "good";
-  if (score >= 50) return "warning";
-  return "critical";
+  return getScoreBand(score).status;
 }
 
 // ── Depth estimation ──────────────────────────────────────────────
