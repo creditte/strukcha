@@ -18,7 +18,7 @@ const navItems = [
   { to: "/import", label: "Import", icon: Upload },
   { to: "/structures", label: "Structures", icon: Network },
   { to: "/governance", label: "Health Check", icon: HeartPulse },
-  { to: "/review", label: "Review & Improve", icon: Sparkles, badgeKey: "review" as const },
+  { to: "/review", label: "Review & Improve", icon: Sparkles },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
