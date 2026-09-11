@@ -82,7 +82,7 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showGroupPicker, setShowGroupPicker] = useState(false);
   const [xeroConnectionType, setXeroConnectionType] = useState<"standard" | "practice_manager">("practice_manager");
-  const { review, loading: healthLoading, runReview } = useClientHealthReview();
+  const { review, loading: healthLoading } = useClientHealthReview();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   /** True while a "read the group list only" run is in flight. */
