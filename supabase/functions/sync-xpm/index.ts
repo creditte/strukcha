@@ -54,6 +54,13 @@ const JOB_FILE_NAME = "xpm-sync-3.1";
  */
 const STALE_JOB_MS = 3 * 60_000;
 
+/**
+ * How long to refuse a new sync after Xero rejected the last one. Five failed
+ * runs once landed inside a single minute because nothing stopped an immediate
+ * retry after an authorisation failure.
+ */
+const AUTH_FAILURE_COOLDOWN_MS = 5 * 60_000;
+
 
 type Phase = "clients" | "groups" | "staff" | "done";
 
@@ -111,6 +118,12 @@ interface Progress {
   lastPageKey: string;
   /** When true, every group is re-read from XPM instead of honouring freshness. */
   fullSync: boolean;
+  /**
+   * Catalogue-only run: refresh the list of client groups from XPM and stop.
+   * A brand-new firm needs the list before it can choose which groups become
+   * diagrams, and choosing has to come before any diagram is built.
+   */
+  catalogueOnly: boolean;
   /** Worker lease expiry — only the lease holder may talk to XPM. */
   leaseUntil: string;
   runs: number;
@@ -137,6 +150,7 @@ function emptyProgress(): Progress {
     groupsLoaded: false,
     lastPageKey: "",
     fullSync: false,
+    catalogueOnly: false,
     leaseUntil: "",
     runs: 0,
     started_at: new Date().toISOString(),
@@ -740,6 +754,14 @@ async function runSlice(
       p.updated_at = new Date().toISOString();
       await saveProgress(supabase, jobId, p);
     }
+    // Catalogue-only: the list is what was asked for, so stop before touching
+    // clients, diagrams or staff.
+    if (p.catalogueOnly) {
+      p.phase = "done";
+      p.stats.wallMs += Date.now() - sliceStartedAt;
+      p.updated_at = new Date().toISOString();
+      return p;
+    }
     const slice = await fetchGroupSlice(supabase, tenantId, p.groupCursor, t.groupsPerRun);
     if (slice.length === 0) {
       p.phase = "staff";
@@ -836,6 +858,7 @@ async function saveProgress(
           groupsLoaded: p.groupsLoaded,
           lastPageKey: p.lastPageKey,
           fullSync: p.fullSync,
+          catalogueOnly: p.catalogueOnly,
           leaseUntil: p.leaseUntil,
           groupsProcessed: p.stats.groupsProcessed,
           groupsTotal: p.stats.groupsFound,
@@ -895,6 +918,7 @@ function loadProgress(result: any): Progress {
     groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
     lastPageKey: result.progress?.lastPageKey ?? base.lastPageKey,
     fullSync: result.progress?.fullSync ?? base.fullSync,
+    catalogueOnly: result.progress?.catalogueOnly ?? base.catalogueOnly,
     leaseUntil: result.progress?.leaseUntil ?? base.leaseUntil,
 
     runs: result.progress?.runs ?? 0,
@@ -950,21 +974,27 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
 
       // Remember a broken connection on the record itself, so every user and
       // device sees the reconnect prompt instead of a healthy-looking link.
-      if (fatal) {
-        const { data: conn } = await supabase
+      const { data: conn } = await supabase
+        .from("xero_connections")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .order("connected_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      const message = e instanceof Error ? e.message : String(e);
+      if (conn && fatal) {
+        await markXeroConnectionInvalid(supabase, conn.id, message);
+      } else if (conn) {
+        // Not fatal, but it did fail: stamping the failure time starts the
+        // cooling-off period so the next click can't fire straight into it.
+        await supabase
           .from("xero_connections")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .order("connected_at", { ascending: false, nullsFirst: false })
-          .limit(1)
-          .maybeSingle();
-        if (conn) {
-          await markXeroConnectionInvalid(
-            supabase,
-            conn.id,
-            e instanceof Error ? e.message : String(e),
-          );
-        }
+          .update({
+            last_error: message.slice(0, 500),
+            last_error_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conn.id);
       }
       await supabase
         .from("import_logs")
@@ -1105,7 +1135,7 @@ Deno.serve(async (req) => {
 
     const { data: connections } = await supabase
       .from("xero_connections")
-      .select("id, status, connection_type, last_error")
+      .select("id, status, connection_type, last_error, last_error_at")
       .eq("tenant_id", tenantId)
       .order("connected_at", { ascending: false, nullsFirst: false })
       .limit(1);
@@ -1128,6 +1158,22 @@ Deno.serve(async (req) => {
           "The connected Xero organisation doesn't include Practice Manager, so client groups can't be read. Please reconnect using the Practice Manager option.",
         code: "xero_practice_manager_required",
       }, 409);
+    }
+
+    // Cooling-off: after an authorisation failure, an immediate retry only
+    // produces an identical failure and burns Xero's rate limit.
+    const lastErrorAt = connections[0].last_error_at
+      ? new Date(connections[0].last_error_at as string).getTime()
+      : 0;
+    const cooldownLeftMs = lastErrorAt + AUTH_FAILURE_COOLDOWN_MS - Date.now();
+    if (body.full_sync !== true && cooldownLeftMs > 0) {
+      const seconds = Math.ceil(cooldownLeftMs / 1000);
+      return json({
+        error:
+          `The last sync failed while talking to Xero. Please wait ${seconds > 60 ? `${Math.ceil(seconds / 60)} minute(s)` : `${seconds} seconds`} before trying again.`,
+        code: "xero_cooldown",
+        retryAfterSeconds: seconds,
+      }, 429);
     }
 
     // Clean up long-dead jobs across the project so nothing sits in
@@ -1183,8 +1229,11 @@ Deno.serve(async (req) => {
     // Pre-flight capacity: refuse outright when the subscription cannot create
     // structures at all, and flag a full workspace so the caller can warn the
     // user before a long run that will not produce new diagrams.
+    // A catalogue-only run just refreshes the list of client groups, so plan
+    // capacity and the current selection are irrelevant to it.
+    const catalogueOnly = body.catalogue_only === true;
     const capacity = await readCapacity(supabase, tenantId);
-    if (capacity.enforced && !capacity.accessEnabled) {
+    if (!catalogueOnly && capacity.enforced && !capacity.accessEnabled) {
       return json({
         error:
           "Your subscription is not active, so client groups cannot be turned into diagrams. Please reactivate your plan and try again.",
@@ -1207,6 +1256,11 @@ Deno.serve(async (req) => {
     // freshness window. Routine syncs leave recently read groups alone.
     progress.fullSync = body.full_sync === true;
     progress.capacityRemaining = capacity.remaining;
+    if (catalogueOnly) {
+      progress.catalogueOnly = true;
+      // Skip straight to the group list: no clients, diagrams or staff.
+      progress.phase = "groups";
+    }
     const { data: jobRow, error: jobErr } = await supabase
       .from("import_logs")
       .insert({
@@ -1236,7 +1290,10 @@ Deno.serve(async (req) => {
       atCapacity: noCapacity,
       selectedGroups: selectedCount ?? 0,
       nothingSelected,
-      message: nothingSelected
+      catalogueOnly,
+      message: catalogueOnly
+        ? "Loading your client group list from Xero Practice Manager. This only reads the list — nothing is created yet."
+        : nothingSelected
         ? "Sync started, but no client groups are selected yet. Choose the client groups you want as diagrams, then run the sync again."
         : noCapacity
         ? `Sync started, but your workspace is full (${capacity.used} of ${capacity.limit} structures). Existing diagrams will be refreshed; new client groups can't be added until you archive a structure or upgrade.`

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -74,6 +74,8 @@ export default function Dashboard() {
   const [xeroConnectionType, setXeroConnectionType] = useState<"standard" | "practice_manager">("practice_manager");
   const { review, loading: healthLoading, runReview } = useClientHealthReview();
   const { user } = useAuth();
+  /** True while a "read the group list only" run is in flight. */
+  const catalogueRun = useRef(false);
   // The sync runs as a resumable background job; the UI follows the job row so
   // it never claims success before the database work has actually finished.
   const {
@@ -95,8 +97,16 @@ export default function Dashboard() {
     limitMessage: syncLimitMessage,
     start: startXpmSync,
     stop: stopXpmSync,
+    refreshCatalogue: refreshXpmCatalogue,
   } = useXpmSyncJob({
     onFinished: (finished) => {
+      // Loading just the group list happens while the picker is open — a page
+      // reload there would throw away what the user is doing.
+      if (catalogueRun.current) {
+        catalogueRun.current = false;
+        if (finished.error) reportXeroError(finished.error);
+        return;
+      }
       // A failed sync must never reload the page — the reload wipes the error
       // message before the user can read it. Only a successful run refreshes
       // the dashboard data; a failure keeps the message and, when Xero asked
@@ -1028,6 +1038,23 @@ export default function Dashboard() {
         open={showGroupPicker}
         onOpenChange={setShowGroupPicker}
         syncing={syncing}
+        onRefreshCatalogue={async () => {
+          catalogueRun.current = true;
+          try {
+            await refreshXpmCatalogue();
+          } catch (err) {
+            catalogueRun.current = false;
+            throw err;
+          }
+        }}
+        onSaved={(count) => {
+          if (count > 0 && !syncing && !xeroInvalid) {
+            toast({
+              title: "Selection saved",
+              description: "Run Sync XPM to build the diagrams for the groups you picked.",
+            });
+          }
+        }}
       />
       <CreateStructureModal
         open={showCreateModal}
