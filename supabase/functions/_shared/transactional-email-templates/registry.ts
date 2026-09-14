@@ -5,6 +5,8 @@ export interface TemplateEntry {
   component: React.ComponentType<any>
   subject: string | ((data: Record<string, any>) => string)
   to?: string
+  /** Optional Reply-To address (e.g. support inbox) for reply-friendly emails. */
+  replyTo?: string
   displayName?: string
   previewData?: Record<string, any>
 }
