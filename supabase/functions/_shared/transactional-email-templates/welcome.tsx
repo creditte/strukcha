@@ -34,7 +34,7 @@ const WelcomeEmail = ({ name }: WelcomeProps) => (
           Connect XPM
         </Button>
         <Text style={footer}>
-          Questions? Just reply to this email — a real person will get back to you.
+          This mailbox isn't monitored. Questions? Email us at hello@strukcha.app and a real person will get back to you.
         </Text>
       </Container>
     </Body>
