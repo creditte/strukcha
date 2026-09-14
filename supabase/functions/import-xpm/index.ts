@@ -682,9 +682,12 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     console.error("import-xpm error:", err);
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const detail = err instanceof Error ? err.message : String(err);
+    return jsonError(
+      err instanceof ImportFailure ? err.code : "unknown",
+      "The import could not be started.",
+      500,
+      detail,
+    );
   }
 });
