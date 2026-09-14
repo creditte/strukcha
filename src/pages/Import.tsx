@@ -803,9 +803,8 @@ export default function Import() {
                     const r = (log.result ?? {}) as Progress;
                     const open = expandedLog === log.id;
                     return (
-                      <>
+                      <Fragment key={log.id}>
                         <TableRow
-                          key={log.id}
                           className="cursor-pointer"
                           onClick={() => setExpandedLog(open ? null : log.id)}
                         >
