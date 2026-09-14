@@ -33,8 +33,10 @@ export const emailStyles = {
 
 export const SITE_NAME = 'strukcha'
 export const SITE_URL = 'https://strukcha.app'
-/** Single source of truth for the support/feedback inbox. */
+/** Address shown to users in email copy. */
 export const SUPPORT_EMAIL = 'hello@strukcha.app'
+/** Internal inbox that receives feedback submissions (routing only — unchanged). */
+export const FEEDBACK_INBOX = 'support@strukcha.app'
 
 export function formatEmailDate(iso?: string | null): string {
   if (!iso) return 'soon'
