@@ -14,7 +14,6 @@ import { useBilling } from "@/hooks/useBilling";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import ExportInstructionsPanel from "@/components/import/ExportInstructionsPanel";
 import ImportErrorAlert from "@/components/import/ImportErrorAlert";
-import ImportWarnings from "@/components/import/ImportWarnings";
 import { ImportError, importToastPayload, readFunctionError } from "@/lib/importErrors";
 
 const SAMPLE_CSV = `Name,Entity Type,ABN,ACN,Relationship Type,Related To
@@ -62,7 +61,6 @@ export default function Import() {
   const [percent, setPercent] = useState(0);
   const [records, setRecords] = useState<{ done: number; total: number } | null>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
-  const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const cancelled = useRef(false);
 
   // ── Capacity, straight from the server-side subscription check ───────────
