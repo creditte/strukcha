@@ -1,7 +1,7 @@
 import * as React from 'npm:react@18.3.1'
 import { Body, Container, Head, Heading, Html, Preview, Text } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
-import { SITE_NAME, SUPPORT_EMAIL, emailStyles } from './styles.ts'
+import { FEEDBACK_INBOX, SITE_NAME, emailStyles } from './styles.ts'
 
 interface FeedbackReceivedProps {
   message?: string
