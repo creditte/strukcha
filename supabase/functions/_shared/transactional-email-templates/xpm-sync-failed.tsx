@@ -30,7 +30,7 @@ const XpmSyncFailedEmail = ({ name }: XpmSyncFailedProps) => (
           Reconnect XPM
         </Button>
         <Text style={text}>
-          If the issue persists, email us at hello@strukcha.app and we'll help you sort it out.
+          If the issue persists, reply to this email or write to {SUPPORT_EMAIL} and we'll help you sort it out.
         </Text>
         <Text style={footer}>
           Your existing data is safe — nothing has been lost.
