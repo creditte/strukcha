@@ -795,81 +795,25 @@ export default function Import() {
                     <TableHead>File</TableHead>
                     <TableHead className="min-w-[10rem]">Imported</TableHead>
                     <TableHead className="whitespace-nowrap">Status</TableHead>
-                    <TableHead className="w-8" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {importLogs.map((log) => {
-                    const r = (log.result ?? {}) as Progress;
-                    const open = expandedLog === log.id;
-                    return (
-                      <Fragment key={log.id}>
-                        <TableRow
-                          className="cursor-pointer"
-                          onClick={() => setExpandedLog(open ? null : log.id)}
-                        >
-                          <TableCell className="whitespace-nowrap align-top text-xs">
-                            {format(new Date(log.created_at), "d MMM yyyy, h:mm a")}
-                          </TableCell>
-                          <TableCell className="max-w-[10rem] break-words align-top text-xs font-medium sm:max-w-[14rem]">
-                            {log.file_name || "—"}
-                          </TableCell>
-                          <TableCell className="max-w-[14rem] break-words align-top text-xs">
-                            {getRecordCount(log)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap align-top">
-                            {getStatusBadge(log.status)}
-                          </TableCell>
-                          <TableCell className="align-top">
-                            {open ? (
-                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </TableCell>
-                        </TableRow>
-                        {open && (
-                          <TableRow key={`${log.id}-detail`}>
-                            <TableCell colSpan={5} className="bg-muted/30">
-                              <div className="space-y-2 py-1 text-xs">
-                                <p className="text-muted-foreground">
-                                  {(r.rowIndex ?? 0).toLocaleString()} of{" "}
-                                  {(r.totalRowsParsed ?? 0).toLocaleString()} records processed ·{" "}
-                                  {(r.structuresCreated ?? 0).toLocaleString()} structures created ·{" "}
-                                  {(r.relationshipsSkipped ?? 0).toLocaleString()} relationships skipped
-                                </p>
-                                {(r.structuresSkippedLimit ?? 0) > 0 && (
-                                  <p className="text-destructive">
-                                    {r.structuresSkippedLimit!.toLocaleString()} group
-                                    {r.structuresSkippedLimit === 1 ? "" : "s"} skipped —{" "}
-                                    {r.limitCode === "subscription_inactive"
-                                      ? "subscription inactive"
-                                      : "structure limit reached"}
-                                    {(r.blockedGroups?.length ?? 0) > 0
-                                      ? `: ${r.blockedGroups!.slice(0, 5).join(", ")}${r.blockedGroups!.length > 5 ? "…" : ""}`
-                                      : ""}
-                                  </p>
-                                )}
-                                {log.status === "failed" && (
-                                  <div className="space-y-2">
-                                    <ImportErrorAlert
-                                      error={{ code: r.errorCode, message: r.error, detail: r.error }}
-                                      retrying={importing}
-                                      retryLabel="Resume import"
-                                      onRetry={() => void runImport({ resumeJobId: log.id })}
-                                    />
-                                  </div>
-                                )}
-                                {(r.warnings?.length ?? 0) > 0 && (
-                                  <ImportWarnings warnings={r.warnings ?? []} />
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })}
+                  {importLogs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell className="whitespace-nowrap align-top text-xs">
+                        {format(new Date(log.created_at), "d MMM yyyy, h:mm a")}
+                      </TableCell>
+                      <TableCell className="max-w-[10rem] break-words align-top text-xs font-medium sm:max-w-[14rem]">
+                        {log.file_name || "—"}
+                      </TableCell>
+                      <TableCell className="max-w-[14rem] break-words align-top text-xs">
+                        {getRecordCount(log)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-top">
+                        {getStatusBadge(log.status)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
