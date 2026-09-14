@@ -36,7 +36,7 @@ const FeedbackReceivedEmail = ({
           Page: {page || '—'}
           {structureId ? ` · Structure: ${structureId}` : ''}
         </Text>
-        <Text style={emailStyles.footer}>Sent to {SUPPORT_EMAIL}</Text>
+        <Text style={emailStyles.footer}>Sent to {FEEDBACK_INBOX}</Text>
       </Container>
     </Body>
   </Html>
@@ -45,7 +45,7 @@ const FeedbackReceivedEmail = ({
 export const template = {
   component: FeedbackReceivedEmail,
   subject: 'New strukcha feedback',
-  to: SUPPORT_EMAIL,
+  to: FEEDBACK_INBOX,
   displayName: 'Feedback received',
   previewData: {
     message: 'The diagram export is great, but could we get PNG too?',
