@@ -588,39 +588,66 @@ Deno.serve(async (req) => {
     });
     const { data: { user }, error: authErr } = await anonClient.auth.getUser();
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("unauthorized", "Your session has expired.", 401);
     }
 
     const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
     if (!tenantId) {
-      return new Response(JSON.stringify({ error: "No tenant found" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("unauthorized", "No workspace found for this account.", 400);
     }
 
     // Abandoned jobs must not stay "processing" forever.
     await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 10 });
 
-    const { fileName, content } = body ?? {};
-    if (!content || !fileName) {
-      return new Response(JSON.stringify({ error: "Missing fileName or content" }), {
-        status: 400,
+    // ── Resume an existing job (failed or interrupted) ───────────────────
+    if (body?.resumeJobId) {
+      const resumeId = String(body.resumeJobId);
+      const { data: existing } = await supabase
+        .from("import_logs")
+        .select("id, tenant_id, status")
+        .eq("id", resumeId)
+        .maybeSingle();
+
+      if (!existing || existing.tenant_id !== tenantId) {
+        return jsonError("unknown", "That import could not be found in your workspace.", 404);
+      }
+      if (existing.status === "completed") {
+        return jsonError("unknown", "That import already finished.", 400);
+      }
+      await supabase.from("import_logs").update({ status: "processing" }).eq("id", resumeId);
+
+      // deno-lint-ignore no-explicit-any
+      const rt = (globalThis as any).EdgeRuntime;
+      const resumeTask = processJob(supabase, supabaseUrl, serviceKey, resumeId);
+      if (rt?.waitUntil) rt.waitUntil(resumeTask); else await resumeTask;
+
+      return new Response(JSON.stringify({ status: "processing", jobId: resumeId }), {
+        status: 202,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const { fileName, content } = body ?? {};
+    if (!content || !fileName) {
+      return jsonError("wrong_report", "No file content was received.", 400);
+    }
+
+    const contentBytes = new TextEncoder().encode(String(content)).length;
+    if (contentBytes > MAX_CONTENT_BYTES) {
+      return jsonError(
+        "file_too_large",
+        "That report is too large to import in one upload.",
+        413,
+        `${(contentBytes / 1024 / 1024).toFixed(1)} MB received, ${MAX_CONTENT_BYTES / 1024 / 1024} MB maximum.`,
+      );
     }
 
     const isXml = String(fileName).toLowerCase().endsWith(".xml");
     const totalRows = countRows(content, isXml);
     if (totalRows === 0) {
-      return new Response(JSON.stringify({ error: "No records found in file" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("no_records", "No client records were found in that file.", 400);
     }
+
 
     const { data: log, error: logErr } = await supabase
       .from("import_logs")
