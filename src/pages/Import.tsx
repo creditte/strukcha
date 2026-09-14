@@ -1,18 +1,10 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Upload,
-  CheckCircle,
-  AlertCircle,
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  X,
-} from "lucide-react";
+import { Upload, CheckCircle, AlertCircle, Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useCacheInvalidation } from "@/hooks/useSharedQueries";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -486,13 +478,16 @@ export default function Import() {
       </div>
 
       {/* Upload on the left, export instructions on the right */}
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-6">
-        <Card className="min-w-0">
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-6">
+        <Card className="flex h-full min-w-0 flex-col">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Upload XPM report</CardTitle>
-            <CardDescription>CSV or XML, up to {MAX_FILE_BYTES / 1024 / 1024} MB.</CardDescription>
+            <CardDescription>
+              CSV or XML, up to {MAX_FILE_BYTES / 1024 / 1024} MB. For bigger exports, filter the
+              report by client group and upload a few smaller files.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex-1 space-y-4">
             {blockedByBilling && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -768,7 +763,12 @@ export default function Import() {
               </Alert>
             )}
 
-            <ImportWarnings warnings={result.warnings ?? []} />
+            {(result.warnings?.length ?? 0) > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {result.warnings!.length.toLocaleString()} row
+                {result.warnings!.length === 1 ? "" : "s"} needed attention and were skipped.
+              </p>
+            )}
 
             <Button asChild variant="outline" size="sm" className="h-8 text-xs">
               <Link to="/structures">View structures</Link>
