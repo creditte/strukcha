@@ -540,6 +540,7 @@ async function processJob(
         result: {
           ...current,
           error: err instanceof Error ? err.message : String(err),
+          errorCode: err instanceof ImportFailure ? err.code : "unknown",
         },
       })
       .eq("id", logId);
