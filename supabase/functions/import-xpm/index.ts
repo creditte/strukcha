@@ -16,6 +16,28 @@ const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "2000");
 
 const MAX_WARNINGS = 200;
 
+/** Largest payload we accept in one upload — mirrors the client-side guard. */
+const MAX_CONTENT_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Failure carrying a stable machine code so the UI can show a plain,
+ * actionable message instead of raw server text.
+ */
+class ImportFailure extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function jsonError(code: string, message: string, status: number, detail = "") {
+  return new Response(JSON.stringify({ code, error: message, detail }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 // ── Canonical relationship mapping ──────────────────────────────────────
 interface CanonicalRule {
   type: string;
@@ -233,9 +255,15 @@ interface Progress {
   rowsSkippedLimit: number;
   structureLimit: number;
   limitReached: boolean;
+  /** Why groups were skipped: structure_limit_reached | subscription_inactive. */
+  limitCode: string | null;
+  /** Names of the groups that could not be created (bounded). */
+  blockedGroups: string[];
   runs: number;
   warnings: string[];
 }
+
+const MAX_BLOCKED_GROUPS = 200;
 
 function emptyProgress(total: number): Progress {
   return {
@@ -251,6 +279,8 @@ function emptyProgress(total: number): Progress {
     rowsSkippedLimit: 0,
     structureLimit: 0,
     limitReached: false,
+    limitCode: null,
+    blockedGroups: [],
     runs: 0,
     warnings: [],
   };
@@ -268,6 +298,7 @@ interface BatchResult {
   relationshipsCreated: number;
   relationshipsSkipped: number;
   warnings: string[];
+  limitCode: string | null;
   unavailableGroups: string[];
   unresolvedRels: { row: number; label: string }[];
 }
@@ -285,6 +316,8 @@ async function runSlice(
     rowsSkippedLimit: progressIn.rowsSkippedLimit ?? 0,
     structureLimit: progressIn.structureLimit ?? 0,
     limitReached: progressIn.limitReached ?? false,
+    limitCode: progressIn.limitCode ?? null,
+    blockedGroups: [...(progressIn.blockedGroups ?? [])],
     warnings: [...(progressIn.warnings ?? [])],
   };
 
@@ -398,7 +431,7 @@ async function runSlice(
       },
     }));
 
-  if (error) throw new Error(`Import batch failed: ${error.message}`);
+  if (error) throw new ImportFailure("database", `Import batch failed: ${error.message}`);
   const res = (data ?? {}) as unknown as BatchResult;
 
   p.entitiesCreated += res.entitiesCreated ?? 0;
@@ -409,12 +442,18 @@ async function runSlice(
   p.relationshipsSkipped += res.relationshipsSkipped ?? 0;
   if (res.structureLimit) p.structureLimit = res.structureLimit;
   if ((res.structuresSkippedLimit ?? 0) > 0) p.limitReached = true;
+  if (res.limitCode && !p.limitCode) p.limitCode = res.limitCode;
 
   for (const w of res.warnings ?? []) warn(String(w));
 
   // Rows whose grouping was lost because a structure could not be created.
   const unavailable = new Set(res.unavailableGroups ?? []);
   if (unavailable.size > 0) {
+    for (const g of unavailable) {
+      if (p.blockedGroups.length < MAX_BLOCKED_GROUPS && !p.blockedGroups.includes(g)) {
+        p.blockedGroups.push(g);
+      }
+    }
     for (const gs of rowGroups) {
       if (gs.some((g) => unavailable.has(g))) p.rowsSkippedLimit++;
     }
@@ -501,6 +540,7 @@ async function processJob(
         result: {
           ...current,
           error: err instanceof Error ? err.message : String(err),
+          errorCode: err instanceof ImportFailure ? err.code : "unknown",
         },
       })
       .eq("id", logId);
@@ -548,39 +588,66 @@ Deno.serve(async (req) => {
     });
     const { data: { user }, error: authErr } = await anonClient.auth.getUser();
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("unauthorized", "Your session has expired.", 401);
     }
 
     const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
     if (!tenantId) {
-      return new Response(JSON.stringify({ error: "No tenant found" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("unauthorized", "No workspace found for this account.", 400);
     }
 
     // Abandoned jobs must not stay "processing" forever.
     await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 10 });
 
-    const { fileName, content } = body ?? {};
-    if (!content || !fileName) {
-      return new Response(JSON.stringify({ error: "Missing fileName or content" }), {
-        status: 400,
+    // ── Resume an existing job (failed or interrupted) ───────────────────
+    if (body?.resumeJobId) {
+      const resumeId = String(body.resumeJobId);
+      const { data: existing } = await supabase
+        .from("import_logs")
+        .select("id, tenant_id, status")
+        .eq("id", resumeId)
+        .maybeSingle();
+
+      if (!existing || existing.tenant_id !== tenantId) {
+        return jsonError("unknown", "That import could not be found in your workspace.", 404);
+      }
+      if (existing.status === "completed") {
+        return jsonError("unknown", "That import already finished.", 400);
+      }
+      await supabase.from("import_logs").update({ status: "processing" }).eq("id", resumeId);
+
+      // deno-lint-ignore no-explicit-any
+      const rt = (globalThis as any).EdgeRuntime;
+      const resumeTask = processJob(supabase, supabaseUrl, serviceKey, resumeId);
+      if (rt?.waitUntil) rt.waitUntil(resumeTask); else await resumeTask;
+
+      return new Response(JSON.stringify({ status: "processing", jobId: resumeId }), {
+        status: 202,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const { fileName, content } = body ?? {};
+    if (!content || !fileName) {
+      return jsonError("wrong_report", "No file content was received.", 400);
+    }
+
+    const contentBytes = new TextEncoder().encode(String(content)).length;
+    if (contentBytes > MAX_CONTENT_BYTES) {
+      return jsonError(
+        "file_too_large",
+        "That report is too large to import in one upload.",
+        413,
+        `${(contentBytes / 1024 / 1024).toFixed(1)} MB received, ${MAX_CONTENT_BYTES / 1024 / 1024} MB maximum.`,
+      );
     }
 
     const isXml = String(fileName).toLowerCase().endsWith(".xml");
     const totalRows = countRows(content, isXml);
     if (totalRows === 0) {
-      return new Response(JSON.stringify({ error: "No records found in file" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("no_records", "No client records were found in that file.", 400);
     }
+
 
     const { data: log, error: logErr } = await supabase
       .from("import_logs")
@@ -596,10 +663,12 @@ Deno.serve(async (req) => {
       .single();
 
     if (logErr || !log) {
-      return new Response(JSON.stringify({ error: logErr?.message ?? "Failed to start import" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError(
+        "database",
+        "The import could not be started.",
+        500,
+        logErr?.message ?? "",
+      );
     }
 
     // deno-lint-ignore no-explicit-any
@@ -613,9 +682,12 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     console.error("import-xpm error:", err);
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const detail = err instanceof Error ? err.message : String(err);
+    return jsonError(
+      err instanceof ImportFailure ? err.code : "unknown",
+      "The import could not be started.",
+      500,
+      detail,
+    );
   }
 });
