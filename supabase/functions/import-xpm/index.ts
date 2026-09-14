@@ -233,9 +233,15 @@ interface Progress {
   rowsSkippedLimit: number;
   structureLimit: number;
   limitReached: boolean;
+  /** Why groups were skipped: structure_limit_reached | subscription_inactive. */
+  limitCode: string | null;
+  /** Names of the groups that could not be created (bounded). */
+  blockedGroups: string[];
   runs: number;
   warnings: string[];
 }
+
+const MAX_BLOCKED_GROUPS = 200;
 
 function emptyProgress(total: number): Progress {
   return {
@@ -251,6 +257,8 @@ function emptyProgress(total: number): Progress {
     rowsSkippedLimit: 0,
     structureLimit: 0,
     limitReached: false,
+    limitCode: null,
+    blockedGroups: [],
     runs: 0,
     warnings: [],
   };
