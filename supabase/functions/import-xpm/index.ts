@@ -663,10 +663,12 @@ Deno.serve(async (req) => {
       .single();
 
     if (logErr || !log) {
-      return new Response(JSON.stringify({ error: logErr?.message ?? "Failed to start import" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError(
+        "database",
+        "The import could not be started.",
+        500,
+        logErr?.message ?? "",
+      );
     }
 
     // deno-lint-ignore no-explicit-any
