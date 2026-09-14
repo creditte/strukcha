@@ -3,6 +3,7 @@ import {
   Body, Button, Container, Head, Heading, Html, Preview, Text,
 } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
+import { SUPPORT_EMAIL } from './styles.ts'
 
 const SITE_NAME = 'strukcha'
 const SITE_URL = 'https://strukcha.app'
@@ -34,7 +35,7 @@ const WelcomeEmail = ({ name }: WelcomeProps) => (
           Connect XPM
         </Button>
         <Text style={footer}>
-          This mailbox isn't monitored. Questions? Email us at hello@strukcha.app and a real person will get back to you.
+          Questions? Just reply to this email, or write to {SUPPORT_EMAIL} — a real person will get back to you.
         </Text>
       </Container>
     </Body>
@@ -43,6 +44,7 @@ const WelcomeEmail = ({ name }: WelcomeProps) => (
 
 export const template = {
   component: WelcomeEmail,
+  replyTo: SUPPORT_EMAIL,
   subject: 'Welcome to strukcha — connect XPM to get started',
   displayName: 'Welcome',
   previewData: { name: 'Sarah' },

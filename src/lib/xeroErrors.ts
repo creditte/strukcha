@@ -298,7 +298,7 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
       kind: "unavailable",
       title: "Xero request failed",
       message: "Xero didn't return a successful response for that request.",
-      resolution: "Please try again in a moment. If it keeps happening, contact support at hello@strukcha.app.",
+      resolution: "Please try again in a moment. If it keeps happening, contact support at support@strukcha.app.",
       retryable: true,
       requiresReconnect: false,
     };
@@ -308,7 +308,7 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
     kind: "unknown",
     title: "Something went wrong with Xero",
     message: "We couldn't complete that Xero request.",
-    resolution: "Please try again. If the problem persists, contact support at hello@strukcha.app.",
+    resolution: "Please try again. If the problem persists, contact support at support@strukcha.app.",
     retryable: true,
     requiresReconnect: false,
   };

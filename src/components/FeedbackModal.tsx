@@ -59,7 +59,7 @@ export default function FeedbackModal() {
       if (error) throw error;
 
       // Route the feedback to the support inbox (recipient is fixed on the
-      // 'feedback-received' template via SUPPORT_EMAIL).
+      // 'feedback-received' template via FEEDBACK_INBOX).
       supabase.functions
         .invoke("send-transactional-email", {
           body: {

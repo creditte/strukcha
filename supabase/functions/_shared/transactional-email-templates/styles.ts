@@ -33,10 +33,12 @@ export const emailStyles = {
 
 export const SITE_NAME = 'strukcha'
 export const SITE_URL = 'https://strukcha.app'
-/** Address shown to users in email copy. */
-export const SUPPORT_EMAIL = 'hello@strukcha.app'
-/** Internal inbox that receives feedback submissions (routing only — unchanged). */
-export const FEEDBACK_INBOX = 'support@strukcha.app'
+/** Customer support address: shown in support copy and used as Reply-To. */
+export const SUPPORT_EMAIL = 'support@strukcha.app'
+/** General/sales contact — never used for support or technical workflows. */
+export const GENERAL_CONTACT_EMAIL = 'hello@strukcha.app'
+/** Inbox that receives in-app feedback submissions. */
+export const FEEDBACK_INBOX = SUPPORT_EMAIL
 
 export function formatEmailDate(iso?: string | null): string {
   if (!iso) return 'soon'

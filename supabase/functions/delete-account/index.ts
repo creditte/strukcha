@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
       log("tenant delete failed", { message: tenantDelErr.message });
       return json(
         {
-          error: "We could not remove your firm data. Nothing further was deleted — please contact hello@strukcha.app.",
+          error: "We could not remove your firm data. Nothing further was deleted — please contact support@strukcha.app.",
         },
         500,
       );
@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
         ok: true,
         partial: true,
         message:
-          "Your firm data was deleted, but some sign-in records could not be removed. Contact hello@strukcha.app if you can still sign in.",
+          "Your firm data was deleted, but some sign-in records could not be removed. Contact support@strukcha.app if you can still sign in.",
       });
     }
 

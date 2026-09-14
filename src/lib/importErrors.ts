@@ -215,7 +215,7 @@ export function translateImportError(err: unknown): FriendlyImportError {
         title: "The import couldn't be saved",
         message: "Part of the file could not be written to your workspace.",
         resolution:
-          "Try again in a moment. If it keeps happening, email hello@strukcha.app and quote reference IMP-DB.",
+          "Try again in a moment. If it keeps happening, email support@strukcha.app and quote reference IMP-DB.",
         retryable: true,
       };
     default:
@@ -224,7 +224,7 @@ export function translateImportError(err: unknown): FriendlyImportError {
         title: "The import didn't complete",
         message: "Something unexpected stopped the import.",
         resolution:
-          "Try again. If the problem persists, email hello@strukcha.app and quote reference IMP-UNKNOWN.",
+          "Try again. If the problem persists, email support@strukcha.app and quote reference IMP-UNKNOWN.",
         retryable: true,
       };
   }

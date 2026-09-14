@@ -1,7 +1,7 @@
 import * as React from 'npm:react@18.3.1'
 import { Body, Button, Container, Head, Heading, Html, Preview, Text } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
-import { SITE_NAME, SITE_URL, emailStyles, formatEmailDate, formatPlanName } from './styles.ts'
+import { SUPPORT_EMAIL, SITE_NAME, SITE_URL, emailStyles, formatEmailDate, formatPlanName } from './styles.ts'
 
 interface SubscriptionCanceledProps {
   name?: string
@@ -64,6 +64,7 @@ const SubscriptionCanceledEmail = ({
 
 export const template = {
   component: SubscriptionCanceledEmail,
+  replyTo: SUPPORT_EMAIL,
   subject: (data: Record<string, unknown>) => {
     const reason = data.reason as string | undefined
     if (reason === 'payment_failed' || reason === 'payment failed') {
