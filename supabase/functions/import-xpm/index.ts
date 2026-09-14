@@ -409,7 +409,7 @@ async function runSlice(
       },
     }));
 
-  if (error) throw new Error(`Import batch failed: ${error.message}`);
+  if (error) throw new ImportFailure("database", `Import batch failed: ${error.message}`);
   const res = (data ?? {}) as unknown as BatchResult;
 
   p.entitiesCreated += res.entitiesCreated ?? 0;
@@ -420,12 +420,18 @@ async function runSlice(
   p.relationshipsSkipped += res.relationshipsSkipped ?? 0;
   if (res.structureLimit) p.structureLimit = res.structureLimit;
   if ((res.structuresSkippedLimit ?? 0) > 0) p.limitReached = true;
+  if (res.limitCode && !p.limitCode) p.limitCode = res.limitCode;
 
   for (const w of res.warnings ?? []) warn(String(w));
 
   // Rows whose grouping was lost because a structure could not be created.
   const unavailable = new Set(res.unavailableGroups ?? []);
   if (unavailable.size > 0) {
+    for (const g of unavailable) {
+      if (p.blockedGroups.length < MAX_BLOCKED_GROUPS && !p.blockedGroups.includes(g)) {
+        p.blockedGroups.push(g);
+      }
+    }
     for (const gs of rowGroups) {
       if (gs.some((g) => unavailable.has(g))) p.rowsSkippedLimit++;
     }
