@@ -16,6 +16,28 @@ const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "2000");
 
 const MAX_WARNINGS = 200;
 
+/** Largest payload we accept in one upload — mirrors the client-side guard. */
+const MAX_CONTENT_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Failure carrying a stable machine code so the UI can show a plain,
+ * actionable message instead of raw server text.
+ */
+class ImportFailure extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function jsonError(code: string, message: string, status: number, detail = "") {
+  return new Response(JSON.stringify({ code, error: message, detail }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 // ── Canonical relationship mapping ──────────────────────────────────────
 interface CanonicalRule {
   type: string;
