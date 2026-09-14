@@ -175,6 +175,7 @@ export async function queueTransactionalEmail(
       to: effectiveRecipient,
       from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
       sender_domain: SENDER_DOMAIN,
+      reply_to: template.replyTo,
       subject: resolvedSubject,
       html,
       text: plainText,
