@@ -8,14 +8,14 @@ interface Props {
 /** Side panel explaining how to produce the file — sits right of the upload area. */
 export default function ExportInstructionsPanel({ onDownloadSample }: Props) {
   return (
-    <Card className="h-fit">
+    <Card className="flex h-full flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Info className="h-4 w-4 shrink-0 text-primary" />
           How to export from XPM
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4 pt-0 text-sm text-muted-foreground">
+      <CardContent className="flex-1 space-y-4 pt-0 text-sm text-muted-foreground">
         <ol className="list-decimal space-y-2 pl-4">
           <li>
             In Xero Practice Manager, go to <strong className="text-foreground">Business → Reports</strong>.
@@ -30,15 +30,6 @@ export default function ExportInstructionsPanel({ onDownloadSample }: Props) {
           </li>
           <li>Save the file, then upload it here.</li>
         </ol>
-
-        <div className="rounded-md border border-border/60 bg-muted/40 p-3">
-          <p className="text-xs font-medium text-foreground">Very large practices</p>
-          <p className="mt-1 text-xs">
-            If your export is bigger than 15 MB, filter the report by client group and upload a few
-            files instead of one. Repeat uploads are safe — existing clients are updated, never
-            duplicated.
-          </p>
-        </div>
 
         <button
           type="button"
