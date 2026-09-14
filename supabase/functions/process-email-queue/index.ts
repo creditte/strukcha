@@ -67,6 +67,7 @@ async function sendViaSmtp2go(payload: Record<string, unknown>): Promise<void> {
       subject: payload.subject as string,
       html_body: (payload.html as string) || undefined,
       text_body: (payload.text as string) || undefined,
+      ...(replyTo ? { custom_headers: [{ header: 'Reply-To', value: replyTo }] } : {}),
     }),
   })
 
