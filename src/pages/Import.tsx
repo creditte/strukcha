@@ -485,7 +485,7 @@ export default function Import() {
               report by client group and upload a few smaller files.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 space-y-4">
+          <CardContent className="flex flex-1 flex-col gap-4">
             {blockedByBilling && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -542,7 +542,7 @@ export default function Import() {
 
             <label
               aria-disabled={limitReached || blockedByBilling || importing}
-              className={`flex min-h-[6rem] flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-4 text-muted-foreground transition-colors sm:p-6 ${
+              className={`flex min-h-[6rem] flex-1 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-4 text-muted-foreground transition-colors sm:p-6 ${
                 limitReached || blockedByBilling || importing
                   ? "pointer-events-none cursor-not-allowed opacity-50"
                   : "cursor-pointer hover:border-primary hover:text-foreground"
