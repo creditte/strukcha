@@ -3,6 +3,7 @@ import {
   Body, Button, Container, Head, Heading, Html, Link, Preview, Text,
 } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
+import { SUPPORT_EMAIL } from './styles.ts'
 
 const SITE_NAME = 'strukcha'
 const SITE_URL = 'https://strukcha.app'
@@ -41,6 +42,7 @@ const XpmSyncFailedEmail = ({ name }: XpmSyncFailedProps) => (
 
 export const template = {
   component: XpmSyncFailedEmail,
+  replyTo: SUPPORT_EMAIL,
   subject: 'XPM sync issue — quick fix needed',
   displayName: 'XPM sync failed',
   previewData: { name: 'Sarah' },

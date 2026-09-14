@@ -3,6 +3,7 @@ import {
   Body, Button, Container, Head, Heading, Html, Preview, Text,
 } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
+import { SUPPORT_EMAIL } from './styles.ts'
 
 const SITE_NAME = 'strukcha'
 const SITE_URL = 'https://strukcha.app'
@@ -43,6 +44,7 @@ const XeroConnectionLapsedEmail = ({ name, orgName, reason }: XeroConnectionLaps
 
 export const template = {
   component: XeroConnectionLapsedEmail,
+  replyTo: SUPPORT_EMAIL,
   subject: 'Action needed: reconnect Xero',
   displayName: 'Xero connection lapsed',
   previewData: {
