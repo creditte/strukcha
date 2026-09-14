@@ -52,6 +52,8 @@ async function sendViaSmtp2go(payload: Record<string, unknown>): Promise<void> {
   }
 
   const fromStr = (payload.from as string) || 'strukcha <no-reply@strukcha.app>'
+  const replyTo = typeof payload.reply_to === 'string' && payload.reply_to ? payload.reply_to : undefined
+
 
   const response = await fetch('https://api.smtp2go.com/v3/email/send', {
     method: 'POST',
