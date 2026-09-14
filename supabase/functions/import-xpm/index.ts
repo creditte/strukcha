@@ -276,6 +276,7 @@ interface BatchResult {
   relationshipsCreated: number;
   relationshipsSkipped: number;
   warnings: string[];
+  limitCode: string | null;
   unavailableGroups: string[];
   unresolvedRels: { row: number; label: string }[];
 }
@@ -293,6 +294,8 @@ async function runSlice(
     rowsSkippedLimit: progressIn.rowsSkippedLimit ?? 0,
     structureLimit: progressIn.structureLimit ?? 0,
     limitReached: progressIn.limitReached ?? false,
+    limitCode: progressIn.limitCode ?? null,
+    blockedGroups: [...(progressIn.blockedGroups ?? [])],
     warnings: [...(progressIn.warnings ?? [])],
   };
 
