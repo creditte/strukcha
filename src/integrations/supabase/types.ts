@@ -222,6 +222,7 @@ export type Database = {
           trust_subtype: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at: string
           verified: boolean
+          xpm_last_seen_at: string | null
           xpm_uuid: string | null
         }
         Insert: {
@@ -247,6 +248,7 @@ export type Database = {
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean
+          xpm_last_seen_at?: string | null
           xpm_uuid?: string | null
         }
         Update: {
@@ -272,6 +274,7 @@ export type Database = {
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean
+          xpm_last_seen_at?: string | null
           xpm_uuid?: string | null
         }
         Relationships: [
@@ -1691,6 +1694,10 @@ export type Database = {
         Args: { p_tenant_id: string; p_tenant_user_id: string }
         Returns: Json
       }
+      sync_xpm_archive_absent_clients: {
+        Args: { _since: string; _tenant_id: string }
+        Returns: Json
+      }
       sync_xpm_ensure_fallback_structure: {
         Args: { _since: string; _tenant_id: string }
         Returns: Json
@@ -1712,6 +1719,10 @@ export type Database = {
       sync_xpm_link_trustees: {
         Args: { _pairs: Json; _tenant_id: string }
         Returns: Json
+      }
+      sync_xpm_mark_seen: {
+        Args: { _tenant_id: string; _uuids: string[] }
+        Returns: number
       }
       sync_xpm_upsert_clients: {
         Args: { _payload: Json; _tenant_id: string }
