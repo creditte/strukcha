@@ -133,8 +133,13 @@ export function useStructureData(structureId: string | undefined) {
         .from("entities")
         .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, is_investment_company, created_at, tfn, state, client_code, account_manager, gst_registered, is_archived")
         .in("id", entityIds)
-        .is("deleted_at", null);
-      setEntities((entitiesData as EntityNode[]) ?? []);
+        .is("deleted_at", null)
+        // Archived in XPM = no longer part of the active structure, but the
+        // record and its history are kept.
+        .eq("is_archived", false);
+      const liveEntities = (entitiesData as EntityNode[]) ?? [];
+      const liveEntityIds = new Set(liveEntities.map((e) => e.id));
+      setEntities(liveEntities);
 
       const { data: srRows } = await supabase
         .from("structure_relationships")
@@ -149,7 +154,12 @@ export function useStructureData(structureId: string | undefined) {
           .in("id", relIds)
           .is("deleted_at", null);
         setRelationships(
-          (relData ?? []).map((r) => ({
+          (relData ?? [])
+            // Drop edges pointing at an archived entity so no line dangles.
+            .filter((r) =>
+              liveEntityIds.has(r.from_entity_id) && liveEntityIds.has(r.to_entity_id)
+            )
+            .map((r) => ({
             id: r.id,
             from_entity_id: r.from_entity_id,
             to_entity_id: r.to_entity_id,

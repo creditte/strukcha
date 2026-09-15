@@ -235,6 +235,17 @@ export function getRelationshipLabel(relationshipType: string): string {
     ?? relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
 }
 
+/**
+ * Directional label for diagram edges and exports, e.g. "Trustee Of".
+ * A finished diagram has to read on its own, so the label states the role and
+ * its direction rather than a bare database value.
+ */
+export function getRelationshipEdgeLabel(relationshipType: string): string {
+  const base = getRelationshipLabel(relationshipType);
+  if (relationshipType === "spouse") return "Spouse";
+  return `${base} Of`;
+}
+
 // ── Bare trust beneficiary restriction ────────────────────────────
 
 /** Bare trusts only allow Individual, Company, SMSF as beneficiaries */
@@ -266,6 +277,10 @@ export function isDirectionValid(
 ): boolean {
   const rule = RULES_BY_TYPE.get(relationshipType);
   if (!rule) return true; // No enforced rules for unknown types
+
+  // "Unclassified" means the entity type is unknown, not wrong. Judging a link
+  // against an unknown type would flag (and previously discard) valid data.
+  if (fromEntityType === "Unclassified" || toEntityType === "Unclassified") return true;
 
   const sourceOk = matchesCategories(fromEntityType, rule.allowedSourceTypes);
   const targetOk = matchesCategories(toEntityType, rule.allowedTargetTypes);

@@ -257,7 +257,17 @@ interface ParsedClient {
   entityType: string;
   abn: string | null;
   acn: string | null;
-  rels: { type: string; uuid: string; name: string; reverse: boolean }[];
+  /** XPM `IsArchived` — archived clients stay as history but leave active structures. */
+  isArchived: boolean;
+  isDeleted: boolean;
+  rels: {
+    type: string;
+    uuid: string;
+    name: string;
+    reverse: boolean;
+    startDate: string | null;
+    endDate: string | null;
+  }[];
 }
 
 /**
@@ -321,7 +331,7 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
     `${tagText(head, "FirstName")} ${tagText(head, "LastName")}`.trim();
   if (!uuid || !name) return null;
 
-  const entityType = resolveEntityType(tagText(head, "BusinessStructure"));
+  const entityType = resolveEntityType(tagText(head, "BusinessStructure"), name);
   const rels: ParsedClient["rels"] = [];
 
   if (tail) {
@@ -342,7 +352,14 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
         p.stats.relationshipsSkipped++;
         continue;
       }
-      rels.push({ type: rule.type, uuid: relatedUuid, name: relatedName, reverse: rule.reverse });
+      rels.push({
+        type: rule.type,
+        uuid: relatedUuid,
+        name: relatedName,
+        reverse: rule.reverse,
+        startDate: tagText(rel, "StartDate") || null,
+        endDate: tagText(rel, "EndDate") || null,
+      });
     }
   }
 
@@ -352,6 +369,8 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
     entityType,
     abn: tagText(head, "TaxNumber") || tagText(head, "ABN") || null,
     acn: tagText(head, "CompanyNumber") || tagText(head, "ACN") || null,
+    isArchived: tagText(head, "IsArchived").toLowerCase() === "yes",
+    isDeleted: tagText(head, "IsDeleted").toLowerCase() === "yes",
     rels,
   };
 }
@@ -412,6 +431,9 @@ async function processClientPage(
     for (const segment of slice) {
       const c = parseClientSegment(segment, p);
       if (!c) continue;
+      // Deleted in XPM means the record no longer exists there; skip it entirely
+      // rather than resurrecting it as an entity.
+      if (c.isDeleted) continue;
       const isTrustee = isCorporateTrustee(c.name, c.entityType);
       p.stats.typeCounts[c.entityType] = (p.stats.typeCounts[c.entityType] || 0) + 1;
       if (isTrustee) {
@@ -427,14 +449,16 @@ async function processClientPage(
         abn: c.abn,
         acn: c.acn,
         is_trustee: isTrustee,
+        is_archived: c.isArchived,
       });
 
       for (const r of c.rels) {
         if (r.name) related.set(r.uuid, r.name);
+        const dates = { start_date: r.startDate, end_date: r.endDate };
         rels.push(
           r.reverse
-            ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid }
-            : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid },
+            ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid, ...dates }
+            : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid, ...dates },
         );
       }
     }
