@@ -95,12 +95,9 @@ function dagreLayout(
 
 const CONTROL_EDGE_TYPES = new Set(["director", "trustee", "appointer", "settlor"]);
 
-const REL_TYPE_LABELS: Record<string, string> = {
-  appointer: "appointor",
-};
-
 function buildEdgeLabel(r: RelationshipEdge, entityMap?: Map<string, EntityNode>): string {
-  let label = REL_TYPE_LABELS[r.relationship_type] ?? r.relationship_type;
+  // Directional wording ("Trustee Of") so an exported diagram reads on its own.
+  let label = getRelationshipEdgeLabel(r.relationship_type);
 
   // Discretionary trust beneficiaries don't show ownership metadata
   const toEntity = entityMap?.get(r.to_entity_id);
