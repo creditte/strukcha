@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
     // Fetch each member's details
     interface ClientData {
       uuid: string; name: string; entityType: string; abn: string | null; acn: string | null;
-      businessStructure: string;
+      businessStructure: string; isArchived: boolean; isDeleted: boolean;
       relationships: Array<{ typeRaw: string; relatedUuid: string; relatedName: string; percentage: number | null; shares: number | null }>;
     }
 
