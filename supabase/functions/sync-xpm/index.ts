@@ -257,7 +257,17 @@ interface ParsedClient {
   entityType: string;
   abn: string | null;
   acn: string | null;
-  rels: { type: string; uuid: string; name: string; reverse: boolean }[];
+  /** XPM `IsArchived` — archived clients stay as history but leave active structures. */
+  isArchived: boolean;
+  isDeleted: boolean;
+  rels: {
+    type: string;
+    uuid: string;
+    name: string;
+    reverse: boolean;
+    startDate: string | null;
+    endDate: string | null;
+  }[];
 }
 
 /**
