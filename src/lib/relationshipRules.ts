@@ -235,6 +235,17 @@ export function getRelationshipLabel(relationshipType: string): string {
     ?? relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
 }
 
+/**
+ * Directional label for diagram edges and exports, e.g. "Trustee Of".
+ * A finished diagram has to read on its own, so the label states the role and
+ * its direction rather than a bare database value.
+ */
+export function getRelationshipEdgeLabel(relationshipType: string): string {
+  const base = getRelationshipLabel(relationshipType);
+  if (relationshipType === "spouse") return "Spouse";
+  return `${base} Of`;
+}
+
 // ── Bare trust beneficiary restriction ────────────────────────────
 
 /** Bare trusts only allow Individual, Company, SMSF as beneficiaries */
