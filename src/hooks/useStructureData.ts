@@ -154,7 +154,12 @@ export function useStructureData(structureId: string | undefined) {
           .in("id", relIds)
           .is("deleted_at", null);
         setRelationships(
-          (relData ?? []).map((r) => ({
+          (relData ?? [])
+            // Drop edges pointing at an archived entity so no line dangles.
+            .filter((r) =>
+              liveEntityIds.has(r.from_entity_id) && liveEntityIds.has(r.to_entity_id)
+            )
+            .map((r) => ({
             id: r.id,
             from_entity_id: r.from_entity_id,
             to_entity_id: r.to_entity_id,
