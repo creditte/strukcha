@@ -58,16 +58,49 @@ const BUSINESS_STRUCTURE_MAP: Record<string, string> = {
   SMSF: "smsf", "Super Fund": "smsf", SuperFund: "smsf",
 };
 
-function resolveEntityType(bs?: string): string {
-  if (!bs) return "Unclassified";
-  const mapped = BUSINESS_STRUCTURE_MAP[bs];
-  if (mapped) return mapped;
-  const lower = bs.toLowerCase();
-  for (const [k, v] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
-    if (k.toLowerCase() === lower) return v;
+/**
+ * Keyword fallback — kept in step with sync-xpm/_lib.ts. Firms type their own
+ * business-structure wording in XPM ("Discretionary Trading Trust"), so an
+ * exact-match table alone leaves real trusts Unclassified.
+ */
+function inferTypeFromText(text: string): string | null {
+  const s = text.toLowerCase();
+  if (/smsf|self[- ]managed|superannuation fund|super fund/.test(s)) return "smsf";
+  if (/unit trust/.test(s)) return "trust_unit";
+  if (/hybrid trust/.test(s)) return "trust_hybrid";
+  if (/bare trust/.test(s)) return "trust_bare";
+  if (/testamentary/.test(s)) return "trust_testamentary";
+  if (/deceased estate/.test(s)) return "trust_deceased_estate";
+  if (/family trust/.test(s)) return "trust_family";
+  if (/discretionary/.test(s)) return "trust_discretionary";
+  if (/\btrust\b|trustee for/.test(s)) return "Trust";
+  if (/partnership/.test(s)) return "Partnership";
+  if (/sole trader/.test(s)) return "Sole Trader";
+  if (/incorporated association|\bclub\b/.test(s)) return "Incorporated Association/Club";
+  if (/\bcompany\b|pty\s*\.?\s*ltd|proprietary|\blimited\b|\bltd\b|\bpl\b$/.test(s)) return "Company";
+  if (/individual|\bperson\b/.test(s)) return "Individual";
+  return null;
+}
+
+function resolveEntityType(bs?: string, clientName?: string): string {
+  if (bs) {
+    const mapped = BUSINESS_STRUCTURE_MAP[bs];
+    if (mapped) return mapped;
+    const lower = bs.toLowerCase();
+    for (const [k, v] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
+      if (k.toLowerCase() === lower) return v;
+    }
+    const inferred = inferTypeFromText(bs);
+    if (inferred) return inferred;
+  }
+  if (clientName) {
+    const inferred = inferTypeFromText(clientName);
+    if (inferred) return inferred;
   }
   return "Unclassified";
 }
+
+const isYes = (v?: string) => /^(yes|true|1)$/i.test((v ?? "").trim());
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -123,11 +156,11 @@ Deno.serve(async (req) => {
     // Fetch each member's details
     interface ClientData {
       uuid: string; name: string; entityType: string; abn: string | null; acn: string | null;
-      businessStructure: string;
+      businessStructure: string; isArchived: boolean; isDeleted: boolean;
       relationships: Array<{ typeRaw: string; relatedUuid: string; relatedName: string; percentage: number | null; shares: number | null }>;
     }
 
-    const clients: ClientData[] = [];
+    const allFetched: ClientData[] = [];
     const BATCH_SIZE = 10;
 
     for (let i = 0; i < memberUuids.length; i += BATCH_SIZE) {
@@ -161,9 +194,34 @@ Deno.serve(async (req) => {
           }
         }
 
-        return { uuid, name, entityType: resolveEntityType(bs), abn: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null, acn: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null, businessStructure: bs, relationships: rels } as ClientData;
+        return {
+          uuid,
+          name,
+          entityType: resolveEntityType(bs, name),
+          abn: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
+          acn: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
+          businessStructure: bs,
+          isArchived: isYes(xmlText(c, "IsArchived")) || isYes(xmlText(c, "Archived")),
+          isDeleted: isYes(xmlText(c, "IsDeleted")),
+          relationships: rels,
+        } as ClientData;
       }));
-      for (const r of results) if (r) clients.push(r);
+      for (const r of results) if (r) allFetched.push(r);
+    }
+
+    // Archived/deleted XPM clients stay in the database as history but are kept
+    // out of the active diagram, matching the full sync's behaviour.
+    const inactiveUuids = allFetched.filter((c) => c.isArchived || c.isDeleted).map((c) => c.uuid);
+    const clients: ClientData[] = allFetched.filter((c) => !c.isArchived && !c.isDeleted);
+    if (inactiveUuids.length > 0) {
+      console.log(`[import-xpm-group] Excluding ${inactiveUuids.length} archived/deleted member(s) from the active structure`);
+      for (let i = 0; i < inactiveUuids.length; i += 80) {
+        await supabase
+          .from("entities")
+          .update({ is_archived: true })
+          .eq("tenant_id", tenantId)
+          .in("xpm_uuid", inactiveUuids.slice(i, i + 80));
+      }
     }
 
     // Reuse existing XPM structure for this group name when re-opening in editor
@@ -205,15 +263,31 @@ Deno.serve(async (req) => {
     // UUID lists can't blow the URL limit (HTTP2 protocol error).
     const FILTER_BATCH = 80;
     const uuidList = clients.map((c) => c.uuid).filter(Boolean);
+    const existingTypes = new Map<string, string>();
     for (let i = 0; i < uuidList.length; i += FILTER_BATCH) {
       const { data: existingEntities } = await supabase
         .from("entities")
-        .select("id, xpm_uuid")
+        .select("id, xpm_uuid, entity_type, is_archived")
         .eq("tenant_id", tenantId)
         .in("xpm_uuid", uuidList.slice(i, i + FILTER_BATCH));
       for (const e of existingEntities ?? []) {
-        if (e.xpm_uuid) xpmUuidToEntityId[e.xpm_uuid] = e.id;
+        if (!e.xpm_uuid) continue;
+        xpmUuidToEntityId[e.xpm_uuid] = e.id;
+        existingTypes.set(e.xpm_uuid, e.entity_type);
       }
+    }
+
+    // Re-classify stored records that were saved before XPM's own wording was
+    // understood (a trust left as Unclassified), and un-archive members that are
+    // active in XPM again.
+    for (const c of clients) {
+      const entityId = xpmUuidToEntityId[c.uuid];
+      if (!entityId) continue;
+      const patch: Record<string, unknown> = { is_archived: false };
+      if (c.entityType !== "Unclassified" && existingTypes.get(c.uuid) === "Unclassified") {
+        patch.entity_type = c.entityType;
+      }
+      await supabase.from("entities").update(patch).eq("id", entityId);
     }
 
     // Create missing entities
