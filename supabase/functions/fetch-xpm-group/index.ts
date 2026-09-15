@@ -246,7 +246,13 @@ Deno.serve(async (req) => {
 
           const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
           const businessStructure = xmlText(c, "BusinessStructure");
-          const entityType = resolveEntityType(businessStructure);
+          const entityType = resolveEntityType(businessStructure, name);
+
+          // Archived/deleted XPM clients are history, not part of the active group
+          if (isYes(xmlText(c, "IsArchived")) || isYes(xmlText(c, "Archived")) || isYes(xmlText(c, "IsDeleted"))) {
+            return null;
+          }
+
           
           // Extract relationships
           const relContainer = c?.Relationships;
