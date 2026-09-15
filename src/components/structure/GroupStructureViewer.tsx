@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getRelationshipEdgeLabel } from "@/lib/relationshipRules";
 import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import { formatAbn, formatAcn } from "./EntityInfoFields";
@@ -182,18 +183,33 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
       },
     }));
 
-    const rfEdges: Edge[] = groupEdges.map((e) => ({
+    // Merge edges that share the same source/target so their labels never overlap
+    const merged = new Map<string, { edge: typeof groupEdges[number]; labels: string[] }>();
+    for (const e of groupEdges) {
+      const key = `${e.source}->${e.target}`;
+      const text = getRelationshipEdgeLabel(e.type) +
+        (e.percentage && e.percentage > 0 ? ` (${e.percentage}%)` : "");
+      const existing = merged.get(key);
+      if (existing) {
+        if (!existing.labels.includes(text)) existing.labels.push(text);
+      } else {
+        merged.set(key, { edge: e, labels: [text] });
+      }
+    }
+
+    const rfEdges: Edge[] = [...merged.values()].map(({ edge: e, labels }) => ({
       id: e.id,
       source: e.source,
       target: e.target,
-      label: e.percentage && e.percentage > 0
-        ? `${e.type} (${e.percentage}%)`
-        : e.type,
+      label: labels.join(" · "),
       type: "default",
       animated: false,
       style: { stroke: "hsl(var(--muted-foreground))", strokeWidth: 1.5 },
-      labelStyle: { fontSize: 10, fill: "hsl(var(--muted-foreground))" },
-      labelBgStyle: { fill: "hsl(var(--background))", fillOpacity: 0.9 },
+      labelStyle: { fontSize: 10, fill: "hsl(var(--foreground))" },
+      labelShowBg: true,
+      labelBgStyle: { fill: "hsl(var(--background))", fillOpacity: 1 },
+      labelBgPadding: [4, 2] as [number, number],
+      labelBgBorderRadius: 4,
       markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
     }));
 
