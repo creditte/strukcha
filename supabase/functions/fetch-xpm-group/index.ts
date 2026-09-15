@@ -296,7 +296,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    const memberUuidSet = new Set(memberUuids);
+    // Only the members still active in XPM — keeps arrows off archived clients.
+    const memberUuidSet = new Set(nodes.map((n) => n.id));
     const edges = buildXpmEdges(
       nodes.map((n) => ({
         id: n.id,
