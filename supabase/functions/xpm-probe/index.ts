@@ -30,6 +30,12 @@ Deno.serve(async (req) => {
     const res = await fetch(`${XPM_BASE}${path}`, { headers });
     const text = await res.text();
     const find = url.searchParams.get("find");
+    if (find && url.searchParams.get("segment")) {
+      const i = text.indexOf(find);
+      const start = text.lastIndexOf("<Client>", i);
+      const end = text.indexOf("</Client>", i);
+      return new Response(text.slice(start, end + 9), { status: res.status });
+    }
     if (find) {
       return new Response(JSON.stringify({
         bytes: text.length,
