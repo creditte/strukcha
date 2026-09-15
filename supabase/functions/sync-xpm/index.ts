@@ -449,14 +449,16 @@ async function processClientPage(
         abn: c.abn,
         acn: c.acn,
         is_trustee: isTrustee,
+        is_archived: c.isArchived,
       });
 
       for (const r of c.rels) {
         if (r.name) related.set(r.uuid, r.name);
+        const dates = { start_date: r.startDate, end_date: r.endDate };
         rels.push(
           r.reverse
-            ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid }
-            : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid },
+            ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid, ...dates }
+            : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid, ...dates },
         );
       }
     }
