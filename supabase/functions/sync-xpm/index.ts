@@ -116,6 +116,8 @@ interface Progress {
    * fingerprint means paging is unsupported and the client phase is complete.
    */
   lastPageKey: string;
+  /** Start of the current full client sweep; drives archived-in-XPM detection. */
+  sweepStartedAt: string | null;
   /** When true, every group is re-read from XPM instead of honouring freshness. */
   fullSync: boolean;
   /**
@@ -149,6 +151,7 @@ function emptyProgress(): Progress {
     groupCursor: "",
     groupsLoaded: false,
     lastPageKey: "",
+    sweepStartedAt: null,
     fullSync: false,
     catalogueOnly: false,
     leaseUntil: "",
@@ -480,6 +483,13 @@ async function processClientPage(
       p.stats.relationshipsCreated += res.relationshipsCreated ?? 0;
       p.stats.relationshipsSkipped += res.relationshipsSkipped ?? 0;
       for (const w of res.warnings ?? []) warn(p, String(w));
+
+      // Only clients that appear in XPM's list are "seen": a client that shows up
+      // solely as a relation is archived in XPM and must not look live here.
+      await rpcCall(supabase, "sync_xpm_mark_seen", {
+        _tenant_id: tenantId,
+        _uuids: clients.map((c) => c.uuid as string),
+      });
     }
 
     p.stats.clientsFetched += clients.length;
@@ -741,6 +751,10 @@ async function runSlice(
       p.updated_at = new Date().toISOString();
       await saveProgress(supabase, jobId, p);
     };
+    if (p.clientPage === 1 && p.clientOffset === 0 && !p.sweepStartedAt) {
+      p.sweepStartedAt = new Date().toISOString();
+    }
+    let sweepComplete = false;
     for (let i = 0; i < t.clientPagesPerRun; i++) {
       const outcome = await processClientPage(
         supabase, tenantId, accessToken, xeroTenantId, p.clientPage, p, trusteePairs,
@@ -750,6 +764,9 @@ async function runSlice(
       // worker rather than being killed with "CPU Time exceeded".
       if (outcome === "partial") break;
       if (outcome !== "processed" || p.clientPage >= t.maxClientPages) {
+        // "empty"/"repeat" means XPM has no further pages, so every active client
+        // has now been seen and absentees can safely be treated as archived.
+        sweepComplete = outcome === "empty" || outcome === "repeat";
         p.phase = "groups";
         break;
       }
@@ -767,6 +784,15 @@ async function runSlice(
       });
       if (error) warn(p, `Trustee matching failed: ${error.message}`);
       else p.stats.relationshipsCreated += (data as any)?.relationshipsCreated ?? 0;
+    }
+
+    if (sweepComplete && p.sweepStartedAt) {
+      const { error } = await rpcCall(supabase, "sync_xpm_archive_absent_clients", {
+        _tenant_id: tenantId,
+        _since: p.sweepStartedAt,
+      });
+      if (error) warn(p, `Archived-client check failed: ${error.message}`);
+      p.sweepStartedAt = null;
     }
   } else if (p.phase === "groups") {
     // Capacity is re-read each slice: it can change mid-run (a structure is
@@ -881,6 +907,7 @@ async function saveProgress(
           groupCursor: p.groupCursor,
           groupsLoaded: p.groupsLoaded,
           lastPageKey: p.lastPageKey,
+          sweepStartedAt: p.sweepStartedAt,
           fullSync: p.fullSync,
           catalogueOnly: p.catalogueOnly,
           leaseUntil: p.leaseUntil,
@@ -941,6 +968,7 @@ function loadProgress(result: any): Progress {
     groupCursor: result.progress?.groupCursor ?? base.groupCursor,
     groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
     lastPageKey: result.progress?.lastPageKey ?? base.lastPageKey,
+    sweepStartedAt: result.progress?.sweepStartedAt ?? base.sweepStartedAt,
     fullSync: result.progress?.fullSync ?? base.fullSync,
     catalogueOnly: result.progress?.catalogueOnly ?? base.catalogueOnly,
     leaseUntil: result.progress?.leaseUntil ?? base.leaseUntil,
