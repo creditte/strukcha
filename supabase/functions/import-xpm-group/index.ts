@@ -263,15 +263,31 @@ Deno.serve(async (req) => {
     // UUID lists can't blow the URL limit (HTTP2 protocol error).
     const FILTER_BATCH = 80;
     const uuidList = clients.map((c) => c.uuid).filter(Boolean);
+    const existingTypes = new Map<string, string>();
     for (let i = 0; i < uuidList.length; i += FILTER_BATCH) {
       const { data: existingEntities } = await supabase
         .from("entities")
-        .select("id, xpm_uuid")
+        .select("id, xpm_uuid, entity_type, is_archived")
         .eq("tenant_id", tenantId)
         .in("xpm_uuid", uuidList.slice(i, i + FILTER_BATCH));
       for (const e of existingEntities ?? []) {
-        if (e.xpm_uuid) xpmUuidToEntityId[e.xpm_uuid] = e.id;
+        if (!e.xpm_uuid) continue;
+        xpmUuidToEntityId[e.xpm_uuid] = e.id;
+        existingTypes.set(e.xpm_uuid, e.entity_type);
       }
+    }
+
+    // Re-classify stored records that were saved before XPM's own wording was
+    // understood (a trust left as Unclassified), and un-archive members that are
+    // active in XPM again.
+    for (const c of clients) {
+      const entityId = xpmUuidToEntityId[c.uuid];
+      if (!entityId) continue;
+      const patch: Record<string, unknown> = { is_archived: false };
+      if (c.entityType !== "Unclassified" && existingTypes.get(c.uuid) === "Unclassified") {
+        patch.entity_type = c.entityType;
+      }
+      await supabase.from("entities").update(patch).eq("id", entityId);
     }
 
     // Create missing entities
