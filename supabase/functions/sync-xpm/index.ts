@@ -431,6 +431,9 @@ async function processClientPage(
     for (const segment of slice) {
       const c = parseClientSegment(segment, p);
       if (!c) continue;
+      // Deleted in XPM means the record no longer exists there; skip it entirely
+      // rather than resurrecting it as an entity.
+      if (c.isDeleted) continue;
       const isTrustee = isCorporateTrustee(c.name, c.entityType);
       p.stats.typeCounts[c.entityType] = (p.stats.typeCounts[c.entityType] || 0) + 1;
       if (isTrustee) {
