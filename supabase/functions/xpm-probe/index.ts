@@ -29,6 +29,15 @@ Deno.serve(async (req) => {
   if (path) {
     const res = await fetch(`${XPM_BASE}${path}`, { headers });
     const text = await res.text();
+    const find = url.searchParams.get("find");
+    if (find) {
+      return new Response(JSON.stringify({
+        bytes: text.length,
+        clients: (text.match(/<Client>/g) ?? []).length,
+        archivedYes: (text.match(/<IsArchived>Yes/g) ?? []).length,
+        found: text.includes(find),
+      }), { status: res.status });
+    }
     return new Response(text.slice(0, 200000), { status: res.status });
   }
   return new Response("pass ?path=", { status: 400 });
