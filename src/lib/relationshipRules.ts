@@ -278,6 +278,10 @@ export function isDirectionValid(
   const rule = RULES_BY_TYPE.get(relationshipType);
   if (!rule) return true; // No enforced rules for unknown types
 
+  // "Unclassified" means the entity type is unknown, not wrong. Judging a link
+  // against an unknown type would flag (and previously discard) valid data.
+  if (fromEntityType === "Unclassified" || toEntityType === "Unclassified") return true;
+
   const sourceOk = matchesCategories(fromEntityType, rule.allowedSourceTypes);
   const targetOk = matchesCategories(toEntityType, rule.allowedTargetTypes);
   if (!sourceOk || !targetOk) return false;
