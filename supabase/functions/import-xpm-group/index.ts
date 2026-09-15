@@ -58,16 +58,49 @@ const BUSINESS_STRUCTURE_MAP: Record<string, string> = {
   SMSF: "smsf", "Super Fund": "smsf", SuperFund: "smsf",
 };
 
-function resolveEntityType(bs?: string): string {
-  if (!bs) return "Unclassified";
-  const mapped = BUSINESS_STRUCTURE_MAP[bs];
-  if (mapped) return mapped;
-  const lower = bs.toLowerCase();
-  for (const [k, v] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
-    if (k.toLowerCase() === lower) return v;
+/**
+ * Keyword fallback — kept in step with sync-xpm/_lib.ts. Firms type their own
+ * business-structure wording in XPM ("Discretionary Trading Trust"), so an
+ * exact-match table alone leaves real trusts Unclassified.
+ */
+function inferTypeFromText(text: string): string | null {
+  const s = text.toLowerCase();
+  if (/smsf|self[- ]managed|superannuation fund|super fund/.test(s)) return "smsf";
+  if (/unit trust/.test(s)) return "trust_unit";
+  if (/hybrid trust/.test(s)) return "trust_hybrid";
+  if (/bare trust/.test(s)) return "trust_bare";
+  if (/testamentary/.test(s)) return "trust_testamentary";
+  if (/deceased estate/.test(s)) return "trust_deceased_estate";
+  if (/family trust/.test(s)) return "trust_family";
+  if (/discretionary/.test(s)) return "trust_discretionary";
+  if (/\btrust\b|trustee for/.test(s)) return "Trust";
+  if (/partnership/.test(s)) return "Partnership";
+  if (/sole trader/.test(s)) return "Sole Trader";
+  if (/incorporated association|\bclub\b/.test(s)) return "Incorporated Association/Club";
+  if (/\bcompany\b|pty\s*\.?\s*ltd|proprietary|\blimited\b|\bltd\b|\bpl\b$/.test(s)) return "Company";
+  if (/individual|\bperson\b/.test(s)) return "Individual";
+  return null;
+}
+
+function resolveEntityType(bs?: string, clientName?: string): string {
+  if (bs) {
+    const mapped = BUSINESS_STRUCTURE_MAP[bs];
+    if (mapped) return mapped;
+    const lower = bs.toLowerCase();
+    for (const [k, v] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
+      if (k.toLowerCase() === lower) return v;
+    }
+    const inferred = inferTypeFromText(bs);
+    if (inferred) return inferred;
+  }
+  if (clientName) {
+    const inferred = inferTypeFromText(clientName);
+    if (inferred) return inferred;
   }
   return "Unclassified";
 }
+
+const isYes = (v?: string) => /^(yes|true|1)$/i.test((v ?? "").trim());
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
