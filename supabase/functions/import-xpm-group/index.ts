@@ -194,9 +194,34 @@ Deno.serve(async (req) => {
           }
         }
 
-        return { uuid, name, entityType: resolveEntityType(bs), abn: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null, acn: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null, businessStructure: bs, relationships: rels } as ClientData;
+        return {
+          uuid,
+          name,
+          entityType: resolveEntityType(bs, name),
+          abn: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
+          acn: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
+          businessStructure: bs,
+          isArchived: isYes(xmlText(c, "IsArchived")) || isYes(xmlText(c, "Archived")),
+          isDeleted: isYes(xmlText(c, "IsDeleted")),
+          relationships: rels,
+        } as ClientData;
       }));
-      for (const r of results) if (r) clients.push(r);
+      for (const r of results) if (r) allFetched.push(r);
+    }
+
+    // Archived/deleted XPM clients stay in the database as history but are kept
+    // out of the active diagram, matching the full sync's behaviour.
+    const inactiveUuids = allFetched.filter((c) => c.isArchived || c.isDeleted).map((c) => c.uuid);
+    const clients: ClientData[] = allFetched.filter((c) => !c.isArchived && !c.isDeleted);
+    if (inactiveUuids.length > 0) {
+      console.log(`[import-xpm-group] Excluding ${inactiveUuids.length} archived/deleted member(s) from the active structure`);
+      for (let i = 0; i < inactiveUuids.length; i += 80) {
+        await supabase
+          .from("entities")
+          .update({ is_archived: true })
+          .eq("tenant_id", tenantId)
+          .in("xpm_uuid", inactiveUuids.slice(i, i + 80));
+      }
     }
 
     // Reuse existing XPM structure for this group name when re-opening in editor
