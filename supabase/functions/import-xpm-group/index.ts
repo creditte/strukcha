@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
       relationships: Array<{ typeRaw: string; relatedUuid: string; relatedName: string; percentage: number | null; shares: number | null }>;
     }
 
-    const clients: ClientData[] = [];
+    const allFetched: ClientData[] = [];
     const BATCH_SIZE = 10;
 
     for (let i = 0; i < memberUuids.length; i += BATCH_SIZE) {
