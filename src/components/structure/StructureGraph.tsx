@@ -21,7 +21,11 @@ import Dagre from "@dagrejs/dagre";
 
 import EntityNodeComponent from "./EntityNode";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
-import { isDirectionValid, isDiscretionaryTrustBeneficiary } from "@/lib/relationshipRules";
+import {
+  getRelationshipEdgeLabel,
+  isDirectionValid,
+  isDiscretionaryTrustBeneficiary,
+} from "@/lib/relationshipRules";
 import type { ContextMenuState } from "./StructureContextMenu";
 
 const nodeTypes = { entity: EntityNodeComponent };
