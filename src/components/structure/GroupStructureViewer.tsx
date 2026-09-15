@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getRelationshipEdgeLabel } from "@/lib/relationshipRules";
 import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import { formatAbn, formatAcn } from "./EntityInfoFields";
