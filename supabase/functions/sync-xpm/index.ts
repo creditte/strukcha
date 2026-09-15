@@ -331,7 +331,7 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
     `${tagText(head, "FirstName")} ${tagText(head, "LastName")}`.trim();
   if (!uuid || !name) return null;
 
-  const entityType = resolveEntityType(tagText(head, "BusinessStructure"));
+  const entityType = resolveEntityType(tagText(head, "BusinessStructure"), name);
   const rels: ParsedClient["rels"] = [];
 
   if (tail) {
@@ -352,7 +352,14 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
         p.stats.relationshipsSkipped++;
         continue;
       }
-      rels.push({ type: rule.type, uuid: relatedUuid, name: relatedName, reverse: rule.reverse });
+      rels.push({
+        type: rule.type,
+        uuid: relatedUuid,
+        name: relatedName,
+        reverse: rule.reverse,
+        startDate: tagText(rel, "StartDate") || null,
+        endDate: tagText(rel, "EndDate") || null,
+      });
     }
   }
 
@@ -362,6 +369,8 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
     entityType,
     abn: tagText(head, "TaxNumber") || tagText(head, "ABN") || null,
     acn: tagText(head, "CompanyNumber") || tagText(head, "ACN") || null,
+    isArchived: tagText(head, "IsArchived").toLowerCase() === "yes",
+    isDeleted: tagText(head, "IsDeleted").toLowerCase() === "yes",
     rels,
   };
 }
