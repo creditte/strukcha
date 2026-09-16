@@ -199,10 +199,14 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
       }
     }
 
+    // Arrows point the same way as the editor canvas: owner/controller at the
+    // bottom of the arrow, so source is the related (upper) entity.
     const rfEdges: Edge[] = [...merged.values()].map(({ edge: e, labels }) => ({
       id: e.id,
-      source: e.source,
-      target: e.target,
+      source: e.target,
+      target: e.source,
+      sourceHandle: "top",
+      targetHandle: "bottom-target",
       label: labels.join(" · "),
       type: "default",
       animated: false,
@@ -215,7 +219,14 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
       markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
     }));
 
-    const laid = layoutGraph(rfNodes, rfEdges);
+    // Lay out using the ownership direction so hierarchy stays top-down.
+    const layoutEdges = [...merged.values()].map(({ edge: e }) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+    })) as Edge[];
+
+    const laid = layoutGraph(rfNodes, layoutEdges);
     setNodes(laid);
     setEdges(rfEdges);
   }, [groupNodes, groupEdges]);
