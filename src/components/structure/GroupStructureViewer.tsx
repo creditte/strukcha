@@ -93,7 +93,8 @@ function EntityNodeComponent({ data }: { data: any }) {
         isIndividual ? "rounded-full" : "rounded-lg"
       } ${isTrust ? "border-dashed" : ""} shadow-sm min-w-[140px] max-w-[220px] text-center transition-shadow hover:shadow-md`}
     >
-      <Handle type="target" position={Position.Top} className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="target" position={Position.Top} id="top-target" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
       <p className="text-xs font-semibold truncate">{label}</p>
       <p className="text-[9px] opacity-60 mt-0.5">{typeLabel}</p>
       {(abn || acn) && (
