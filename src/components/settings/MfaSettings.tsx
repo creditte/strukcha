@@ -80,6 +80,7 @@ export default function MfaSettings() {
   const [factorId, setFactorId] = useState("");
   const [qrCode, setQrCode] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  const [stepUpPassword, setStepUpPassword] = useState("");
   const autoSubmitTriggered = useRef(false);
 
   // Trusted devices state
