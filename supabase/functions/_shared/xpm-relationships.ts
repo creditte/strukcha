@@ -41,61 +41,59 @@ export function parseXpmRelationshipType(typeRaw: string): CanonicalRule | null 
   return XPM_RELATIONSHIP_MAP[key] ?? null;
 }
 
-const TRUST_TYPES = new Set([
+/**
+ * Mirrors public.rel_direction_valid() exactly (migration 20260915134932).
+ * Keep the two in step: if they disagree, previews, group imports and full
+ * syncs produce different diagrams, or the database rejects a whole batch.
+ */
+const ALL_TRUSTS = [
   "Trust", "trust_discretionary", "trust_unit", "trust_hybrid", "trust_bare",
   "trust_testamentary", "trust_deceased_estate", "trust_family",
-]);
+];
+const DISCRETIONARY_LIKE = ["Trust", "trust_discretionary", "trust_family"];
+const OWNERSHIP_SOURCES = ["Individual", "Company", "smsf", "trust_unit", ...DISCRETIONARY_LIKE];
+const BENEFICIARY_SOURCES = ["Individual", "Company", "smsf", ...DISCRETIONARY_LIKE];
+const BENEFICIARY_TARGETS = [
+  "Trust", "trust_discretionary", "trust_family", "trust_hybrid", "trust_bare",
+  "trust_testamentary", "trust_deceased_estate",
+];
 
-const DISCRETIONARY_TRUST_TYPES = new Set(["Trust", "trust_discretionary", "trust_family"]);
+const inList = (v: string, list: string[]) => list.includes(v);
 
-function isTrustType(t: string): boolean {
-  return TRUST_TYPES.has(t) || t === "smsf";
-}
-
-function isDiscretionaryTrust(t: string): boolean {
-  return DISCRETIONARY_TRUST_TYPES.has(t);
-}
-
-function isEligibleOwnershipSource(t: string): boolean {
-  return t === "Individual" || t === "Company" || t === "smsf" || isTrustType(t);
-}
-
-/** Lightweight direction check aligned with validate_relationship_rules trigger. */
+/** Direction check aligned with the database trigger; unknown types pass through. */
 export function isRelationshipDirectionValid(
   relType: string,
   fromType: string,
   toType: string,
 ): boolean {
+  if (!fromType || !toType) return true;
+  // Unclassified means "type not known yet", not "wrong": treat as permissive.
+  if (fromType === "Unclassified" || toType === "Unclassified") return true;
+
   switch (relType) {
     case "director":
       return fromType === "Individual" && toType === "Company";
     case "shareholder":
-      return toType === "Company" && isEligibleOwnershipSource(fromType);
+      return toType === "Company" && inList(fromType, OWNERSHIP_SOURCES);
     case "unit_holder":
-      return toType === "trust_unit" && isEligibleOwnershipSource(fromType);
+      return toType === "trust_unit" && inList(fromType, OWNERSHIP_SOURCES);
     case "trustee":
-      return (fromType === "Individual" || fromType === "Company") && isTrustType(toType);
+      return inList(fromType, ["Individual", "Company"]) &&
+        inList(toType, [...ALL_TRUSTS, "smsf"]);
     case "beneficiary":
       if (toType === "trust_bare") {
-        return fromType === "Individual" || fromType === "Company" || fromType === "smsf";
+        return inList(fromType, ["Individual", "Company", "smsf"]);
       }
-      return (fromType === "Individual" || fromType === "Company" || fromType === "smsf" ||
-          isDiscretionaryTrust(fromType)) &&
-        isTrustType(toType) && toType !== "trust_unit";
+      return inList(fromType, BENEFICIARY_SOURCES) && inList(toType, BENEFICIARY_TARGETS);
     case "member":
-      return (fromType === "Individual" || fromType === "Company" || fromType === "smsf" ||
-          isDiscretionaryTrust(fromType)) &&
-        (toType === "trust_unit" || toType === "smsf");
+      return inList(fromType, BENEFICIARY_SOURCES) && inList(toType, ["trust_unit", "smsf"]);
     case "appointer":
-      return (fromType === "Individual" || fromType === "Company") &&
-        isTrustType(toType) && toType !== "smsf";
+      return inList(fromType, ["Individual", "Company"]) && inList(toType, ALL_TRUSTS);
     case "settlor":
-      return (fromType === "Individual" || fromType === "Company") && isTrustType(toType);
+      return inList(fromType, ["Individual", "Company"]) && inList(toType, ALL_TRUSTS);
     case "partner":
-      return (fromType === "Individual" || fromType === "Company") &&
-        (toType === "Individual" || toType === "Company");
+      return inList(fromType, ["Individual", "Company"]) && inList(toType, ["Individual", "Company"]);
     case "spouse":
-      return fromType === "Individual" && toType === "Individual";
     case "parent":
     case "child":
       return fromType === "Individual" && toType === "Individual";
