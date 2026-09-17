@@ -1622,6 +1622,10 @@ export type Database = {
       is_owner_or_admin: { Args: { _tenant_id: string }; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       link_tenant_user_on_login: { Args: never; Returns: Json }
+      merge_duplicate_xpm_entities: {
+        Args: { _limit_groups?: number; _tenant_id?: string }
+        Returns: Json
+      }
       move_to_dlq: {
         Args: {
           dlq_name: string
