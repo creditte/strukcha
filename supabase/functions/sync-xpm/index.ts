@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeadersFor } from "../_shared/cors.ts";
 import {
   chunk,
-  corsHeaders,
   discoverPmTenantId,
   extractTrustName,
   FatalXpmError,
@@ -1086,6 +1086,7 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
 
 // ── HTTP entrypoint ────────────────────────────────────────────────
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const json = (body: unknown, status = 200) =>
