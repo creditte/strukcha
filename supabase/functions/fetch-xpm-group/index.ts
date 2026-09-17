@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
 import { buildXpmEdges, parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
+import { resolveEntityType } from "../_shared/xpm-entity-type.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
 
