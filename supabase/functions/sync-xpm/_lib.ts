@@ -2,6 +2,9 @@
 import { getXeroAccessToken } from "../_shared/xero-token.ts";
 // esm.sh mirror of jsr:@libs/xml — the deno.land/x mirror fails to bundle.
 import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
+// Entity-type classification lives in one place now, shared with
+// fetch-xpm-group and import-xpm-group so all three agree.
+export { BUSINESS_STRUCTURE_MAP, inferTypeFromText, resolveEntityType } from "../_shared/xpm-entity-type.ts";
 
 
 /** Seconds a worker holds the job lease before another worker may take over. */
