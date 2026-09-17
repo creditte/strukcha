@@ -79,3 +79,17 @@ project_id = "kdwmetjwxfzovdmarijl"
     verify_jwt = false
   [functions.send-password-reset]
     verify_jwt = false
+  [functions.delete-account]
+    verify_jwt = false
+  [functions.reconcile-billing]
+    verify_jwt = false
+  [functions.seed-demo-group]
+    verify_jwt = false
+  [functions.stripe-config-check]
+    verify_jwt = false
+  [functions.xero-disconnect]
+    verify_jwt = false
+  [functions.xero-finalise-connection]
+    verify_jwt = false
+  [functions.xero-keepalive]
+    verify_jwt = false
