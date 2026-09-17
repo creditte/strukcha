@@ -36,8 +36,23 @@ export const XPM_RELATIONSHIP_MAP: Record<string, CanonicalRule> = {
   member: { type: "member", reverse: true },
 };
 
+/**
+ * XPM labels that are deliberately not modelled as structure relationships.
+ * These are statutory office holdings, not ownership or control links, so they
+ * are dropped without a warning instead of being reported as sync problems.
+ */
+export const XPM_IGNORED_RELATIONSHIP_LABELS = new Set([
+  "secretary",
+  "secretary of",
+  "public officer",
+  "public officer of",
+  "contact",
+  "contact of",
+]);
+
 export function parseXpmRelationshipType(typeRaw: string): CanonicalRule | null {
   const key = typeRaw.trim().toLowerCase();
+  if (XPM_IGNORED_RELATIONSHIP_LABELS.has(key)) return null;
   return XPM_RELATIONSHIP_MAP[key] ?? null;
 }
 
