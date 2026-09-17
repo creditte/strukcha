@@ -130,12 +130,9 @@ Deno.serve(async (req) => {
     }
 
     if (!userId) {
-      return json({
-        ok: false,
-        sent: false,
-        code: "user_not_found",
-        error: "No account exists for this email address. Check the spelling or sign up.",
-      });
+      // Do not reveal whether an account exists — respond exactly as for a hit.
+      console.log("[send-password-reset] no account for submitted address");
+      return json({ ok: true, sent: true });
     }
 
     const redirectTo = buildResetRedirect();
