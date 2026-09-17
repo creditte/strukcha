@@ -471,7 +471,14 @@ async function processClientPage(
         _tenant_id: tenantId,
         _payload: {
           clients,
-          related: [...related.entries()].map(([uuid, name]) => ({ uuid, name })),
+          // Related parties arrive as name-only mentions. Classifying from the
+          // name lets a record that is only ever mentioned (never a primary
+          // client) still be typed instead of staying Unclassified forever.
+          related: [...related.entries()].map(([uuid, name]) => ({
+            uuid,
+            name,
+            entity_type: resolveEntityType(undefined, name),
+          })),
           rels,
         },
       });
