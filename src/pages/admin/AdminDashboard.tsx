@@ -26,6 +26,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import BillingReconciliationPanel from "@/components/admin/BillingReconciliationPanel";
 import StripeConfigPanel from "@/components/admin/StripeConfigPanel";
+import OperationsHealthPanel from "@/components/admin/OperationsHealthPanel";
 
 interface TenantRow {
   id: string;
@@ -465,6 +466,8 @@ export default function AdminDashboard() {
         <StripeConfigPanel />
 
         <BillingReconciliationPanel />
+
+        <OperationsHealthPanel />
 
 
 

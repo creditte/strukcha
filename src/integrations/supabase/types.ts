@@ -1556,6 +1556,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_operations_health: { Args: never; Returns: Json }
       claim_sync_job: {
         Args: { _job_id: string; _lease_seconds?: number }
         Returns: boolean
