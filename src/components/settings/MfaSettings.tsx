@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 
-type ChangeStep = "idle" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
+type ChangeStep = "idle" | "totp-password" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
 
 const MFA_SETTINGS_STORAGE_KEY = "mfa_settings_change_state";
 
@@ -172,15 +172,29 @@ export default function MfaSettings() {
     setFactorId("");
     setQrCode("");
     setTotpSecret("");
+    setStepUpPassword("");
     autoSubmitTriggered.current = false;
     clearStoredMfaSettingsState(user?.id);
   }
 
   async function startSwitchToTotp() {
+    if (!stepUpPassword) return;
     setSubmitting(true);
     try {
-      const { data: resetData, error: resetErr } = await supabase.functions.invoke("reset-totp");
-      if (resetErr) throw resetErr;
+      const { data: resetData, error: resetErr } = await supabase.functions.invoke("reset-totp", {
+        body: { password: stepUpPassword },
+      });
+      if (resetErr) {
+        const detail = (resetErr as any)?.context?.body;
+        let message = resetErr.message;
+        try {
+          const parsed = typeof detail === "string" ? JSON.parse(detail) : detail;
+          if (parsed?.error) message = parsed.error;
+        } catch {
+          // keep original message
+        }
+        throw new Error(message);
+      }
       if (resetData?.error) throw new Error(resetData.error);
 
       const { data, error } = await supabase.auth.mfa.enroll({
@@ -188,6 +202,7 @@ export default function MfaSettings() {
         friendlyName: "Authenticator App",
       });
       if (error) throw error;
+      setStepUpPassword("");
       setFactorId(data.id);
       setQrCode(data.totp.qr_code);
       setTotpSecret(data.totp.secret);
