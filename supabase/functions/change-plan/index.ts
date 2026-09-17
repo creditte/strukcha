@@ -1,3 +1,4 @@
+import { corsHeadersFor } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
@@ -9,10 +10,6 @@ import {
   tenantStripeRefs,
 } from "../_shared/stripe-tenant.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
@@ -30,6 +27,7 @@ const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
 const PLAN_LIMITS = PLAN_DIAGRAM_LIMITS;
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {

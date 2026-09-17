@@ -3,11 +3,8 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
 import { quarantineLegacyStripeRefs, tenantStripeRefs } from "../_shared/stripe-tenant.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
@@ -83,6 +80,7 @@ async function ensurePortalConfiguration(stripe: Stripe): Promise<string | undef
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {

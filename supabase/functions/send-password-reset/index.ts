@@ -1,9 +1,6 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
@@ -101,6 +98,7 @@ async function findAuthUserIdByEmail(
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const json = (body: Record<string, unknown>, status = 200) =>
@@ -132,12 +130,9 @@ Deno.serve(async (req) => {
     }
 
     if (!userId) {
-      return json({
-        ok: false,
-        sent: false,
-        code: "user_not_found",
-        error: "No account exists for this email address. Check the spelling or sign up.",
-      });
+      // Do not reveal whether an account exists — respond exactly as for a hit.
+      console.log("[send-password-reset] no account for submitted address");
+      return json({ ok: true, sent: true });
     }
 
     const redirectTo = buildResetRedirect();
