@@ -1,3 +1,4 @@
+import { corsHeadersFor } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
 import { stripeVar } from "../_shared/stripe-env.ts";
@@ -6,7 +7,6 @@ import {
   effectiveDiagramLimit as resolveEffectiveDiagramLimit,
 } from "../_shared/stripe-plans.ts";
 import {
-import { corsHeadersFor } from "../_shared/cors.ts";
   isStripeMissingResource,
   quarantineLegacyStripeRefs,
   tenantStripeRefs,
