@@ -349,7 +349,7 @@ export default function MfaSettings() {
                   <Button
                     variant="outline"
                     className="w-full justify-between h-auto min-h-[4.5rem] py-3"
-                    onClick={startSwitchToTotp}
+                    onClick={() => setStep("totp-password")}
                     disabled={submitting}
                   >
                     <span className="flex items-center gap-3">
@@ -389,6 +389,41 @@ export default function MfaSettings() {
               </div>
             )}
           </div>
+
+          {/* Password confirmation before replacing an authenticator */}
+          {step === "totp-password" && (
+            <div className="space-y-4 rounded-lg border p-4">
+              <div>
+                <p className="text-sm font-medium">Confirm your password</p>
+                <p className="text-xs text-muted-foreground">
+                  For your security, re-enter your account password before setting up a new authenticator app.
+                </p>
+              </div>
+              <Input
+                type="password"
+                value={stepUpPassword}
+                onChange={(e) => setStepUpPassword(e.target.value)}
+                placeholder="Your password"
+                autoComplete="current-password"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && stepUpPassword && !submitting) void startSwitchToTotp();
+                }}
+              />
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={reset} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={startSwitchToTotp}
+                  disabled={!stepUpPassword || submitting}
+                  className="flex-1"
+                >
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continue"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+
 
           {/* TOTP verification step */}
           {step === "totp-verify" && (
