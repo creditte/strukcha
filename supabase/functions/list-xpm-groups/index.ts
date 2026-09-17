@@ -1,12 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
 
 const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
 
@@ -43,6 +39,7 @@ function xmlText(node: any, key: string): string {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }

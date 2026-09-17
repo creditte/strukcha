@@ -4,15 +4,12 @@ import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-
 import { stripeVar } from "../_shared/stripe-env.ts";
 import { PLAN_DIAGRAM_LIMITS } from "../_shared/stripe-plans.ts";
 import {
+import { corsHeadersFor } from "../_shared/cors.ts";
   LEGACY_SUBSCRIPTION_MESSAGE,
   quarantineLegacyStripeRefs,
   tenantStripeRefs,
 } from "../_shared/stripe-tenant.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
@@ -78,6 +75,7 @@ function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan:
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {

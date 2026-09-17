@@ -3,11 +3,8 @@ import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
 import { TRIAL_GROUP_LIMIT } from "../_shared/stripe-plans.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 
 const SITE_NAME = "strukcha";
@@ -46,6 +43,7 @@ async function sendViaSmtp2go(to: string, subject: string, html: string, text?: 
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const json = (body: Record<string, unknown>, status = 200) =>

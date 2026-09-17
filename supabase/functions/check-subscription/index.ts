@@ -6,17 +6,15 @@ import {
   effectiveDiagramLimit as resolveEffectiveDiagramLimit,
 } from "../_shared/stripe-plans.ts";
 import {
+import { corsHeadersFor } from "../_shared/cors.ts";
   isStripeMissingResource,
   quarantineLegacyStripeRefs,
   tenantStripeRefs,
 } from "../_shared/stripe-tenant.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
