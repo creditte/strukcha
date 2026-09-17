@@ -17,11 +17,8 @@ import {
 import { PLAN_DIAGRAM_LIMITS, resolvePlanFromSubscription } from "../_shared/stripe-plans.ts";
 import { stripeVar } from "../_shared/stripe-env.ts";
 import { tenantStripeRefs } from "../_shared/stripe-tenant.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const log = (step: string, details?: unknown) =>
   console.log(`[reconcile-billing] ${step}${details ? ` - ${JSON.stringify(details)}` : ""}`);
@@ -83,6 +80,7 @@ function pickSubscription(subs: Stripe.Subscription[]): Stripe.Subscription | nu
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const json = (body: unknown, status = 200) =>
