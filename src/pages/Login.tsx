@@ -245,10 +245,10 @@ export default function Login() {
         <Card className="border-border/50 shadow-lg">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl font-bold tracking-tight">
-              Strukcha
+              strukcha
             </CardTitle>
             <CardDescription>
-              Log in to access your strukcha workspace Production.
+              Log in to access your strukcha workspace.
             </CardDescription>
           </CardHeader>
           <CardContent>
