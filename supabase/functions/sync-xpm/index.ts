@@ -493,10 +493,17 @@ async function processClientPage(
 
       // Only clients that appear in XPM's list are "seen": a client that shows up
       // solely as a relation is archived in XPM and must not look live here.
-      await rpcCall(supabase, "sync_xpm_mark_seen", {
+      const markSeen = await rpcCall(supabase, "sync_xpm_mark_seen", {
         _tenant_id: tenantId,
         _uuids: clients.map((c) => c.uuid as string),
       });
+      // A failed mark-seen call would make live clients look absent and get them
+      // archived by the sweep, so it must fail the slice instead of passing quietly.
+      if (markSeen.error) {
+        throw new Error(
+          `Could not record clients as seen: ${markSeen.error.message ?? markSeen.error}`,
+        );
+      }
     }
 
     p.stats.clientsFetched += clients.length;
