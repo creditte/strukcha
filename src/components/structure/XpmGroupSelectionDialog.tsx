@@ -154,7 +154,7 @@ export default function XpmGroupSelectionDialog({
     for (const r of rows) setChosen(r, on);
   };
 
-  const unlimited = billing?.unlimited_structures === true;
+  const unlimited = billing?.unlimited_structures === true || billing?.billing_exempt === true;
   const remaining = unlimited
     ? Number.POSITIVE_INFINITY
     : Math.max(0, (billing?.diagram_limit ?? 0) - (billing?.diagram_count ?? 0));

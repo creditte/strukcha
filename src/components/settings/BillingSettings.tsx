@@ -105,6 +105,48 @@ export default function BillingSettings() {
     );
   }
 
+  // Owner firm: no subscription, no limits, no payment actions.
+  if (billing?.billing_exempt === true) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              Subscription
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium">Owner account — no billing applies</p>
+              <Badge className="bg-success/10 text-success border-0">Exempt</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This firm is not billed. No payment method, plan or renewal is required, and structures are unlimited.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Network className="h-5 w-5" />
+              Usage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm font-medium">Active Structures</p>
+            <p className="text-xs text-muted-foreground">
+              {(billing?.diagram_count ?? 0)} used — unlimited
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+
+
   const statusLabels: Record<string, string> = {
     trialing: "Free Trial",
     active: "Active",
