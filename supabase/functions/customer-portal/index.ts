@@ -119,10 +119,16 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, billing_exempt")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+    if (tenant.billing_exempt === true) {
+      return new Response(JSON.stringify({ error: "This firm is not billed — no subscription or payment is required." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";

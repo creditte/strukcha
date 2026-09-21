@@ -81,6 +81,7 @@ Deno.serve(async (req) => {
     .from('tenants')
     .select('id, firm_name, subscription_plan, trial_ends_at, subscription_status')
     .eq('subscription_status', 'trialing')
+    .eq('billing_exempt', false)
     .not('trial_ends_at', 'is', null)
 
   if (trialErr) {
@@ -106,6 +107,7 @@ Deno.serve(async (req) => {
     .from('tenants')
     .select('id, firm_name, subscription_plan, current_period_end, subscription_status')
     .eq('subscription_status', 'active')
+    .eq('billing_exempt', false)
     .not('current_period_end', 'is', null)
 
   if (renewalErr) {
