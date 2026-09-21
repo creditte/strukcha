@@ -1222,6 +1222,7 @@ export type Database = {
           access_enabled: boolean | null
           access_locked_reason: string | null
           allow_admin_integrations: boolean
+          billing_exempt: boolean
           brand_primary_color: string | null
           cancel_at_period_end: boolean | null
           canceled_at: string | null
@@ -1261,6 +1262,7 @@ export type Database = {
           access_enabled?: boolean | null
           access_locked_reason?: string | null
           allow_admin_integrations?: boolean
+          billing_exempt?: boolean
           brand_primary_color?: string | null
           cancel_at_period_end?: boolean | null
           canceled_at?: string | null
@@ -1300,6 +1302,7 @@ export type Database = {
           access_enabled?: boolean | null
           access_locked_reason?: string | null
           allow_admin_integrations?: boolean
+          billing_exempt?: boolean
           brand_primary_color?: string | null
           cancel_at_period_end?: boolean | null
           canceled_at?: string | null

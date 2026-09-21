@@ -38,10 +38,39 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, stripe_mode, trial_used_at, last_plan_switch_at, payment_method_captured, unlimited_structures")
+      .select("id, subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, stripe_mode, trial_used_at, last_plan_switch_at, payment_method_captured, unlimited_structures, billing_exempt")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+
+    // Billing-exempt firms (the product owner's own firm) are never charged,
+    // never capped and never locked. No Stripe call is made for them.
+    if (tenant.billing_exempt === true) {
+      return new Response(JSON.stringify({
+        enforcement_enabled: false,
+        billing_exempt: true,
+        unlimited_structures: true,
+        payment_method_required: false,
+        payment_method_captured: true,
+        subscription_status: "exempt",
+        subscription_plan: tenant.subscription_plan,
+        selected_plan: tenant.selected_plan,
+        pending_downgrade: null,
+        access_enabled: true,
+        access_locked_reason: null,
+        trial_ends_at: null,
+        current_period_end: null,
+        diagram_limit: Number.MAX_SAFE_INTEGER,
+        diagram_count: tenant.diagram_count,
+        cancel_at_period_end: false,
+        billing_interval: null,
+        price_amount: null,
+        last_plan_switch_at: null,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
 
     // Stripe references saved in a different Stripe mode (legacy sandbox data while
     // the app now runs live) cannot be read with the active key. Quarantine them so

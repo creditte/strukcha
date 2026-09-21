@@ -64,7 +64,7 @@ export default function Import() {
   const cancelled = useRef(false);
 
   // ── Capacity, straight from the server-side subscription check ───────────
-  const unlimitedStructures = billing?.unlimited_structures === true;
+  const unlimitedStructures = billing?.unlimited_structures === true || billing?.billing_exempt === true;
   const accessEnabled = billing ? billing.access_enabled !== false : true;
   const structureLimit = unlimitedStructures ? null : billing?.diagram_limit ?? null;
   const structureCount = billing?.diagram_count ?? null;

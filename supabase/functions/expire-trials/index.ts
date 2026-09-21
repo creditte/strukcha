@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
       .from("tenants")
       .select("id, firm_name, trial_ends_at, stripe_subscription_id, stripe_customer_id, stripe_mode")
       .eq("subscription_status", "trialing")
+      .eq("billing_exempt", false)
       .not("trial_ends_at", "is", null)
       .lt("trial_ends_at", nowIso);
 
