@@ -6,6 +6,8 @@ import { qk, staleTimes } from "@/lib/queryKeys";
 
 export interface BillingStatus {
   enforcement_enabled: boolean;
+  /** Permanent per-tenant override: this firm is never billed, capped or locked. */
+  billing_exempt?: boolean;
   /** Permanent per-tenant override: structures are never capped for this firm. */
   unlimited_structures?: boolean;
   payment_method_required: boolean;

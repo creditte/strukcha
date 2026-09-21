@@ -325,6 +325,11 @@ function BillingGate({ children }: { children: React.ReactNode }) {
   // transient error; the DB triggers remain the hard backstop.
   // Mandatory registration payment-method capture — enforced regardless of the
   // billing enforcement kill-switch, since no Stripe trial exists without a card.
+  // Billing-exempt firms (the product owner's own firm) never see payment or lock screens.
+  if (billing?.billing_exempt === true) {
+    return <>{children}</>;
+  }
+
   if (billing?.payment_method_required === true) {
     trace("ProtectedRoute", "decision: payment method required → /complete-setup");
     return <Navigate to="/complete-setup" replace />;
