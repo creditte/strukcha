@@ -19,7 +19,7 @@ function PwField({ id, label, value, onChange, autoComplete }: {
       <Label className="text-xs" htmlFor={id}>{label}</Label>
       <div className="relative">
         <Input id={id} type={show ? "text" : "password"} value={value} autoComplete={autoComplete}
-          onChange={(e) => onChange(e.target.value)} className="pr-10" />
+          onChange={(e) => onChange(e.target.value)} className="pr-10 w-60" />
         <button type="button" onClick={() => setShow((v) => !v)}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           aria-label={show ? "Hide password" : "Show password"}>
@@ -67,17 +67,17 @@ export default function PasswordSettings() {
   };
 
   return (
-    <Card className="max-w-lg">
+    <Card className="w-fit max-w-full">
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4 text-primary" /> Password</CardTitle>
-        <CardDescription>
+        <CardDescription className="max-w-[31rem]">
           {loading ? "\u00a0" : isChange
             ? "Change the password you use to sign in with email."
             : "You sign in with Xero. Set a password to also sign in with email."}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {loading ? <Skeleton className="h-24 w-full" /> : (
+        {loading ? <Skeleton className="h-24 w-[31rem] max-w-full" /> : (
           <form onSubmit={submit} className="space-y-3">
             {isChange && <PwField id="current-pw" label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />}
             <div className="grid gap-3 sm:grid-cols-2">
