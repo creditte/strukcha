@@ -69,7 +69,7 @@ type TrustedDeviceRecord = {
   is_current?: boolean;
 };
 
-export default function MfaSettings() {
+export default function MfaSettings({ section = "all" }: { section?: "all" | "mfa" | "devices" } = {}) {
   const { user } = useAuth();
   const { passwordSet } = usePasswordSet();
   const { method: currentMethod, loading: mfaLoading, refetch } = useMfa();
@@ -318,6 +318,7 @@ export default function MfaSettings() {
 
   return (
     <div className="space-y-6">
+      {section !== "devices" && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -493,8 +494,10 @@ export default function MfaSettings() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Trusted Devices */}
+      {section !== "mfa" && (
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -620,6 +623,7 @@ export default function MfaSettings() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }
