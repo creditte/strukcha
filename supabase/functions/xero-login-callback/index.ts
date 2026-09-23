@@ -5,7 +5,7 @@ import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
 async function findAuthUserByEmail(
   admin: ReturnType<typeof createClient>,
   email: string,
-): Promise<{ id: string; email?: string } | null> {
+): Promise<{ id: string; email?: string; user_metadata?: Record<string, unknown> } | null> {
   const normalized = email.toLowerCase();
   let page = 1;
   const perPage = 1000;
@@ -13,7 +13,7 @@ async function findAuthUserByEmail(
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
     if (error) throw error;
     const u = data.users.find((x) => x.email?.toLowerCase() === normalized);
-    if (u) return { id: u.id, email: u.email };
+    if (u) return { id: u.id, email: u.email, user_metadata: u.user_metadata ?? {} };
     if (data.users.length < perPage) return null;
     page++;
   }
@@ -145,6 +145,13 @@ Deno.serve(async (req) => {
     }
 
     const userId = existing.id;
+    // Remember that this person signs in with Xero, so they're never forced
+    // onto the "Set your password" screen (they can set one later in Settings).
+    if (existing.user_metadata?.auth_method !== "xero") {
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: { ...(existing.user_metadata ?? {}), auth_method: "xero" },
+      }).catch((e: unknown) => console.error("[xero-login-callback] tag auth_method:", e));
+    }
     const { data: profile } = await supabase
       .from("profiles")
       .select("tenant_id")

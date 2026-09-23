@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMfa } from "@/hooks/useMfa";
+import { usePasswordSet } from "@/hooks/usePasswordSet";
 import { useTrustedDevice } from "@/hooks/useTrustedDevice";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -70,6 +71,7 @@ type TrustedDeviceRecord = {
 
 export default function MfaSettings() {
   const { user } = useAuth();
+  const { passwordSet } = usePasswordSet();
   const { method: currentMethod, loading: mfaLoading, refetch } = useMfa();
   const { listDevices, revokeDevice, revokeAllDevices } = useTrustedDevice();
   const { toast } = useToast();
@@ -391,7 +393,16 @@ export default function MfaSettings() {
           </div>
 
           {/* Password confirmation before replacing an authenticator */}
-          {step === "totp-password" && (
+          {step === "totp-password" && passwordSet === false && (
+            <div className="space-y-3 rounded-lg border p-4">
+              <p className="text-sm font-medium">Set a password first</p>
+              <p className="text-xs text-muted-foreground">
+                You sign in with Xero, so there's no password to confirm yet. Set one in the Password card above, then come back to switch to an authenticator app.
+              </p>
+              <Button variant="outline" onClick={reset} className="w-full">OK</Button>
+            </div>
+          )}
+          {step === "totp-password" && passwordSet !== false && (
             <div className="space-y-4 rounded-lg border p-4">
               <div>
                 <p className="text-sm font-medium">Confirm your password</p>

@@ -156,9 +156,12 @@ export default function Login() {
         .maybeSingle();
 
       if (cancelled) return;
+      const meta = user.user_metadata;
       const needsInvitePassword =
         profile?.onboarding_complete === false &&
-        user.user_metadata?.signup_source !== "self_service";
+        meta?.signup_source !== "self_service" &&
+        meta?.signup_source !== "xero" &&
+        meta?.auth_method !== "xero";
       if (needsInvitePassword) {
         navigate("/setup-password", { replace: true });
       } else {
