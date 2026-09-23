@@ -119,9 +119,9 @@ export default function MfaSettings({ section = "all" }: { section?: "all" | "mf
 
   // Load trusted devices
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || section === "mfa") return;
     loadDevices();
-  }, [user?.id]);
+  }, [user?.id, section]);
 
   async function loadDevices() {
     setDevicesLoading(true);

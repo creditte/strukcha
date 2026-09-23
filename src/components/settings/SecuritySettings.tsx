@@ -41,10 +41,10 @@ export default function SecuritySettings() {
         })}
       </nav>
 
-      <div className="min-w-0">
-        {selected === "mfa" && <MfaSettings section="mfa" />}
-        {selected === "password" && <PasswordSettings />}
-        {selected === "devices" && <MfaSettings section="devices" />}
+      <div className="min-w-0 max-w-2xl">
+        <div hidden={selected !== "mfa"}><MfaSettings section="mfa" /></div>
+        <div hidden={selected !== "password"}><PasswordSettings /></div>
+        <div hidden={selected !== "devices"}><MfaSettings section="devices" /></div>
       </div>
     </div>
   );
