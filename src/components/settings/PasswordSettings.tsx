@@ -15,8 +15,8 @@ function PwField({ id, label, value, onChange, autoComplete }: {
 }) {
   const [show, setShow] = useState(false);
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
+    <div className="space-y-1.5">
+      <Label className="text-xs" htmlFor={id}>{label}</Label>
       <div className="relative">
         <Input id={id} type={show ? "text" : "password"} value={value} autoComplete={autoComplete}
           onChange={(e) => onChange(e.target.value)} className="pr-10" />
@@ -67,24 +67,29 @@ export default function PasswordSettings() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" /> Password</CardTitle>
+    <Card className="max-w-lg">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4 text-primary" /> Password</CardTitle>
         <CardDescription>
           {loading ? "\u00a0" : isChange
             ? "Change the password you use to sign in with email."
-            : "You sign in with Xero. Set a password if you'd also like to sign in with your email."}
+            : "You sign in with Xero. Set a password to also sign in with email."}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {loading ? <Skeleton className="h-32 w-full" /> : (
-          <form onSubmit={submit} className="space-y-4 max-w-sm">
+        {loading ? <Skeleton className="h-24 w-full" /> : (
+          <form onSubmit={submit} className="space-y-3">
             {isChange && <PwField id="current-pw" label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />}
-            <PwField id="new-pw" label="New password" value={pw} onChange={setPw} autoComplete="new-password" />
-            <PwField id="confirm-pw" label="Confirm new password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
-            <Button type="submit" disabled={busy}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : isChange ? "Change password" : "Set password"}
-            </Button>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PwField id="new-pw" label="New password" value={pw} onChange={setPw} autoComplete="new-password" />
+              <PwField id="confirm-pw" label="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
+            </div>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <p className="text-xs text-muted-foreground">Minimum 6 characters.</p>
+              <Button type="submit" size="sm" disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : isChange ? "Change password" : "Set password"}
+              </Button>
+            </div>
           </form>
         )}
       </CardContent>
