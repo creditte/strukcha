@@ -276,10 +276,13 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return <BootLoadingScreen />;
   }
 
-  // ── Invite / Xero signup / recovery: must set password on /setup-password ───
-  // Self-signup users set a password during signup; they are tagged with user_metadata.signup_source === "self_service".
+  // ── Email invites: must set password on /setup-password ───
+  // Self-signup users chose a password at signup; Xero users sign in with Xero
+  // and can optionally set a password later in Settings → Security.
   const needsInvitePasswordSetup =
-    onboardingComplete === false && user?.user_metadata?.signup_source !== "self_service";
+    onboardingComplete === false &&
+    user?.user_metadata?.signup_source !== "self_service" &&
+    !isXeroUser(user?.user_metadata);
   if (needsInvitePasswordSetup) {
     return <Navigate to="/setup-password" replace />;
   }

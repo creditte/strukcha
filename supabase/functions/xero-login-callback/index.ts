@@ -145,6 +145,13 @@ Deno.serve(async (req) => {
     }
 
     const userId = existing.id;
+    // Remember that this person signs in with Xero, so they're never forced
+    // onto the "Set your password" screen (they can set one later in Settings).
+    if (existing.user_metadata?.auth_method !== "xero") {
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: { ...(existing.user_metadata ?? {}), auth_method: "xero" },
+      }).catch((e: unknown) => console.error("[xero-login-callback] tag auth_method:", e));
+    }
     const { data: profile } = await supabase
       .from("profiles")
       .select("tenant_id")

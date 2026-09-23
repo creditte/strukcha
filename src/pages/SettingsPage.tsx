@@ -7,6 +7,7 @@ import MfaSettings from "@/components/settings/MfaSettings";
 import BillingSettings from "@/components/settings/BillingSettings";
 import IntegrationsSettings from "@/components/settings/IntegrationsSettings";
 import DangerZoneSettings from "@/components/settings/DangerZoneSettings";
+import PasswordSettings from "@/components/settings/PasswordSettings";
 
 import { useTenantUsers } from "@/hooks/useTenantUsers";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -103,7 +104,8 @@ export default function SettingsPage() {
           <IntegrationsSettings />
         </TabsContent>
 
-        <TabsContent value="security" className="mt-4">
+        <TabsContent value="security" className="mt-4 space-y-6">
+          <PasswordSettings />
           <MfaSettings />
         </TabsContent>
 
