@@ -391,7 +391,16 @@ export default function MfaSettings() {
           </div>
 
           {/* Password confirmation before replacing an authenticator */}
-          {step === "totp-password" && (
+          {step === "totp-password" && passwordSet === false && (
+            <div className="space-y-3 rounded-lg border p-4">
+              <p className="text-sm font-medium">Set a password first</p>
+              <p className="text-xs text-muted-foreground">
+                You sign in with Xero, so there's no password to confirm yet. Set one in the Password card above, then come back to switch to an authenticator app.
+              </p>
+              <Button variant="outline" onClick={reset} className="w-full">OK</Button>
+            </div>
+          )}
+          {step === "totp-password" && passwordSet !== false && (
             <div className="space-y-4 rounded-lg border p-4">
               <div>
                 <p className="text-sm font-medium">Confirm your password</p>
