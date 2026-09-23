@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMfa } from "@/hooks/useMfa";
+import { usePasswordSet } from "@/hooks/usePasswordSet";
 import { useTrustedDevice } from "@/hooks/useTrustedDevice";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -70,6 +71,7 @@ type TrustedDeviceRecord = {
 
 export default function MfaSettings() {
   const { user } = useAuth();
+  const { passwordSet } = usePasswordSet();
   const { method: currentMethod, loading: mfaLoading, refetch } = useMfa();
   const { listDevices, revokeDevice, revokeAllDevices } = useTrustedDevice();
   const { toast } = useToast();
