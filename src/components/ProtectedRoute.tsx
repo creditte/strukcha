@@ -1,3 +1,4 @@
+import { isXeroUser } from "@/hooks/usePasswordSet";
 import { useState, useEffect } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth, BootStatus } from "@/hooks/useAuth";
