@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useMfa } from "@/hooks/useMfa";
 import { usePasswordSet } from "@/hooks/usePasswordSet";
 import { useTrustedDevice } from "@/hooks/useTrustedDevice";
 import { useToast } from "@/hooks/use-toast";
@@ -72,7 +71,26 @@ type TrustedDeviceRecord = {
 export default function MfaSettings({ section = "all" }: { section?: "all" | "mfa" | "devices" } = {}) {
   const { user } = useAuth();
   const { passwordSet } = usePasswordSet();
-  const { method: currentMethod, loading: mfaLoading, refetch } = useMfa();
+  // Settings only needs the chosen method — skip the full verification check
+  // (which calls the trusted-device service) so the card renders instantly.
+  const methodCacheKey = user?.id ? `mfa_method:${user.id}` : null;
+  const [currentMethod, setCurrentMethod] = useState<"totp" | "email" | null>(() => {
+    try { return methodCacheKey ? (sessionStorage.getItem(methodCacheKey) as any) || null : null; } catch { return null; }
+  });
+  const [mfaLoading, setMfaLoading] = useState(currentMethod === null);
+  const refetch = async () => {
+    if (!user?.id) return;
+    const { data } = await (supabase as any).from("mfa_settings").select("method").eq("user_id", user.id).maybeSingle();
+    let m: "totp" | "email" | null = data?.method === "totp" || data?.method === "email" ? data.method : null;
+    if (!m) {
+      const { data: f } = await supabase.auth.mfa.listFactors();
+      if (f?.totp?.some((x) => x.status === "verified")) m = "totp";
+    }
+    setCurrentMethod(m);
+    try { if (methodCacheKey && m) sessionStorage.setItem(methodCacheKey, m); } catch { /* noop */ }
+    setMfaLoading(false);
+  };
+  useEffect(() => { void refetch(); }, [user?.id]);
   const { listDevices, revokeDevice, revokeAllDevices } = useTrustedDevice();
   const { toast } = useToast();
 
@@ -101,9 +119,9 @@ export default function MfaSettings({ section = "all" }: { section?: "all" | "mf
 
   // Load trusted devices
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || section === "mfa") return;
     loadDevices();
-  }, [user?.id]);
+  }, [user?.id, section]);
 
   async function loadDevices() {
     setDevicesLoading(true);
