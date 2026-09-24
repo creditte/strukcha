@@ -196,6 +196,7 @@ Deno.serve(async (req) => {
         full_name: fullName,
         status: "active",
         onboarding_complete: true,
+        password_set: true,
         selected_plan: plan,
         selected_billing: billing,
       }, { onConflict: "user_id" });

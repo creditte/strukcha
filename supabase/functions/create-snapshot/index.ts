@@ -118,7 +118,8 @@ Deno.serve(async (req) => {
       .from("entities")
       .select("id, name, entity_type, abn, acn, is_operating_entity, is_trustee_company")
       .in("id", entityIds)
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .eq("is_archived", false);
 
     // Build position map
     const posMap = new Map<string, { x: number | null; y: number | null }>();

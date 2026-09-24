@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
     // Self-signup users already chose a password; never send them to /setup-password.
     await supabaseAdmin
       .from("profiles")
-      .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
+      .update({ onboarding_complete: true, password_set: true, updated_at: new Date().toISOString() })
       .eq("user_id", codeRow.user_id);
 
     // NOTE: the welcome email is intentionally NOT sent here. Registration is only

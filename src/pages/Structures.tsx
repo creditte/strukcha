@@ -248,7 +248,9 @@ export default function Structures() {
       if (!structures || structures.length === 0) return [] as ManualStructure[];
       const { data: entityLinks } = await supabase
         .from("structure_entities")
-        .select("structure_id")
+        .select("structure_id, entities!inner(is_archived, deleted_at)")
+        .eq("entities.is_archived", false)
+        .is("entities.deleted_at", null)
         .in("structure_id", structures.map((s) => s.id));
       const countMap: Record<string, number> = {};
       for (const link of entityLinks ?? []) {
@@ -308,7 +310,9 @@ export default function Structures() {
 
     const { data: entityLinks } = await supabase
       .from("structure_entities")
-      .select("structure_id")
+      .select("structure_id, entities!inner(is_archived, deleted_at)")
+      .eq("entities.is_archived", false)
+      .is("entities.deleted_at", null)
       .in("structure_id", allStructures.map((s) => s.id));
     const countMap: Record<string, number> = {};
     for (const link of entityLinks ?? []) {
