@@ -450,27 +450,13 @@ export default function Signup() {
                         className="h-8 w-8 shrink-0 object-contain mix-blend-screen"
                         aria-hidden
                       />
-                      Continue with Xero Practice Manager
+                      Continue with Xero
                     </>
                   )}
                 </Button>
-                <p className="-mt-1 text-xs text-center text-muted-foreground">
-                  For accounting firms that manage clients in Xero Practice Manager (XPM).
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full h-11 text-sm font-medium"
-                  disabled={xeroLoading || submitting}
-                  onClick={() => handleXeroSignup("standard")}
-                >
-                  Continue with Xero
-                </Button>
-                <p className="-mt-1 text-xs text-center text-muted-foreground">
-                  For everyone else, including new Xero users. <span className="font-medium">Not sure? Choose this one.</span>
-                </p>
                 <p className="text-xs text-center text-muted-foreground">
                   Uses your Xero profile email. Your firm name above will be your workspace name.
+                  You can connect Xero Practice Manager after sign-up.
                 </p>
               </form>
             </CardContent>
