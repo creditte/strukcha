@@ -317,6 +317,11 @@ export default function BillingSuccess() {
                 )}
               </Button>
             )}
+            {!xeroConnected && (
+              <Button asChild variant="ghost" className="ml-0 mt-2 h-10 w-full sm:ml-2 sm:mt-0 sm:w-auto">
+                <Link to="/structures">Skip — I don't use Practice Manager</Link>
+              </Button>
+            )}
           </Step>
 
           <Step
