@@ -434,7 +434,7 @@ export default function Signup() {
                   variant="default"
                   className="w-full h-11 border-0 bg-[#14B5EA] text-base font-semibold text-white hover:bg-[#14B5EA]/90 focus-visible:ring-white/40"
                   disabled={xeroLoading || submitting}
-                  onClick={handleXeroSignup}
+                  onClick={() => handleXeroSignup("practice_manager")}
                 >
                   {xeroLoading ? (
                     <>
