@@ -454,14 +454,15 @@ export default function Signup() {
                     </>
                   )}
                 </Button>
-                <button
+                <Button
                   type="button"
-                  className="w-full text-xs text-primary hover:underline disabled:opacity-50"
-                  disabled={xeroLoading}
+                  variant="outline"
+                  className="w-full h-11 text-sm font-medium"
+                  disabled={xeroLoading || submitting}
                   onClick={() => handleXeroSignup("standard")}
                 >
-                  No Practice Manager? Sign up with a standard Xero organisation
-                </button>
+                  Continue with Xero (no Practice Manager)
+                </Button>
                 <p className="text-xs text-center text-muted-foreground">
                   Uses your Xero profile email. Your firm name above will be your workspace name.
                 </p>
