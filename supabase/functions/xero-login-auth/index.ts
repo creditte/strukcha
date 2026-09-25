@@ -21,15 +21,13 @@ Deno.serve(async (req) => {
     }
 
     let callerOrigin: string | undefined;
-    // "standard" = a plain Xero organisation; "practice_manager" = XPM.
-    let connectionType: "practice_manager" | "standard" = "practice_manager";
+    // Sign-in always uses basic Xero access so every Xero user can sign in.
+    // Practice Manager is connected separately from onboarding or Settings.
+    const connectionType: "practice_manager" | "standard" = "standard";
 
     try {
       const body = await req.json();
       callerOrigin = typeof body.origin === "string" ? body.origin : undefined;
-      if (body.connection_type === "accounting" || body.connection_type === "standard") {
-        connectionType = "standard";
-      }
     } catch {
       /* no body */
     }
