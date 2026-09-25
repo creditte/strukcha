@@ -329,7 +329,7 @@ export default function Login() {
                 variant="default"
                 className="w-full h-11 border-0 bg-[#14B5EA] text-base font-semibold text-white hover:bg-[#14B5EA]/90 focus-visible:ring-white/40"
                 disabled={xeroLoginLoading || submitting}
-                onClick={() => handleXeroLogin("practice_manager")}
+                onClick={() => handleXeroLogin("standard")}
               >
                 {xeroLoginLoading ? (
                   <>
@@ -343,14 +343,6 @@ export default function Login() {
                   </>
                 )}
               </Button>
-              <button
-                type="button"
-                className="w-full text-xs text-primary hover:underline disabled:opacity-50"
-                disabled={xeroLoginLoading || submitting}
-                onClick={() => handleXeroLogin("standard")}
-              >
-                No Practice Manager? Sign in with a standard Xero organisation
-              </button>
               <p className="text-xs text-center text-muted-foreground">
                 Only for accounts originally created with Xero. Others should
                 use email and password.
