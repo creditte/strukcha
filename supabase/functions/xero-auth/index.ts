@@ -1,3 +1,4 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
@@ -80,7 +81,7 @@ serve(async (req) => {
     // Store user_id, origin, connection type, and CSRF token in state
     const state = btoa(JSON.stringify({
       user_id: claimsData.claims.sub,
-      origin: callerOrigin || Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app",
+      origin: safeFrontend(callerOrigin),
       csrf: csrfToken,
       connection_type: connectionType,
     }));
