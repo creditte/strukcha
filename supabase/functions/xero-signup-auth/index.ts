@@ -1,3 +1,4 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
@@ -78,7 +79,7 @@ Deno.serve(async (req) => {
 
     const state = btoa(JSON.stringify({
       csrf: csrfToken,
-      origin: frontendOrigin,
+      origin: safeFrontend(frontendOrigin),
       flow: "signup",
     }));
 

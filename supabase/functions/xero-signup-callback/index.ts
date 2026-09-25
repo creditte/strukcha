@@ -1,3 +1,4 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
@@ -57,7 +58,7 @@ Deno.serve(async (req) => {
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       csrfToken = state.csrf;
-      frontendUrl = state.origin || defaultFrontendUrl;
+      frontendUrl = safeFrontend(state.origin);
       if (state.flow !== "signup") {
         return Response.redirect(`${frontendUrl}/signup?xero_signup=error&reason=invalid_flow`, 302);
       }

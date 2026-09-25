@@ -1,3 +1,4 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptToken } from "../_shared/crypto.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
@@ -46,7 +47,7 @@ Deno.serve(async (req) => {
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       csrfToken = state.csrf;
-      frontendUrl = state.origin || defaultFrontendUrl;
+      frontendUrl = safeFrontend(state.origin);
       if (state.connection_type === "standard" || state.connection_type === "accounting") {
         connectionType = "standard";
       }
