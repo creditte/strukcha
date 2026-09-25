@@ -123,7 +123,9 @@ export default function Signup() {
     }
   };
 
-  const handleXeroSignup = async () => {
+  const handleXeroSignup = async (
+    connectionType: "practice_manager" | "standard" = "practice_manager",
+  ) => {
     if (!firmName.trim()) {
       toast({
         title: "Firm name required",
@@ -140,6 +142,7 @@ export default function Signup() {
           origin: window.location.origin,
           selectedPlan,
           selectedBilling,
+          connection_type: connectionType,
         },
       });
       if (error) throw error;
@@ -431,7 +434,7 @@ export default function Signup() {
                   variant="default"
                   className="w-full h-11 border-0 bg-[#14B5EA] text-base font-semibold text-white hover:bg-[#14B5EA]/90 focus-visible:ring-white/40"
                   disabled={xeroLoading || submitting}
-                  onClick={handleXeroSignup}
+                  onClick={() => handleXeroSignup("practice_manager")}
                 >
                   {xeroLoading ? (
                     <>
@@ -451,6 +454,14 @@ export default function Signup() {
                     </>
                   )}
                 </Button>
+                <button
+                  type="button"
+                  className="w-full text-xs text-primary hover:underline disabled:opacity-50"
+                  disabled={xeroLoading}
+                  onClick={() => handleXeroSignup("standard")}
+                >
+                  No Practice Manager? Sign up with a standard Xero organisation
+                </button>
                 <p className="text-xs text-center text-muted-foreground">
                   Uses your Xero profile email. Your firm name above will be your workspace name.
                 </p>
