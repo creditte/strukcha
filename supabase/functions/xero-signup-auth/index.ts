@@ -22,15 +22,14 @@ Deno.serve(async (req) => {
     let selectedPlan = "pro";
     let selectedBilling = "monthly";
     let callerOrigin: string | undefined;
-    let connectionType: "practice_manager" | "standard" = "practice_manager";
+    // Sign-up always uses basic Xero access so any Xero user can create an
+    // account. Practice Manager is connected afterwards during onboarding.
+    const connectionType: "practice_manager" | "standard" = "standard";
 
     try {
       const body = await req.json();
       firmName = typeof body.firmName === "string" ? body.firmName.trim() : "";
       callerOrigin = typeof body.origin === "string" ? body.origin : undefined;
-      if (body.connection_type === "accounting" || body.connection_type === "standard") {
-        connectionType = "standard";
-      }
 
       const plan = body.selectedPlan;
       const billing = body.selectedBilling;
