@@ -6,6 +6,7 @@ const ALLOWED = new Set([
   "https://strukcha.app",
   "https://www.strukcha.app",
   "https://strukcha-dev.lovable.app",
+  "https://preview--strukcha-dev.lovable.app",
   `https://id-preview--${PROJECT_ID}.lovable.app`,
   `https://preview--${PROJECT_ID}.lovable.app`,
   `https://${PROJECT_ID}.lovableproject.com`,

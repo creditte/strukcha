@@ -178,6 +178,7 @@ Deno.serve(async (req) => {
       user_metadata: {
         full_name: fullName,
         signup_source: "xero",
+        auth_method: "xero",
         ...(xeroUserId ? { xero_userid: xeroUserId } : {}),
       },
     });
@@ -265,9 +266,12 @@ Deno.serve(async (req) => {
       user_id: userId,
       role: "admin",
     });
-    if (roleError) {
+    if (roleError && roleError.code !== "23505") {
       console.error("[xero-signup-callback] user_roles:", roleError);
     }
+    // The new-user trigger first parks everyone as a plain "user" of the
+    // fallback firm; the owner of a brand-new firm should only be "admin".
+    await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", "user");
 
     const connectionType: "practice_manager" | "standard" =
       pending.connection_type === "standard" || pending.connection_type === "accounting"
