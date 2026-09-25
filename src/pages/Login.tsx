@@ -271,7 +271,15 @@ export default function Login() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <div className="relative">
                   <Input
                     id="password"
@@ -344,26 +352,23 @@ export default function Login() {
                 )}
               </Button>
               <p className="text-xs text-center text-muted-foreground">
-                Only for accounts originally created with Xero. Others should
-                use email and password.
+                For accounts created with Xero. New to strukcha? Sign up first.
               </p>
             </form>
-
-            <div className="mt-5 flex items-center justify-between text-sm">
-              <Link
-                to="/forgot-password"
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Forgot password?
-              </Link>
-            </div>
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          Don't have an account?{" "}
+          <Link to="/signup" className="font-medium text-primary hover:underline">
+            Sign up
+          </Link>
+        </p>
+
+        <p className="mt-3 text-center text-xs text-muted-foreground">
           Need help?{" "}
-          <a href="mailto:hello@strukcha.app" className="hover:underline">
-            hello@strukcha.app
+          <a href="mailto:support@strukcha.app" className="hover:underline">
+            support@strukcha.app
           </a>
         </p>
       </div>
