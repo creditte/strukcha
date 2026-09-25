@@ -121,7 +121,12 @@ export default function BillingSuccess() {
         .select("id", { count: "exact", head: true })
         .is("deleted_at", null),
     ]);
-    setXeroConnected(Boolean(connection && connection !== "null"));
+    // Only a Practice Manager connection completes this step. Xero sign-up
+    // creates a basic connection, which cannot read XPM client groups.
+    const info = connection as { connection_type?: string; status?: string } | null;
+    setXeroConnected(
+      Boolean(info && typeof info === "object" && info.connection_type === "practice_manager" && info.status !== "needs_reauth"),
+    );
     setStructureCount(count ?? 0);
   }, []);
 
@@ -286,7 +291,7 @@ export default function BillingSuccess() {
             description={
               xeroConnected
                 ? "Connected. We're pulling your client groups into strukcha."
-                : "Authorise strukcha to read your XPM client list. Takes about 30 seconds."
+                : "If your firm uses Xero Practice Manager, authorise strukcha to read your XPM client list. Takes about 30 seconds. No Practice Manager? Skip this and build structures yourself."
             }
             complete={xeroConnected}
             enabled
@@ -310,6 +315,11 @@ export default function BillingSuccess() {
                 ) : (
                   "Connect Xero Practice Manager"
                 )}
+              </Button>
+            )}
+            {!xeroConnected && (
+              <Button asChild variant="ghost" className="ml-0 mt-2 h-10 w-full sm:ml-2 sm:mt-0 sm:w-auto">
+                <Link to="/structures">Skip — I don't use Practice Manager</Link>
               </Button>
             )}
           </Step>
