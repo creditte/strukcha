@@ -53,7 +53,7 @@ export default function AppLayout() {
               </nav>
             </div>
             <header className="relative flex items-center gap-3 px-3 py-2 sm:px-6 border-b border-border/40 bg-card/30 shrink-0">
-              <div className="min-w-0 flex-1 lg:absolute lg:left-1/2 lg:w-full lg:max-w-xl lg:-translate-x-1/2 lg:flex-none">
+              <div className="min-w-0 flex-1 lg:absolute lg:left-1/2 lg:w-full lg:max-w-md lg:-translate-x-1/2 lg:flex-none">
                 <GlobalSearch />
               </div>
               <div className="ml-auto shrink-0">
