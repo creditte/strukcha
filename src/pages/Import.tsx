@@ -781,12 +781,12 @@ export default function Import() {
       )}
 
       {/* Import history */}
-      <Card className="mb-2 min-w-0">
-        <CardHeader className="pb-3">
+      <Card className="mb-2 min-w-0 border-0 bg-transparent shadow-none">
+        <CardHeader className="px-0 pb-3 sm:px-0">
           <CardTitle className="text-base">Import history</CardTitle>
           <CardDescription>Previous imports for your workspace.</CardDescription>
         </CardHeader>
-        <CardContent className="min-w-0 p-3 pt-0 sm:p-6 sm:pt-0">
+        <CardContent className="min-w-0 p-0">
           {importLogs.length === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">No imports yet.</p>
           ) : (
