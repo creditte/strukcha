@@ -241,13 +241,19 @@ export default function ClientGovernance() {
 
       {review && (
         <>
-          {/* ── Score summary (single card) ── */}
-          <Card>
-            <CardContent className="space-y-6 p-5 sm:p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-1">
+          <div className="grid gap-4 lg:grid-cols-5">
+          {/* ── Overview (left) ── */}
+          <Card className={review.crossObservations.length > 0 ? "lg:col-span-2" : "lg:col-span-5"}>
+            <CardContent className="flex h-full flex-col gap-5 p-5 sm:p-6">
+              <div className="space-y-0.5">
+                <h2 className="text-sm font-semibold text-foreground">Overview</h2>
+                <p className="text-xs text-muted-foreground">Your firm's overall structure health.</p>
+              </div>
+
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div className="space-y-2">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-semibold leading-none tabular-nums text-foreground">
+                    <span className="text-5xl font-semibold leading-none tabular-nums text-foreground">
                       {review.clientScore}
                     </span>
                     <span className="text-sm text-muted-foreground">/ 100</span>
@@ -259,41 +265,26 @@ export default function ClientGovernance() {
                     </span>
                   </div>
                 </div>
-
-                {review.needsAttention > 0 && (
-                  <Button
-                    variant="secondary"
-                    className="w-full gap-2 rounded-xl text-sm font-medium sm:ml-auto sm:w-auto sm:px-5"
-                    onClick={() => navigate("/review")}
-                  >
-                    Review issues
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Button>
-                )}
               </div>
 
               <Progress value={review.clientScore} className="h-1.5 rounded-full" />
 
-              {/* Counts — spaced, no borders */}
-              <div className="flex flex-wrap gap-x-10 gap-y-4">
-                <div className="space-y-0.5">
-                  <p className="text-2xl font-semibold tabular-nums text-foreground">
-                    {review.structures.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Checked</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-muted/40 px-3 py-2.5">
+                  <p className="text-xl font-semibold tabular-nums text-foreground">{review.structures.length}</p>
+                  <p className="text-[11px] text-muted-foreground">Checked</p>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-2xl font-semibold tabular-nums text-success">{healthyCount}</p>
-                  <p className="text-xs text-muted-foreground">Healthy</p>
+                <div className="rounded-xl bg-success/10 px-3 py-2.5">
+                  <p className="text-xl font-semibold tabular-nums text-success">{healthyCount}</p>
+                  <p className="text-[11px] text-muted-foreground">Healthy</p>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-2xl font-semibold tabular-nums text-warning">{review.needsAttention}</p>
-                  <p className="text-xs text-muted-foreground">Need updates</p>
+                <div className="rounded-xl bg-warning/10 px-3 py-2.5">
+                  <p className="text-xl font-semibold tabular-nums text-warning">{review.needsAttention}</p>
+                  <p className="text-[11px] text-muted-foreground">Need updates</p>
                 </div>
               </div>
 
-              {/* Legend */}
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
                 {SCORE_BANDS.map((band) => (
                   <div key={band.status} className="flex items-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ${band.dot}`} />
@@ -308,67 +299,87 @@ export default function ClientGovernance() {
                   Your structures have changed since this check — re-run it for up-to-date results.
                 </div>
               )}
+
+              {review.needsAttention > 0 && (
+                <Button
+                  className="mt-auto w-full gap-2 rounded-xl text-sm font-medium"
+                  onClick={() => navigate("/review")}
+                >
+                  Review issues
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </CardContent>
           </Card>
 
-          {/* ── Key insights (chips) ── */}
+          {/* ── Key insights (right) ── */}
           {review.crossObservations.length > 0 && (
-            <section className="space-y-3">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold text-foreground">Key insights</h2>
-                <p className="text-xs text-muted-foreground">
-                  Patterns across your structures. Tap one to see the structures involved.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {visibleInsights.map((obs, idx) => {
-                  const isActionable =
-                    obs.message.includes("missing") ||
-                    obs.message.includes("without") ||
-                    obs.message.includes("circular");
-                  const affectedStructures = review.structures.filter((s) => obs.structureIds.includes(s.id));
-                  const active =
-                    !!insightFilter && insightFilter.join(",") === obs.structureIds.join(",");
-                  return (
-                    <button
-                      key={idx}
-                      title={obs.message}
-                      onClick={() => {
-                        if (affectedStructures.length === 1) {
-                          setSelectedStructure(affectedStructures[0]);
-                        } else {
-                          setStatusFilter(null);
-                          setInsightFilter(active ? null : obs.structureIds);
-                        }
-                      }}
-                      className={`group inline-flex max-w-[18rem] items-center gap-2 rounded-full border px-3.5 py-1.5 text-left text-xs transition-colors ${
-                        active
-                          ? "border-primary/40 bg-primary/10 text-foreground"
-                          : isActionable
-                            ? "border-warning/30 bg-warning/5 text-foreground hover:bg-warning/10"
-                            : "border-border/60 bg-card text-foreground hover:bg-muted/50"
-                      }`}
-                    >
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActionable ? "bg-warning" : "bg-primary"}`}
-                      />
-                      <span className="truncate">{obs.message}</span>
-                    </button>
-                  );
-                })}
+            <Card className="lg:col-span-3">
+              <CardContent className="flex h-full flex-col gap-4 p-5 sm:p-6">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <h2 className="text-sm font-semibold text-foreground">Key insights</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Patterns across your structures. Select one to see the structures involved.
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                    {review.crossObservations.length}
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {visibleInsights.map((obs, idx) => {
+                    const isActionable =
+                      obs.message.includes("missing") ||
+                      obs.message.includes("without") ||
+                      obs.message.includes("circular");
+                    const affectedStructures = review.structures.filter((s) => obs.structureIds.includes(s.id));
+                    const active =
+                      !!insightFilter && insightFilter.join(",") === obs.structureIds.join(",");
+                    return (
+                      <button
+                        key={idx}
+                        title={obs.message}
+                        onClick={() => {
+                          if (affectedStructures.length === 1) {
+                            setSelectedStructure(affectedStructures[0]);
+                          } else {
+                            setStatusFilter(null);
+                            setInsightFilter(active ? null : obs.structureIds);
+                          }
+                        }}
+                        className={`group flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors ${
+                          active
+                            ? "border-primary/40 bg-primary/10"
+                            : isActionable
+                              ? "border-warning/25 bg-warning/5 hover:bg-warning/10"
+                              : "border-border/60 hover:bg-muted/50"
+                        }`}
+                      >
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${isActionable ? "bg-warning" : "bg-primary"}`} />
+                        <span className="min-w-0 flex-1 truncate text-foreground">{obs.message}</span>
+                        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                          {affectedStructures.length} structure{affectedStructures.length !== 1 ? "s" : ""}
+                        </span>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                      </button>
+                    );
+                  })}
+                </div>
                 {hiddenInsightCount > 0 && (
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-8 rounded-full text-xs"
+                    className="mt-auto h-8 self-start rounded-full text-xs"
                     onClick={() => setShowAllInsights((prev) => !prev)}
                   >
                     {showAllInsights ? "Show fewer" : `+${hiddenInsightCount} more`}
                   </Button>
                 )}
-              </div>
-            </section>
+              </CardContent>
+            </Card>
           )}
+          </div>
 
           {/* ── Structures list ── */}
           <section className="space-y-3">
