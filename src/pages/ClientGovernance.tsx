@@ -45,7 +45,7 @@ function getScoreMessage(score: number, count: number): string {
   return "Your structures need attention.";
 }
 
-const STRUCTURE_PAGE_SIZE = 15;
+const STRUCTURE_PAGE_SIZE = 50;
 const INSIGHT_CHIP_LIMIT = 6;
 
 const SEV_ORDER: Record<string, number> = { critical: 0, gap: 1, minor: 2, info: 3 };
