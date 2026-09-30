@@ -52,12 +52,11 @@ export default function AppLayout() {
                 })}
               </nav>
             </div>
-            <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-2 sm:px-6 border-b border-border/40 bg-card/30 shrink-0">
-              <div />
-              <div className="flex w-[min(560px,55vw)] justify-center">
+            <header className="relative flex items-center gap-3 px-3 py-2 sm:px-6 border-b border-border/40 bg-card/30 shrink-0">
+              <div className="min-w-0 flex-1 lg:absolute lg:left-1/2 lg:w-full lg:max-w-xl lg:-translate-x-1/2 lg:flex-none">
                 <GlobalSearch />
               </div>
-              <div className="flex justify-end">
+              <div className="ml-auto shrink-0">
                 <UserMenu />
               </div>
             </header>
