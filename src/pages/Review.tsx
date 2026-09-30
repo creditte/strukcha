@@ -165,9 +165,21 @@ export default function Review() {
     <div className="mx-auto max-w-4xl px-6 py-10 space-y-8">
       {/* ── Page header ── */}
       <header className="space-y-2 border-b border-border/60 pb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Review &amp; Improve
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Review &amp; Improve
+          </h1>
+          <div className="flex items-center gap-3">
+            {review?.timestamp && !loading && (
+              <span className="text-xs text-muted-foreground">
+                Last run {new Date(review.timestamp).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
+            <Button size="sm" variant="outline" onClick={() => runReview()} disabled={loading}>
+              {loading ? "Running…" : "Re-run review"}
+            </Button>
+          </div>
+        </div>
         <p className="text-sm text-muted-foreground">
           {loading
             ? progress
