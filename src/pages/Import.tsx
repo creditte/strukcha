@@ -61,6 +61,11 @@ export default function Import() {
   const [percent, setPercent] = useState(0);
   const [records, setRecords] = useState<{ done: number; total: number } | null>(null);
   const [importLogs, setImportLogs] = useState<any[]>([]);
+  const HISTORY_PAGE_SIZE = 10;
+  const [historyPage, setHistoryPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(importLogs.length / HISTORY_PAGE_SIZE));
+  const safePage = Math.min(historyPage, totalPages - 1);
+  const pagedLogs = importLogs.slice(safePage * HISTORY_PAGE_SIZE, (safePage + 1) * HISTORY_PAGE_SIZE);
   const cancelled = useRef(false);
 
   // ── Capacity, straight from the server-side subscription check ───────────
@@ -796,7 +801,7 @@ export default function Import() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {importLogs.map((log) => (
+                  {pagedLogs.map((log) => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap align-top text-xs">
                         {format(new Date(log.created_at), "d MMM yyyy, h:mm a")}
@@ -814,6 +819,22 @@ export default function Import() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {importLogs.length > HISTORY_PAGE_SIZE && (
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                {safePage * HISTORY_PAGE_SIZE + 1}–{Math.min((safePage + 1) * HISTORY_PAGE_SIZE, importLogs.length)} of {importLogs.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="h-8" disabled={safePage === 0} onClick={() => setHistoryPage(safePage - 1)}>
+                  Previous
+                </Button>
+                <span className="whitespace-nowrap">Page {safePage + 1} of {totalPages}</span>
+                <Button variant="outline" size="sm" className="h-8" disabled={safePage >= totalPages - 1} onClick={() => setHistoryPage(safePage + 1)}>
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
