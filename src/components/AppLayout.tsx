@@ -54,7 +54,7 @@ export default function AppLayout() {
             </div>
             <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-2 sm:px-6 border-b border-border/40 bg-card/30 shrink-0">
               <div />
-              <div className="flex justify-center">
+              <div className="flex w-[min(560px,55vw)] justify-center">
                 <GlobalSearch />
               </div>
               <div className="flex justify-end">
