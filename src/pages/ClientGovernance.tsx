@@ -45,7 +45,7 @@ function getScoreMessage(score: number, count: number): string {
   return "Your structures need attention.";
 }
 
-const STRUCTURE_PAGE_SIZE = 50;
+const STRUCTURE_PAGE_SIZE = 10;
 const INSIGHT_CHIP_LIMIT = 6;
 
 const SEV_ORDER: Record<string, number> = { critical: 0, gap: 1, minor: 2, info: 3 };
@@ -385,7 +385,7 @@ export default function ClientGovernance() {
 
           {/* ── 3. Structures to review ── */}
           <section id="structures-to-review" className="scroll-mt-4 space-y-4 border-t border-border/60 pt-8">
-            <div className="space-y-1">
+            <div className="sticky top-0 z-20 -mx-1 space-y-1 border-b border-border/60 bg-background/95 px-1 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
               <h2 className="text-base font-semibold text-foreground">Structures to review</h2>
               <p className="text-xs text-muted-foreground">Lowest scores first. Open a structure to see its issues in detail.</p>
             </div>
