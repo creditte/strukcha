@@ -15,12 +15,23 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-export default function FeedbackModal() {
+interface FeedbackModalProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}
+
+export default function FeedbackModal({ open: openProp, onOpenChange, hideTrigger }: FeedbackModalProps = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const location = useLocation();
   const params = useParams();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (v: boolean) => {
+    if (onOpenChange) onOpenChange(v);
+    else setOpenState(v);
+  };
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -89,15 +100,17 @@ export default function FeedbackModal() {
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full justify-start gap-2 text-sidebar-foreground/70"
-        onClick={() => setOpen(true)}
-      >
-        <MessageSquarePlus className="h-4 w-4" />
-        Send Feedback
-      </Button>
+      {!hideTrigger && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-sidebar-foreground/70"
+          onClick={() => setOpen(true)}
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+          Send Feedback
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
