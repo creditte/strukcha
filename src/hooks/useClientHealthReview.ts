@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantId } from "@/hooks/useSharedQueries";
-import { qk, staleTimes } from "@/lib/queryKeys";
+import { qk } from "@/lib/queryKeys";
 import { computeHealthScoreV2, getHealthStatus, getScoreBand } from "@/lib/structureScoring";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { ScoringIssue } from "@/lib/structureScoring";
@@ -220,12 +220,35 @@ export function useClientHealthReview() {
     return run;
   }, []);
 
+  const storageKey = tenantId ? `strukcha:health-review:${tenantId}` : null;
+  const saved = useMemo<ClientReview | undefined>(() => {
+    if (!storageKey) return undefined;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw ? (JSON.parse(raw) as ClientReview) : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [storageKey]);
+
+  // Show the last saved result; only run automatically when there has never
+  // been one. Users re-run the analysis explicitly via runReview().
   const query = useQuery({
     queryKey,
     enabled: !!session?.user && !!tenantId,
-    staleTime: staleTimes.stats,
+    initialData: saved,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
-    queryFn: fetchReview,
+    queryFn: async () => {
+      const r = await fetchReview();
+      if (storageKey) {
+        try { localStorage.setItem(storageKey, JSON.stringify(r)); } catch { /* quota */ }
+      }
+      return r;
+    },
   });
 
   const runReview = useCallback(async (): Promise<ClientReview | null> => {
@@ -236,12 +259,15 @@ export function useClientHealthReview() {
         retry: false,
         queryFn: fetchReview,
       });
+      if (storageKey) {
+        try { localStorage.setItem(storageKey, JSON.stringify(result)); } catch { /* quota */ }
+      }
       return result;
     } catch (e) {
       console.error("Review error:", e);
       return null;
     }
-  }, [queryClient, queryKey, fetchReview]);
+  }, [queryClient, queryKey, fetchReview, storageKey]);
 
   return {
     review: query.data ?? null,
