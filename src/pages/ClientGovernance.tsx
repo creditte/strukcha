@@ -385,7 +385,8 @@ export default function ClientGovernance() {
 
           {/* ── 3. Structures to review ── */}
           <section id="structures-to-review" className="scroll-mt-4 space-y-4 border-t border-border/60 pt-8">
-            <div className="sticky top-0 z-20 -mx-1 space-y-1 border-b border-border/60 bg-background/95 px-1 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="sticky top-0 z-20 -mx-1 space-y-4 bg-background/95 px-1 pb-3 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+            <div className="space-y-1">
               <h2 className="text-base font-semibold text-foreground">Structures to review</h2>
               <p className="text-xs text-muted-foreground">Lowest scores first. Open a structure to see its issues in detail.</p>
             </div>
@@ -458,6 +459,7 @@ export default function ClientGovernance() {
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
             </div>
 
             <div className="divide-y divide-border/60 rounded-xl border border-border/60">
