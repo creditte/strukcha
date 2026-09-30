@@ -48,6 +48,20 @@ function getScoreMessage(score: number, count: number): string {
 const STRUCTURE_PAGE_SIZE = 15;
 const INSIGHT_CHIP_LIMIT = 6;
 
+const SEV_ORDER: Record<string, number> = { critical: 0, gap: 1, minor: 2, info: 3 };
+
+function describeInsight(message: string): { title: string; explanation: string; entityCount: number | null; critical: boolean } {
+  const lower = message.toLowerCase();
+  const leading = parseInt(message, 10);
+  if (lower.includes("corporate trustee"))
+    return { title: "Trusts without corporate trustees", explanation: "These trusts have individual trustees rather than a company acting as trustee.", entityCount: null, critical: false };
+  if (lower.includes("appointor"))
+    return { title: "Trusts missing appointors", explanation: "No appointor is recorded — the person with power to appoint or remove the trustee.", entityCount: Number.isNaN(leading) ? null : leading, critical: false };
+  if (lower.includes("circular"))
+    return { title: "Circular ownership detected", explanation: "Entities own each other in a loop, which is usually a data-entry error.", entityCount: null, critical: true };
+  return { title: message, explanation: "", entityCount: null, critical: false };
+}
+
 /* ── Page ───────────────────────────────────────────────────────── */
 
 export default function ClientGovernance() {
@@ -148,17 +162,15 @@ export default function ClientGovernance() {
         <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Structure Health</h1>
           <p className="text-sm text-muted-foreground">
-            {review
-              ? getScoreMessage(review.clientScore, review.structures.length)
-              : "Check the quality and completeness of every client structure."}
+            Review structural issues identified across your firm's structures.
           </p>
         </div>
         {review && (
           <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:items-end">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-10 w-full gap-2 sm:h-9 sm:w-auto"
+              className="h-10 w-full gap-2 text-muted-foreground sm:h-9 sm:w-auto"
               onClick={handleRunReview}
               disabled={loading}
             >
@@ -239,157 +251,174 @@ export default function ClientGovernance() {
         </Card>
       )}
 
-      {review && (
+      {review && (() => {
+        const criticalCount = review.structures.filter((s) => s.status === "critical").length;
+        const warningCount = review.structures.filter((s) => s.status === "warning").length;
+        const band = getScoreBand(review.clientScore);
+        const tabs: { key: string | null; label: string; count: number }[] = [
+          { key: null, label: "All", count: review.structures.length },
+          { key: "critical", label: "Critical", count: criticalCount },
+          { key: "warning", label: "Needs attention", count: warningCount },
+          { key: "good", label: "Healthy", count: healthyCount },
+        ];
+        const activeInsight = insightFilter
+          ? allInsights.find((o) => o.structureIds.join(",") === insightFilter.join(","))
+          : null;
+        return (
         <>
-          <div className="grid gap-4 lg:grid-cols-5">
-          {/* ── Overview (left) ── */}
-          <Card className={review.crossObservations.length > 0 ? "lg:col-span-2" : "lg:col-span-5"}>
-            <CardContent className="flex h-full flex-col gap-5 p-5 sm:p-6">
-              <div className="space-y-0.5">
-                <h2 className="text-sm font-semibold text-foreground">Overview</h2>
-                <p className="text-xs text-muted-foreground">Your firm's overall structure health.</p>
-              </div>
-
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-5xl font-semibold leading-none tabular-nums text-foreground">
-                      {review.clientScore}
-                    </span>
-                    <span className="text-sm text-muted-foreground">/ 100</span>
-                  </div>
+          {/* ── 1. Overall result ── */}
+          <section className="space-y-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Latest result</h2>
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-4">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-5xl font-semibold leading-none tabular-nums text-foreground">{review.clientScore}</span>
+                  <span className="text-sm text-muted-foreground">/ 100</span>
+                </div>
+                <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${getScoreBand(review.clientScore).dot}`} />
-                    <span className={`text-sm font-medium ${getScoreBand(review.clientScore).text}`}>
-                      {getScoreBand(review.clientScore).label}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <Progress value={review.clientScore} className="h-1.5 rounded-full" />
-
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-muted/40 px-3 py-2.5">
-                  <p className="text-xl font-semibold tabular-nums text-foreground">{review.structures.length}</p>
-                  <p className="text-[11px] text-muted-foreground">Checked</p>
-                </div>
-                <div className="rounded-xl bg-success/10 px-3 py-2.5">
-                  <p className="text-xl font-semibold tabular-nums text-success">{healthyCount}</p>
-                  <p className="text-[11px] text-muted-foreground">Healthy</p>
-                </div>
-                <div className="rounded-xl bg-warning/10 px-3 py-2.5">
-                  <p className="text-xl font-semibold tabular-nums text-warning">{review.needsAttention}</p>
-                  <p className="text-[11px] text-muted-foreground">Need updates</p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
-                {SCORE_BANDS.map((band) => (
-                  <div key={band.status} className="flex items-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ${band.dot}`} />
-                    <span>{band.range}</span>
+                    <span className={`text-sm font-semibold ${band.text}`}>{band.label}</span>
                   </div>
+                  <p className="text-xs text-muted-foreground">Average across all structures</p>
+                </div>
+              </div>
+              <dl className="grid flex-1 grid-cols-2 gap-x-6 gap-y-3 border-border/60 sm:grid-cols-4 sm:border-l sm:pl-6">
+                <div>
+                  <dt className="text-[11px] text-muted-foreground">Structures checked</dt>
+                  <dd className="text-lg font-semibold tabular-nums text-foreground">{review.structures.length}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-muted-foreground">Healthy</dt>
+                  <dd className="text-lg font-semibold tabular-nums text-success">{healthyCount}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-muted-foreground">Needs attention</dt>
+                  <dd className="text-lg font-semibold tabular-nums text-warning">{warningCount}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-muted-foreground">Critical</dt>
+                  <dd className={`text-lg font-semibold tabular-nums ${criticalCount > 0 ? "text-destructive" : "text-foreground"}`}>{criticalCount}</dd>
+                </div>
+              </dl>
+            </div>
+            <Progress value={review.clientScore} className="h-1.5 rounded-full" />
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span>
+                {review.needsAttention} of {review.structures.length} structures have at least one issue (including some rated Healthy).
+              </span>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {SCORE_BANDS.map((b) => (
+                  <span key={b.status} className="flex items-center gap-1.5">
+                    <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} />
+                    {b.range}
+                  </span>
                 ))}
               </div>
+            </div>
+            {structuresChanged && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/10 px-4 py-3 text-xs text-warning">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Your structures have changed since this check — re-run it for up-to-date results.
+              </div>
+            )}
+          </section>
 
-              {structuresChanged && (
-                <div className="flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/10 px-4 py-3 text-xs text-warning">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  Your structures have changed since this check — re-run it for up-to-date results.
-                </div>
-              )}
-
-              {review.needsAttention > 0 && (
-                <Button
-                  className="mt-auto w-full gap-2 rounded-xl text-sm font-medium"
-                  onClick={() => navigate("/review")}
-                >
-                  Review issues
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* ── Key insights (right) ── */}
-          {review.crossObservations.length > 0 && (
-            <Card className="lg:col-span-3">
-              <CardContent className="flex h-full flex-col gap-4 p-5 sm:p-6">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <h2 className="text-sm font-semibold text-foreground">Key insights</h2>
-                    <p className="text-xs text-muted-foreground">
-                      Patterns across your structures. Select one to see the structures involved.
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
-                    {review.crossObservations.length}
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  {visibleInsights.map((obs, idx) => {
-                    const isActionable =
-                      obs.message.includes("missing") ||
-                      obs.message.includes("without") ||
-                      obs.message.includes("circular");
-                    const affectedStructures = review.structures.filter((s) => obs.structureIds.includes(s.id));
-                    const active =
-                      !!insightFilter && insightFilter.join(",") === obs.structureIds.join(",");
-                    return (
-                      <button
-                        key={idx}
-                        title={obs.message}
-                        onClick={() => {
-                          if (affectedStructures.length === 1) {
-                            setSelectedStructure(affectedStructures[0]);
-                          } else {
-                            setStatusFilter(null);
-                            setInsightFilter(active ? null : obs.structureIds);
-                          }
-                        }}
-                        className={`group flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors ${
-                          active
-                            ? "border-primary/40 bg-primary/10"
-                            : isActionable
-                              ? "border-warning/25 bg-warning/5 hover:bg-warning/10"
-                              : "border-border/60 hover:bg-muted/50"
-                        }`}
-                      >
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${isActionable ? "bg-warning" : "bg-primary"}`} />
-                        <span className="min-w-0 flex-1 truncate text-foreground">{obs.message}</span>
-                        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                          {affectedStructures.length} structure{affectedStructures.length !== 1 ? "s" : ""}
-                        </span>
-                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                      </button>
-                    );
-                  })}
-                </div>
-                {hiddenInsightCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="mt-auto h-8 self-start rounded-full text-xs"
-                    onClick={() => setShowAllInsights((prev) => !prev)}
-                  >
-                    {showAllInsights ? "Show fewer" : `+${hiddenInsightCount} more`}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          )}
-          </div>
-
-          {/* ── Structures list ── */}
-          <section className="space-y-3">
+          {/* ── 2. Issues found ── */}
+          <section className="space-y-3 border-t border-border/60 pt-8">
             <div className="space-y-1">
-              <h2 className="text-sm font-semibold text-foreground">
-                {filterLabel ? "Filtered structures" : "All structures"}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {filterLabel ?? "Select a structure to see its issues in detail."}
-              </p>
+              <h2 className="text-base font-semibold text-foreground">Issues found</h2>
+              <p className="text-xs text-muted-foreground">Start here. Review an issue to see only the structures it affects.</p>
+            </div>
+            {allInsights.length === 0 ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <CheckCircle2 className="h-4 w-4 text-success" />
+                No firm-wide issues detected.
+              </div>
+            ) : (
+              <div className="divide-y divide-border/60 rounded-xl border border-border/60">
+                {visibleInsights.map((obs, idx) => {
+                  const meta = describeInsight(obs.message);
+                  const affected = review.structures.filter((s) => obs.structureIds.includes(s.id));
+                  const active = activeInsight === obs;
+                  return (
+                    <div key={idx} className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5 ${active ? "bg-primary/5" : ""}`}>
+                      <span className={`mt-1.5 hidden h-2 w-2 shrink-0 self-start rounded-full sm:block ${meta.critical ? "bg-destructive" : "bg-warning"}`} />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="text-sm font-semibold text-foreground">{meta.title}</p>
+                        <p className="text-xs text-muted-foreground">{meta.explanation}</p>
+                        <p className="text-xs text-foreground">
+                          <span className="font-medium tabular-nums">{affected.length}</span> structure{affected.length !== 1 ? "s" : ""} affected
+                          {meta.entityCount !== null && meta.entityCount !== affected.length && (
+                            <span className="text-muted-foreground"> · <span className="tabular-nums">{meta.entityCount}</span> trusts</span>
+                          )}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant={active ? "secondary" : "outline"}
+                        className="h-9 w-full gap-1.5 sm:w-auto"
+                        onClick={() => {
+                          if (affected.length === 1) {
+                            setSelectedStructure(affected[0]);
+                            return;
+                          }
+                          setStatusFilter(null);
+                          setInsightFilter(active ? null : obs.structureIds);
+                          if (!active) document.getElementById("structures-to-review")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }}
+                      >
+                        {active ? "Showing" : "Review"}
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {hiddenInsightCount > 0 && (
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setShowAllInsights((p) => !p)}>
+                {showAllInsights ? "Show fewer" : `+${hiddenInsightCount} more issues`}
+              </Button>
+            )}
+          </section>
+
+          {/* ── 3. Structures to review ── */}
+          <section id="structures-to-review" className="scroll-mt-4 space-y-4 border-t border-border/60 pt-8">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-foreground">Structures to review</h2>
+              <p className="text-xs text-muted-foreground">Lowest scores first. Open a structure to see its issues in detail.</p>
+            </div>
+
+            {activeInsight && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-primary/5 px-4 py-2.5 text-xs">
+                <span className="text-foreground">
+                  Filtered by issue: <span className="font-semibold">{describeInsight(activeInsight.message).title}</span>
+                </span>
+                <button className="font-medium text-primary hover:underline" onClick={() => setInsightFilter(null)}>
+                  Clear
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-1 border-b border-border/60">
+              {tabs.map((t) => {
+                const active = !insightFilter && statusFilter === t.key;
+                return (
+                  <button
+                    key={t.label}
+                    onClick={() => {
+                      setInsightFilter(null);
+                      setStatusFilter(t.key);
+                    }}
+                    className={`-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                      active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {t.label} <span className="tabular-nums text-muted-foreground">({t.count})</span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="flex items-center gap-2">
@@ -406,51 +435,10 @@ export default function ClientGovernance() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="h-10 shrink-0 gap-2 text-sm sm:h-9">
                     <SlidersHorizontal className="h-4 w-4" />
-                    <span className="hidden sm:inline">Filter</span>
-                    {(statusFilter || insightFilter) && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    )}
+                    <span className="hidden sm:inline">Sort</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60">
-                  <DropdownMenuLabel className="text-xs">Status</DropdownMenuLabel>
-                  {review.criticalStructures > 0 && (
-                    <DropdownMenuCheckboxItem
-                      checked={statusFilter === "critical"}
-                      onCheckedChange={(checked) => {
-                        setInsightFilter(null);
-                        setStatusFilter(checked ? "critical" : null);
-                      }}
-                    >
-                      <AlertCircle className="mr-2 h-3.5 w-3.5 text-destructive" />
-                      Critical ({review.criticalStructures})
-                    </DropdownMenuCheckboxItem>
-                  )}
-                  {review.needsAttention > review.criticalStructures && (
-                    <DropdownMenuCheckboxItem
-                      checked={statusFilter === "warning"}
-                      onCheckedChange={(checked) => {
-                        setInsightFilter(null);
-                        setStatusFilter(checked ? "warning" : null);
-                      }}
-                    >
-                      <AlertTriangle className="mr-2 h-3.5 w-3.5 text-warning" />
-                      Need improvements ({review.needsAttention - review.criticalStructures})
-                    </DropdownMenuCheckboxItem>
-                  )}
-                  {healthyCount > 0 && (
-                    <DropdownMenuCheckboxItem
-                      checked={statusFilter === "good"}
-                      onCheckedChange={(checked) => {
-                        setInsightFilter(null);
-                        setStatusFilter(checked ? "good" : null);
-                      }}
-                    >
-                      <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-success" />
-                      Healthy ({healthyCount})
-                    </DropdownMenuCheckboxItem>
-                  )}
-                  <DropdownMenuSeparator />
+                <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
                   <DropdownMenuRadioGroup
                     value={structureSort}
@@ -463,12 +451,7 @@ export default function ClientGovernance() {
                   {(statusFilter || insightFilter) && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setStatusFilter(null);
-                          setInsightFilter(null);
-                        }}
-                      >
+                      <DropdownMenuItem onClick={() => { setStatusFilter(null); setInsightFilter(null); }}>
                         Clear filters
                       </DropdownMenuItem>
                     </>
@@ -477,56 +460,45 @@ export default function ClientGovernance() {
               </DropdownMenu>
             </div>
 
-
-
-
-            <Card className="overflow-hidden">
-              <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-5 py-2.5">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Structure
-                </span>
-                <div className="flex items-center gap-4">
-                  <span className="w-12 text-right text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Score
-                  </span>
-                  <span className="w-28 text-right text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Status
-                  </span>
-                  <span className="w-3.5" />
-                </div>
-              </div>
-
-              <div className="divide-y divide-border/60">
-                {pageStructures.map((s) => (
+            <div className="divide-y divide-border/60 rounded-xl border border-border/60">
+              {pageStructures.map((s) => {
+                const actionable = s.issues.filter((i) => i.severity !== "info");
+                const top = [...actionable].sort((a, b) => (SEV_ORDER[a.severity] ?? 3) - (SEV_ORDER[b.severity] ?? 3))[0];
+                const b = getScoreBand(s.score);
+                return (
                   <button
                     key={s.id}
                     onClick={() => setSelectedStructure(s)}
-                    className="group flex w-full items-center justify-between px-5 py-3.5 text-left transition-colors hover:bg-muted/40"
+                    className="group flex w-full flex-col gap-2 px-4 py-3.5 text-left transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-4 sm:px-5"
                   >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className={`h-2 w-2 shrink-0 rounded-full ${getScoreBand(s.score).dot}`} />
-                      <span className="truncate text-sm font-medium text-foreground">{s.name}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">{s.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {top ? `Top issue: ${top.message}` : "No issues detected"}
+                      </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-4">
-                      <span className="w-12 text-right text-sm font-semibold tabular-nums text-foreground">
-                        {s.score}
+                    <div className="flex shrink-0 items-center gap-3 text-xs sm:gap-4">
+                      <span className="w-14 font-semibold tabular-nums text-foreground sm:text-right">
+                        {s.score}<span className="font-normal text-muted-foreground">/100</span>
                       </span>
-                      <Badge
-                        className={`w-28 justify-center rounded-full border-0 text-[11px] font-medium ${getScoreBand(s.score).pill}`}
-                      >
+                      <span className={`inline-flex w-28 items-center gap-1.5 font-medium ${b.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} />
                         {s.friendlyLabel}
-                      </Badge>
-                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
+                      </span>
+                      <span className="w-16 tabular-nums text-muted-foreground">
+                        {actionable.length} issue{actionable.length !== 1 ? "s" : ""}
+                      </span>
+                      <span className="ml-auto inline-flex items-center gap-1 font-medium text-primary">
+                        View <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                      </span>
                     </div>
                   </button>
-                ))}
-                {filteredStructures.length === 0 && (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    No structures match the current filter.
-                  </p>
-                )}
-              </div>
-            </Card>
+                );
+              })}
+              {filteredStructures.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground">No structures match the current filter.</p>
+              )}
+            </div>
             {filteredStructures.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs text-muted-foreground">
@@ -547,7 +519,8 @@ export default function ClientGovernance() {
             )}
           </section>
         </>
-      )}
+        );
+      })()}
     </div>
   );
 }
