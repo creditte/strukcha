@@ -38,15 +38,33 @@ Known preview effect: the browser now follows the new rules but the live trigger
 
 Trades As lookups happen only when saving a Sole Trader link or a Trades As link. Opening a page never queries `trades_as`. Until the enum is applied, that lookup fails safely and the save is blocked with a review message.
 
-## Activation order (later, approved separately)
-1. `phase1/001_add_trades_as_enum.sql` (on its own).
-2. `phase1/002_relationship_policy_foundation.sql` — evaluator + evidence table.
-3. `phase2/011_evidence_columns.sql` — extra evidence columns.
-4. Switch the Edge Functions: build the raw relationship list, call `normaliseXpmBatch()` with `entityTypes`, `provisionalTypes` (from `classifyWithProvenance`) and `tradesAsOwners`, send `edges` as `rels` and `evidence` as `evidence` in the payload. Delete `_shared/xpm-relationships.ts`.
-5. `phase2/013_xpm_batch_functions_policy.sql` — `import_xpm_batch` / `sync_xpm_upsert_clients` re-check with the SQL evaluator, de-duplicate Spouse only, write evidence. Entity, archive and capacity logic unchanged.
-6. Review existing rows, then run the pre-checks in `phase2/010_activate_uniqueness_constraints.sql` and create the indexes.
-7. `phase2/012_activate_policy_trigger.sql` — trigger rejects anything not `valid` as stored; soft deletes and metadata-only edits of legacy rows still pass.
-8. Re-baseline Health scoring.
+## Payload contracts accepted by the staged 013 bridge
+`import_xpm_batch` and `sync_xpm_upsert_clients` (phase2/013) pick a contract per call, so 013 can be applied **before** the Edge Functions change:
+
+| Contract | Detected by | Rels | Evidence |
+|---|---|---|---|
+| `legacy` | no `evidence` array (today's `import-xpm` / `sync-xpm` payloads) | Old label hints. SQL decides each row with direction unknown (family labels known), swaps a clean `reverse` once, Child → Parent. | Derived in SQL, one row per raw rel. |
+| `canonical_v1` | `evidence` array present (or `contract: "canonical_v1"`) | Must be `valid` exactly as sent; anything else is skipped with a warning, never flipped. | Written from the drafts only — never also derived from rels. |
+
+Both: only Spouse is unordered; Partner keeps direction; review / resolve / invalid / deprecated rows are never inserted; soft-deleted rows are never matched or resurrected; existing rows only get missing dates filled. With `import_run_id`, a re-sent chunk writes no duplicate evidence (`dedupe_key`, added in 011). A row refused by the still-live legacy trigger is skipped row-by-row (the chunk still succeeds) and its evidence stays `pending`. Results gain `contract` and `evidenceWritten`; all other counts are unchanged.
+
+Planned Edge payloads: sync sends `rels: [{type, from_uuid, to_uuid, start_date?, end_date?}]` from `edges` and `evidence` from `normaliseXpmBatch()` with XPM UUIDs as ids; CSV import sends `rels: [{row, type, from_key, to_key, label, groups}]` and `evidence` with client names as ids. Trades As owners may be sent as entity ids. Legacy limitation: labels the old parser drops never reach SQL, so they leave no evidence until the switchover.
+
+## Activation runbook (approved separately; nothing here is done yet)
+Read-only checks: `docs/relationship-activation-preflight.sql` (READ ONLY, not a migration).
+
+1. Pause XPM jobs (cron + manual sync/import buttons). Verify no active job (preflight block 11 = 0 rows).
+2. Run the preflight; record counts.
+3. Apply `phase1/001` (on its own), then `phase1/002`, then `phase2/011`. *Rollback boundary A:* all additive — new enum value, functions, empty table. Rollback = leave unused (enum values can't be dropped; harmless).
+4. Apply `phase2/013` (bridge). Smoke-test the **legacy** contract: one small CSV import and one single-group sync; check counts match before, and evidence rows appear once. *Rollback boundary B:* re-apply the previous function bodies from `supabase/migrations/20260909202705_…` and `20260917103909_…`.
+5. Deploy the three Edge integrations (`sync-xpm`, `import-xpm`, `import-xpm-group`) **together** as one step, deleting `_shared/xpm-relationships.ts`. Smoke-test the **canonical** contract: `contract = canonical_v1`, `evidenceWritten` = raw facts, no derived duplicates. *Rollback boundary C:* redeploy the previous Edge code; 013 still accepts legacy payloads.
+6. Resume XPM jobs.
+7. Remediate current live rows (separately approved: Spouse duplicates, Child → Parent incl. collisions, deterministic reversals, invalid rows, Sole Trader sources). History rows are not touched.
+8. Re-run preflight blocks 1–2; only when both are 0, run `phase2/010` (CONCURRENTLY, outside a transaction). *Rollback:* drop the two indexes.
+9. Apply `phase2/012` last. *Rollback boundary D:* re-apply the previous `validate_relationship_rules()` / `rel_direction_valid()` bodies.
+10. Re-baseline Health scoring.
+
+Between steps 5 and 9 the old trigger still refuses some rows the new policy allows (e.g. Partner → Partnership, Trades As); they stay as `pending` evidence and are created on the next sync after 012.
 
 No pending file updates, backfills or deletes existing rows.
 
