@@ -405,6 +405,8 @@ BEGIN
     'limitCode', _limit_code,
     'relationshipsCreated', _rel_created,
     'relationshipsSkipped', _rel_skipped,
+    'contract', _contract,
+    'evidenceWritten', _ev_written,
     'warnings', _warnings,
     'unavailableGroups', coalesce(
       (SELECT jsonb_agg(name) FROM _g WHERE structure_id IS NULL), '[]'::jsonb),
