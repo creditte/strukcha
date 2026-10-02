@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:sql": "bun scripts/relationship-policy-sql-check.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^2.0.4",

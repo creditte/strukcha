@@ -385,3 +385,29 @@ describe("entity-type provenance", () => {
     expect(classifyWithProvenance(resolveEntityType, undefined, "Jane")).toEqual({ entityType: "Unclassified", provisional: false });
   });
 });
+
+// ── Archived / history guard ─────────────────────────────────────
+import { readFileSync } from "node:fs";
+describe("archived/history behaviour is preserved", () => {
+  const read = (p: string) => readFileSync(p, "utf8");
+  it("diagram and comparison reads still exclude archived clients", () => {
+    expect(read("src/hooks/useStructureData.ts")).toContain('.eq("is_archived", false)');
+    expect(read("src/pages/StructureCompare.tsx")).toContain('.eq("is_archived", false)');
+  });
+  it("staged XPM SQL keeps archive sync and never hard-deletes relationships", () => {
+    const sql = read("supabase/pending-migrations/phase2/013_xpm_batch_functions_policy.sql");
+    expect(sql).toContain("is_archived = coalesce(c.is_archived, e.is_archived)");
+    expect(sql).not.toMatch(/DELETE FROM public\.relationships/i);
+    expect(sql).not.toMatch(/UPDATE public\.relationships e\s+SET (from_entity_id|to_entity_id|relationship_type)/i);
+  });
+  it("staged trigger lets soft deletes and metadata-only edits through", () => {
+    const sql = read("supabase/pending-migrations/phase2/012_activate_policy_trigger.sql");
+    expect(sql).toContain("IF NEW.deleted_at IS NOT NULL THEN RETURN NEW;");
+    expect(sql).toContain("metadata-only edit");
+  });
+  it("no pending SQL lives in the applied migrations folder", () => {
+    for (const f of ["001_add_trades_as_enum", "002_relationship_policy_foundation"]) {
+      expect(() => read(`supabase/migrations/${f}.sql`)).toThrow();
+    }
+  });
+});
