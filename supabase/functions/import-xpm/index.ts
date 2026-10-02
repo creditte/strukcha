@@ -1,5 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeadersFor } from "../_shared/cors.ts";
+import { normaliseXpmRelationship, parseXpmLabel, type EvidenceDraft } from "../_shared/xpm-policy-normalise.ts";
+import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
+import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
 
 let corsHeaders = corsHeadersFor(new Request("https://strukcha.app"));
 
@@ -35,37 +38,9 @@ function jsonError(code: string, message: string, status: number, detail = "") {
   });
 }
 
-// ── Canonical relationship mapping ──────────────────────────────────────
-interface CanonicalRule {
-  type: string;
-  reverse: boolean;
-}
-
-const RELATIONSHIP_MAP: Record<string, CanonicalRule> = {
-  "director of":      { type: "director",      reverse: false },
-  "director":         { type: "director",      reverse: true  },
-  "shareholder of":   { type: "shareholder",   reverse: false },
-  "shareholder":      { type: "shareholder",   reverse: true  },
-  "beneficiary of":   { type: "beneficiary",   reverse: false },
-  "beneficiary":      { type: "beneficiary",   reverse: true  },
-  "trustee of":       { type: "trustee",       reverse: false },
-  "trustee":          { type: "trustee",       reverse: true  },
-  "appointer of":     { type: "appointer",     reverse: false },
-  "appointer":        { type: "appointer",     reverse: true  },
-  "appointor of":     { type: "appointer",     reverse: false },
-  "appointor":        { type: "appointer",     reverse: true  },
-  "settlor of":       { type: "settlor",       reverse: false },
-  "settlor":          { type: "settlor",       reverse: true  },
-  "partner of":       { type: "partner",       reverse: false },
-  "partner":          { type: "partner",       reverse: false },
-  "spouse":           { type: "spouse",        reverse: false },
-  "parent of":        { type: "parent",        reverse: false },
-  "parent":           { type: "parent",        reverse: true  },
-  "child of":         { type: "child",         reverse: false },
-  "child":            { type: "child",         reverse: true  },
-  "member of":        { type: "member",        reverse: false },
-  "member":           { type: "member",        reverse: true  },
-};
+// ── Canonical relationship policy (Rulebook v1) ─────────────────────────
+// Labels are parsed and decided by the shared normaliser; this file holds no
+// relationship rules of its own.
 
 // Flat entity_type mapping from business structure strings
 const ENTITY_TYPE_MAP: Record<string, string> = {
@@ -305,6 +280,7 @@ async function runSlice(
   tenantId: string,
   allRows: RawRow[],
   progressIn: Progress,
+  importRunId: string,
 ): Promise<Progress> {
   const p: Progress = {
     ...progressIn,
@@ -380,27 +356,59 @@ async function runSlice(
     groups: string[];
   }
   const relByKey = new Map<string, RelPayload>();
+  const evidence: EvidenceDraft[] = [];
+
+  // Entity types the database will hold after this batch: a stored classified
+  // type wins, otherwise the type sent here — the same rule import_xpm_batch
+  // applies (match by XPM UUID, else the oldest record with the same name).
+  const stored = await loadStoredEntities(supabase, tenantId);
+  const entityTypes = new Map<string, string>();
+  const storedIdByName = new Map<string, string>();
+  for (const w of wanted.values()) {
+    const s = (w.uuid ? stored.byUuid.get(w.uuid) : undefined) ?? stored.byName.get(w.name);
+    entityTypes.set(w.name, s && s.type !== "Unclassified" ? s.type : w.entity_type);
+    if (s) storedIdByName.set(w.name, s.id);
+  }
+  const soleTraderNames = [...entityTypes].filter(([n, t]) => t === "Sole Trader" && storedIdByName.has(n)).map(([n]) => n);
+  const tradesAsOwners = new Map<string, string[]>();
+  if (soleTraderNames.length > 0) {
+    const ta = await loadTradesAsOwners(supabase, tenantId, soleTraderNames.map((n) => storedIdByName.get(n)!));
+    for (const [id, t] of ta.ownerTypes) if (!entityTypes.has(id)) entityTypes.set(id, t);
+    for (const n of soleTraderNames) {
+      const owners = ta.owners.get(storedIdByName.get(n)!);
+      if (owners) tradesAsOwners.set(n, owners);
+    }
+  }
+  const ctx = { entityTypes, tradesAsOwners };
 
   rows.forEach((row, i) => {
     if (!row.relationshipType || !row.client || !row.relatedClient) return;
 
-    const normalizedRelType = row.relationshipType
+    const label = row.relationshipType
       .replace(/^"+|"+$/g, '')
       .replace(/""+/g, '"')
-      .trim()
-      .toLowerCase();
-    const rule = RELATIONSHIP_MAP[normalizedRelType];
-    if (!rule) {
+      .trim();
+    if (!parseXpmLabel(label).type) {
       warn(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
+    }
+
+    // One evidence draft per raw row; only canonical edges become rels.
+    const { evidence: draft, edge } = normaliseXpmRelationship({
+      label,
+      clientId: row.client,
+      relatedId: row.relatedClient,
+      clientName: row.client,
+      relatedName: row.relatedClient,
+      payload: { row: row.rowNum, groups: rowGroups[i] },
+    }, ctx);
+    evidence.push(draft);
+    if (!edge) {
       p.relationshipsSkipped++;
       return;
     }
 
-    let from = row.client;
-    let to = row.relatedClient;
-    if (rule.reverse) [from, to] = [to, from];
-
-    const key = `${from}|${to}|${rule.type}`;
+    // Spouse alone is unordered; Partner and every other type keep direction.
+    const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
     const existing = relByKey.get(key);
     if (existing) {
       for (const g of rowGroups[i]) if (!existing.groups.includes(g)) existing.groups.push(g);
@@ -408,10 +416,10 @@ async function runSlice(
     }
     relByKey.set(key, {
       row: row.rowNum,
-      type: rule.type,
-      from_key: from,
-      to_key: to,
-      label: `${rule.type} "${row.client}" → "${row.relatedClient}"`,
+      type: edge.type,
+      from_key: edge.fromId,
+      to_key: edge.toId,
+      label: `${edge.type} "${row.client}" → "${row.relatedClient}"`,
       groups: [...rowGroups[i]],
     });
   });
@@ -424,7 +432,11 @@ async function runSlice(
         entities: [...wanted.values()],
         groups: [...groupNames],
         members,
+        contract: "canonical_v1",
+        import_source: "xpm_csv",
+        import_run_id: importRunId,
         rels: [...relByKey.values()],
+        evidence,
       },
     }));
 
@@ -466,6 +478,34 @@ async function runSlice(
   return p;
 }
 
+/** Live entities of the tenant, keyed by XPM UUID and by (oldest) name. */
+async function loadStoredEntities(supabase: ReturnType<typeof createClient>, tenantId: string) {
+  const byUuid = new Map<string, { id: string; type: string }>();
+  const byName = new Map<string, { id: string; type: string }>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await withRetry("load entities", async () => {
+      const r = await supabase
+        .from("entities")
+        .select("id, name, xpm_uuid, entity_type")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      return r;
+    });
+    if (error) throw new ImportFailure("database", `Could not read existing entities: ${error.message}`);
+    for (const e of (data ?? []) as Array<{ id: string; name: string; xpm_uuid: string | null; entity_type: string }>) {
+      const v = { id: e.id, type: e.entity_type };
+      if (e.xpm_uuid && !byUuid.has(e.xpm_uuid)) byUuid.set(e.xpm_uuid, v);
+      if (!byName.has(e.name)) byName.set(e.name, v);
+    }
+    if (!data || data.length < PAGE) break;
+  }
+  return { byUuid, byName };
+}
+
 // ── Background driver: slices, persist, hand off to a fresh worker ──────
 
 async function processJob(
@@ -503,7 +543,7 @@ async function processJob(
     let done = false;
 
     for (;;) {
-      current = await runSlice(supabase, log.tenant_id as string, allRows, current);
+      current = await runSlice(supabase, log.tenant_id as string, allRows, current, logId);
       done = current.phase === "done";
       await supabase
         .from("import_logs")

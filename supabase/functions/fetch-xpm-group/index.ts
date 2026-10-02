@@ -1,7 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
-import { buildXpmEdges, parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
+import { normaliseXpmRelationship, parseXpmLabel } from "../_shared/xpm-policy-normalise.ts";
+import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
 import { resolveEntityType } from "../_shared/xpm-entity-type.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
@@ -201,11 +202,11 @@ Deno.serve(async (req) => {
             const relatedName = xmlText(relatedClient, "Name") || xmlText(rel, "RelatedClientName");
             const percentStr = xmlText(rel, "Percentage") || xmlText(rel, "OwnershipPercentage");
             const percentage = percentStr ? parseFloat(percentStr) : null;
-            const rule = parseXpmRelationshipType(typeRaw);
+            const parsed = parseXpmLabel(typeRaw);
 
-            if ((relatedUuid || relatedName) && rule) {
+            if ((relatedUuid || relatedName) && parsed.type) {
               rels.push({
-                type: rule.type,
+                type: parsed.type,
                 typeRaw,
                 relatedClientUuid: relatedUuid,
                 relatedClientName: relatedName,
@@ -233,18 +234,32 @@ Deno.serve(async (req) => {
 
     // Only the members still active in XPM — keeps arrows off archived clients.
     const memberUuidSet = new Set(nodes.map((n) => n.id));
-    const edges = buildXpmEdges(
-      nodes.map((n) => ({
-        id: n.id,
-        entityType: n.entityType,
-        relationships: n.relationships.map((r) => ({
-          typeRaw: r.typeRaw,
-          relatedClientUuid: r.relatedClientUuid,
+    // Preview only (nothing written): the same canonical normaliser the
+    // imports use, so the preview never shows a link the import would refuse.
+    // Sole Trader links need a Trades As owner and stay out of the preview.
+    const entityTypes = new Map(nodes.map((n) => [n.id, n.entityType]));
+    const edges: Array<{ id: string; source: string; target: string; type: string; percentage: number | null }> = [];
+    const seenEdges = new Set<string>();
+    for (const n of nodes) {
+      for (const r of n.relationships) {
+        if (!r.relatedClientUuid || !memberUuidSet.has(r.relatedClientUuid)) continue;
+        const { edge } = normaliseXpmRelationship(
+          { label: r.typeRaw, clientId: n.id, relatedId: r.relatedClientUuid },
+          { entityTypes },
+        );
+        if (!edge) continue;
+        const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
+        if (seenEdges.has(key)) continue;
+        seenEdges.add(key);
+        edges.push({
+          id: `${edge.fromId}-${edge.type}-${edge.toId}`,
+          source: edge.fromId,
+          target: edge.toId,
+          type: edge.type,
           percentage: r.percentage,
-        })),
-      })),
-      memberUuidSet,
-    );
+        });
+      }
+    }
 
     return new Response(JSON.stringify({
       groupName,
