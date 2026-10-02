@@ -99,7 +99,7 @@ export default function StructureIssueGroup({
         <CollapsibleContent>
           <ul className="divide-y divide-border/60 border-t border-border/60">
             {visible.map((issue, idx) => {
-              const style = SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor;
+              const style = SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.gap;
               const Icon = style.icon;
               return (
                 <li

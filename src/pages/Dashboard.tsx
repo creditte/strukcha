@@ -685,11 +685,11 @@ export default function Dashboard() {
                 <div className="mt-1.5 space-y-1">
                   {review.allIssues.length > 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">{review.allIssues.filter(i => i.severity === "critical").length} critical</span>
+                      <span className="font-medium text-foreground">{review.allIssues.filter(i => i.severity === "critical").length} conflicting</span>
                       {review.allIssues.filter(i => i.severity === "gap").length > 0 && (
-                        <>, {review.allIssues.filter(i => i.severity === "gap").length} gaps</>
+                        <>, {review.allIssues.filter(i => i.severity === "gap").length} to review</>
                       )}
-                      {" "}across {review.structures.filter(s => s.issues.length > 0).length} structure{review.structures.filter(s => s.issues.length > 0).length !== 1 ? "s" : ""}
+                      {" "}across {review.structures.filter(s => s.status !== "good").length} structure{review.structures.filter(s => s.status !== "good").length !== 1 ? "s" : ""}
                     </p>
                   ) : (
                     <p className="text-sm text-success font-medium">No issues found — all clear!</p>

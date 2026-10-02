@@ -174,7 +174,7 @@ export default function CanvasFixMode({ issues, entities, structureName, onClose
 
   if (!currentIssue) return null;
 
-  const sevConfig = SEVERITY_CONFIG[currentIssue.severity] ?? SEVERITY_CONFIG.minor;
+  const sevConfig = SEVERITY_CONFIG[currentIssue.severity] ?? SEVERITY_CONFIG.info;
   const SevIcon = sevConfig.icon;
   const isInlineFixable = FIXABLE_CODES.has(currentIssue.code);
 
