@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   POLICY_RULES,
   CREATABLE_RELATIONSHIP_TYPES,
@@ -238,7 +238,7 @@ describe("manual edit and reverse", () => {
     const r = { id: "r4", relationship_type: "spouse", from_entity_id: "a", to_entity_id: "b" };
     expect(planReverse(r, ent("a", "Individual"), ent("b", "Individual"), []).ok).toBe(false);
   });
-  it("type change must be valid as stored", () => {
+  it("type change must be valid as stored", async () => {
     const noLookup = { lookupTradesAsOwner: vi.fn() };
     expect((await planTypeChange("shareholder", ent("p", "Individual"), ent("c", "Company"), [], "x", noLookup)).ok).toBe(true);
     expect((await planTypeChange("member", ent("p", "Individual"), ent("c", "Company"), [], "x", noLookup)).ok).toBe(false);
