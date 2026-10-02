@@ -133,11 +133,11 @@ export default function ClientGovernance() {
   const filterLabel = insightFilter
     ? "Showing structures from the selected insight"
     : statusFilter === "critical"
-      ? "Showing structures with critical issues"
+      ? "Showing structures with conflicting data"
       : statusFilter === "warning"
-        ? "Showing structures needing improvements"
+        ? "Showing structures with items to review"
         : statusFilter === "good"
-          ? "Showing healthy structures"
+          ? "Showing complete structures"
           : null;
 
   if (selectedStructure) {
@@ -441,7 +441,7 @@ export default function ClientGovernance() {
                     value={structureSort}
                     onValueChange={(value) => setStructureSort(value as "attention" | "name" | "score")}
                   >
-                    <DropdownMenuRadioItem value="attention">Needs attention first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="attention">Review recommended first</DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="score">Highest score first</DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>

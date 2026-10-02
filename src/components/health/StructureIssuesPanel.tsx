@@ -162,7 +162,7 @@ export default function StructureIssuesPanel({ structure, onBack }: Props) {
             <CheckCircle2 className="h-6 w-6 text-success" />
           </div>
           <p className="text-sm text-muted-foreground">
-            No issues found — this structure is healthy.
+            No conflicting data or review items found — this structure is complete.
           </p>
         </section>
       )}

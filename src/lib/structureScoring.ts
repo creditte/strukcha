@@ -146,6 +146,17 @@ export const SEVERITY_LABEL: Record<IssueSeverity, string> = {
   info: "Information",
 };
 
+export const SEVERITY_ORDER: IssueSeverity[] = ["critical", "gap", "info"];
+
+/** Complete, non-overlapping partition of issues by severity (every issue exactly once). */
+export function groupIssuesBySeverity(issues: ScoringIssue[]): { severity: IssueSeverity; label: string; issues: ScoringIssue[] }[] {
+  return SEVERITY_ORDER.map((severity) => ({
+    severity,
+    label: SEVERITY_LABEL[severity],
+    issues: issues.filter((i) => i.severity === severity),
+  }));
+}
+
 // ── Type helpers ───────────────────────────────────────────────────
 
 /** Classified trust types (generic "Trust" must be classified first). */
@@ -159,6 +170,11 @@ const UNIT_HOLDER_TARGETS = new Set(["trust_unit", "trust_hybrid"]);
 export const APPOINTOR_ELIGIBLE_TYPES: ReadonlySet<string> = new Set(["trust_discretionary", "trust_family"]);
 
 const OWNERSHIP_TYPES = new Set(["shareholder", "unit_holder"]);
+/** Percentage completeness is only assessed for these relationship → target combinations. */
+const PERCENT_TARGETS: Record<string, ReadonlySet<string>> = {
+  shareholder: new Set(["Company"]),
+  unit_holder: UNIT_HOLDER_TARGETS,
+};
 
 // ── Depth estimation ──────────────────────────────────────────────
 
@@ -269,7 +285,8 @@ export function computeHealthScoreV2(
   // ── Ownership percentages (one issue per target) ──
   const ownershipByTarget = new Map<string, RelationshipEdge[]>();
   for (const rel of relationships) {
-    if (!OWNERSHIP_TYPES.has(rel.relationship_type)) continue;
+    const targetType = entityMap.get(rel.to_entity_id)?.entity_type;
+    if (!targetType || !PERCENT_TARGETS[rel.relationship_type]?.has(targetType)) continue;
     const arr = ownershipByTarget.get(rel.to_entity_id) ?? [];
     arr.push(rel);
     ownershipByTarget.set(rel.to_entity_id, arr);

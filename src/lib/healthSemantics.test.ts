@@ -161,3 +161,45 @@ describe("status", () => {
     expect(d?.deduction).toBe(0);
   });
 });
+
+import { groupIssuesBySeverity } from "@/lib/structureScoring";
+
+describe("severity grouping", () => {
+  it("covers every issue exactly once, including control-category Review items", () => {
+    const h = computeHealthScoreV2(
+      [ent("Co", "Company"), ent("T", "trust_family"), ent("S", "smsf"), ent("P", "Partnership"), ent("ST", "Sole Trader"),
+       ent("A", "Individual"), ent("B", "Individual")],
+      [rel("A", "Co", "shareholder", 60), rel("B", "Co", "shareholder", 50), rel("Co", "A", "director")]);
+    const groups = groupIssuesBySeverity(h.issues);
+    expect(groups.map((g) => g.label)).toEqual(["Conflicting data", "Review", "Information"]);
+    const flat = groups.flatMap((g) => g.issues);
+    expect(flat).toHaveLength(h.issues.length);
+    expect(new Set(flat)).toEqual(new Set(h.issues));
+    for (const g of groups) for (const i of g.issues) expect(i.severity).toBe(g.severity);
+    const review = groups[1].issues.map((i) => i.code);
+    for (const c of ["missing_trustee", "missing_member", "missing_partners", "missing_trades_as_owner"]) expect(review).toContain(c);
+    expect(groups[0].issues.map((i) => i.code)).toContain("ownership_exceeds");
+    expect(groups[2].issues.map((i) => i.code)).toContain("missing_appointer");
+  });
+});
+
+describe("ownership percentage scope", () => {
+  const pctCodes = ["ownership_no_percent", "ownership_incomplete", "ownership_under", "ownership_exceeds"];
+  it.each([
+    ["shareholder", "trust_discretionary", [null]],
+    ["shareholder", "Individual", [40]],
+    ["shareholder", "trust_unit", [150]],
+    ["unit_holder", "Company", [40, null]],
+    ["unit_holder", "trust_bare", [150]],
+  ] as const)("%s → %s gets no percentage issue but is flagged invalid", (t, target, pcts) => {
+    const ents = [ent("X", target), ...pcts.map((_, i) => ent(`P${i}`, "Individual"))];
+    const rels = pcts.map((p, i) => rel(`P${i}`, "X", t, p));
+    const h = computeHealthScoreV2(ents, rels);
+    expect(h.issues.filter((i) => pctCodes.includes(i.code))).toEqual([]);
+    expect(codes(h)).toContain("invalid_relationship_direction");
+  });
+  it("Hybrid Trust unit holders are assessed", () => {
+    const h = computeHealthScoreV2([ent("H", "trust_hybrid"), ent("A", "Individual")], [rel("A", "H", "unit_holder", 40)]);
+    expect(codes(h)).toContain("ownership_under");
+  });
+});
