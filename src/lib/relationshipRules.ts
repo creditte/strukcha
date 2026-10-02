@@ -1,17 +1,14 @@
 /**
- * Central Relationship Rules Engine
+ * LEGACY compatibility facade — Phase 1 of the Rulebook alignment.
  *
- * This is the SINGLE SOURCE OF TRUTH for all relationship type validation
- * across the entire application. Every component, form, import, sync,
- * scoring engine, and database trigger should derive its logic from
- * the RELATIONSHIP_RULES config defined here.
- *
- * Entity type mapping:
- *   The DB stores entity_type values like "Individual", "Company",
- *   "trust_discretionary", "smsf", etc. This module works with those
- *   raw DB values via a normalisation layer so the rules can use
- *   simplified canonical names.
+ * The canonical authority is now src/lib/relationshipPolicy.ts. Labels are
+ * already sourced from it. The direction matrix below is FROZEN v0 behaviour,
+ * kept only because Health scoring and the relationship pickers depend on it
+ * and Phase 1 must not change their results. Phase 2 replaces every function
+ * here with a thin wrapper over evaluateRelationship() and deletes this
+ * matrix. Do not add or edit rules here — edit relationshipPolicy.ts.
  */
+import { policyLabel } from "@/lib/relationshipPolicy";
 
 // ── Canonical entity categories ──────────────────────────────────
 
@@ -231,8 +228,7 @@ export function getRuleForType(relationshipType: string): RelationshipRule | und
 }
 
 export function getRelationshipLabel(relationshipType: string): string {
-  return RULES_BY_TYPE.get(relationshipType)?.label
-    ?? relationshipType.charAt(0).toUpperCase() + relationshipType.slice(1);
+  return policyLabel(relationshipType);
 }
 
 /**
