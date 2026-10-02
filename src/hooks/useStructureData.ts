@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { computeHealthScoreV2, type HealthScoreV2, type ScoringIssue } from "@/lib/structureScoring";
 type LayoutStrategy = "auto" | "manual";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -245,233 +246,9 @@ export function useStructureData(structureId: string | undefined) {
       .eq("structure_id", structureId);
   }, [structureId]);
 
-  // ── Compute unified StructureHealth ─────────────────────────────
+  // ── StructureHealth: adapter over the shared engine ───────────
 
-  const structureHealth = useMemo<StructureHealth>(() => {
-    const errors: ValidationIssue[] = [];
-    const warnings: ValidationIssue[] = [];
-    const info: ValidationIssue[] = [];
-
-    const entityMap = new Map(entities.map((e) => [e.id, e]));
-
-    // --- A) Ownership % checks ---
-    const byCompany = new Map<string, RelationshipEdge[]>();
-    for (const rel of relationships) {
-      if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
-      const arr = byCompany.get(rel.to_entity_id) ?? [];
-      arr.push(rel);
-      byCompany.set(rel.to_entity_id, arr);
-    }
-
-    for (const [companyId, rels] of byCompany) {
-      const withPercent = rels.filter((r) => r.ownership_percent != null);
-      const withoutPercent = rels.filter((r) => r.ownership_percent == null);
-      const companyName = entityMap.get(companyId)?.name ?? companyId;
-
-      if (withPercent.length === 0) {
-        info.push({
-          code: "ownership_no_percent",
-          severity: "info",
-          message: `"${companyName}" has shareholders but no ownership % recorded`,
-          entity_id: companyId,
-          entity_name: companyName,
-        });
-        continue;
-      }
-
-      const total = Math.round(withPercent.reduce((s, r) => s + (r.ownership_percent ?? 0), 0) * 100) / 100;
-
-      if (withoutPercent.length > 0) {
-        warnings.push({
-          code: "ownership_incomplete",
-          severity: "warning",
-          message: `"${companyName}": ownership data incomplete — ${withoutPercent.length} shareholder(s) missing %`,
-          entity_id: companyId,
-          entity_name: companyName,
-          details: { total, missing: withoutPercent.length },
-        });
-      } else if (total > 100) {
-        errors.push({
-          code: "ownership_exceeds",
-          severity: "error",
-          message: `"${companyName}": ownership totals ${total}% (exceeds 100%)`,
-          entity_id: companyId,
-          entity_name: companyName,
-          details: { total },
-        });
-      } else if (total < 100) {
-        warnings.push({
-          code: "ownership_under",
-          severity: "warning",
-          message: `"${companyName}": ownership totals ${total}% (does not sum to 100%)`,
-          entity_id: companyId,
-          entity_name: companyName,
-          details: { total },
-        });
-      }
-    }
-
-    // --- B) Required relationship checks ---
-    const inboundTypes = new Map<string, Set<string>>();
-    for (const rel of relationships) {
-      const s = inboundTypes.get(rel.to_entity_id) ?? new Set();
-      s.add(rel.relationship_type);
-      inboundTypes.set(rel.to_entity_id, s);
-    }
-
-    for (const entity of entities) {
-      const t = entity.entity_type;
-      const inbound = inboundTypes.get(entity.id) ?? new Set();
-
-      if ((t.startsWith("trust_") || t === "Trust") && !inbound.has("trustee")) {
-        errors.push({
-          code: "missing_trustee",
-          severity: "error",
-          message: `Trust "${entity.name}" has no trustee assigned`,
-          entity_id: entity.id,
-          entity_name: entity.name,
-        });
-      }
-
-      if (t === "smsf" && !inbound.has("member")) {
-        errors.push({
-          code: "missing_member",
-          severity: "error",
-          message: `SMSF "${entity.name}" has no members assigned`,
-          entity_id: entity.id,
-          entity_name: entity.name,
-        });
-      }
-
-      if (t === "Company" && !inbound.has("shareholder")) {
-        const hasOwnershipData = byCompany.has(entity.id);
-        if (!hasOwnershipData) {
-          warnings.push({
-            code: "missing_shareholder",
-            severity: "warning",
-            message: `Company "${entity.name}" has no shareholders`,
-            entity_id: entity.id,
-            entity_name: entity.name,
-          });
-        }
-      }
-
-      if (t === "trust_unit" && !inbound.has("unit_holder")) {
-        warnings.push({
-          code: "missing_unit_holder",
-          severity: "warning",
-          message: `Unit Trust "${entity.name}" has no unit holders`,
-          entity_id: entity.id,
-          entity_name: entity.name,
-        });
-      }
-    }
-
-    // --- C) Circular ownership ---
-    const adj = new Map<string, string[]>();
-    for (const rel of relationships) {
-      if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
-      const arr = adj.get(rel.from_entity_id) ?? [];
-      arr.push(rel.to_entity_id);
-      adj.set(rel.from_entity_id, arr);
-    }
-
-    const visited = new Set<string>();
-    const inStack = new Set<string>();
-    const stack: string[] = [];
-    const reportedSets = new Set<string>();
-
-    function dfs(node: string) {
-      if (inStack.has(node)) {
-        const cycleStart = stack.indexOf(node);
-        const cycleIds = stack.slice(cycleStart);
-        const key = [...cycleIds].sort().join(",");
-        if (!reportedSets.has(key)) {
-          reportedSets.add(key);
-          const names = cycleIds.map((id) => entityMap.get(id)?.name ?? id);
-          errors.push({
-            code: "circular_ownership",
-            severity: "error",
-            message: `Circular ownership: ${names.join(" → ")} → ${names[0]}`,
-            entity_id: cycleIds[0],
-            entity_name: names[0],
-            details: { cycle: cycleIds },
-          });
-        }
-        return;
-      }
-      if (visited.has(node)) return;
-      visited.add(node);
-      inStack.add(node);
-      stack.push(node);
-      for (const neighbor of adj.get(node) ?? []) dfs(neighbor);
-      stack.pop();
-      inStack.delete(node);
-    }
-
-    for (const nodeId of adj.keys()) {
-      if (!visited.has(nodeId)) dfs(nodeId);
-    }
-
-    // --- D) Unclassified entities ---
-    for (const entity of entities) {
-      if (entity.entity_type === "Unclassified") {
-        warnings.push({
-          code: "unclassified",
-          severity: "warning",
-          message: `"${entity.name}" is unclassified — resolve via Review & Fix`,
-          entity_id: entity.id,
-          entity_name: entity.name,
-        });
-      }
-    }
-
-    // --- E) Duplicate name detection within structure ---
-    const nameMap = new Map<string, EntityNode[]>();
-    for (const entity of entities) {
-      const norm = entity.name.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
-      const arr = nameMap.get(norm) ?? [];
-      arr.push(entity);
-      nameMap.set(norm, arr);
-    }
-    for (const [, dupes] of nameMap) {
-      if (dupes.length < 2) continue;
-      const sameType = dupes.every((d) => d.entity_type === dupes[0].entity_type);
-      if (!sameType) continue;
-      warnings.push({
-        code: "duplicates_detected",
-        severity: "warning",
-        message: `${dupes.length} potential duplicates: "${dupes[0].name}"`,
-        entity_id: dupes[0].id,
-        entity_name: dupes[0].name,
-        details: { entity_ids: dupes.map((d) => d.id) },
-      });
-    }
-
-    // --- Score calculation (cap unclassified penalty at -30 total) ---
-    const unclassifiedCount = warnings.filter((w) => w.code === "unclassified").length;
-    const otherWarningCount = warnings.length - unclassifiedCount;
-    const unclassifiedDeduction = Math.min(unclassifiedCount * 10, 30);
-    const errorDeduction = errors.length * 25;
-    const warningDeduction = otherWarningCount * 10 + unclassifiedDeduction;
-    const infoDeduction = info.length * 2;
-    const score = Math.max(0, 100 - errorDeduction - warningDeduction - infoDeduction);
-
-    let status: StructureHealth["status"];
-    if (errors.length > 0 || score < 60) {
-      status = "critical";
-    } else if (warnings.length > 0 || score < 85) {
-      status = "warning";
-    } else {
-      status = "good";
-    }
-
-    if (errors.length || warnings.length) {
-      console.log("[Structure Health]", { score, status, errors, warnings, info });
-    }
-
-    return { score, status, errors, warnings, info };
-  }, [entities, relationships]);
+  const structureHealth = useMemo<StructureHealth>(() => toStructureHealth(computeHealthScoreV2(entities, relationships)), [entities, relationships]);
 
   return { entities, relationships, structureName, loading, reload, structureHealth, layoutMode, nodePositions, setLayoutMode, saveNodePositions, clearNodePositions, isScenario, scenarioLabel, parentStructureId, parentStructureName };
 }
@@ -549,86 +326,42 @@ export function useFilteredGraph(
   }, [entities, relationships, options.search, options.showFamily, options.filterRelType, options.depth, options.selectedEntityId, options.viewMode]);
 }
 
-// ── Standalone health computation for list page ────────────────────
+// ── Shared-engine adapter (no rules of its own) ───────────────────
+
+const SEVERITY_TO_VALIDATION: Record<ScoringIssue["severity"], ValidationIssue["severity"]> = {
+  critical: "error",
+  gap: "warning",
+  info: "info",
+};
+
+function toValidationIssue(i: ScoringIssue): ValidationIssue {
+  return {
+    code: i.code,
+    severity: SEVERITY_TO_VALIDATION[i.severity],
+    message: i.message,
+    entity_id: i.entity_id,
+    entity_name: i.entity_name,
+    relationship_id: i.relationship_id,
+    details: i.details,
+  };
+}
+
+/** Maps the shared HealthScoreV2 result to the legacy StructureHealth shape. */
+export function toStructureHealth(h: HealthScoreV2): StructureHealth {
+  const issues = h.issues.map(toValidationIssue);
+  return {
+    score: h.score,
+    status: h.status,
+    errors: issues.filter((i) => i.severity === "error"),
+    warnings: issues.filter((i) => i.severity === "warning"),
+    info: issues.filter((i) => i.severity === "info"),
+  };
+}
 
 export function computeStructureHealth(
   entities: EntityNode[],
   relationships: RelationshipEdge[]
 ): Pick<StructureHealth, "score" | "status"> {
-  let unclassifiedCount = 0;
-  let errorCount = 0;
-  let warningCount = 0;
-  let infoCount = 0;
-
-  const entityMap = new Map(entities.map((e) => [e.id, e]));
-
-  // Ownership checks
-  const byCompany = new Map<string, RelationshipEdge[]>();
-  for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
-    const arr = byCompany.get(rel.to_entity_id) ?? [];
-    arr.push(rel);
-    byCompany.set(rel.to_entity_id, arr);
-  }
-  for (const [, rels] of byCompany) {
-    const withPercent = rels.filter((r) => r.ownership_percent != null);
-    const withoutPercent = rels.filter((r) => r.ownership_percent == null);
-    if (withPercent.length === 0) { infoCount++; continue; }
-    const total = Math.round(withPercent.reduce((s, r) => s + (r.ownership_percent ?? 0), 0) * 100) / 100;
-    if (withoutPercent.length > 0) warningCount++;
-    else if (total > 100) errorCount++;
-    else if (total < 100) warningCount++;
-  }
-
-  // Required relationships
-  const inboundTypes = new Map<string, Set<string>>();
-  for (const rel of relationships) {
-    const s = inboundTypes.get(rel.to_entity_id) ?? new Set();
-    s.add(rel.relationship_type);
-    inboundTypes.set(rel.to_entity_id, s);
-  }
-  for (const entity of entities) {
-    const t = entity.entity_type;
-    const inbound = inboundTypes.get(entity.id) ?? new Set();
-    if ((t.startsWith("trust_") || t === "Trust") && !inbound.has("trustee")) errorCount++;
-    if (t === "smsf" && !inbound.has("member")) errorCount++;
-    if (t === "Company" && !inbound.has("shareholder")) {
-      const hasOwnershipData = byCompany.has(entity.id);
-      if (!hasOwnershipData) warningCount++;
-    }
-    if (t === "trust_unit" && !inbound.has("unit_holder")) warningCount++;
-    if (t === "Unclassified") unclassifiedCount++;
-  }
-
-  // Circular ownership (quick DFS)
-  const adj = new Map<string, string[]>();
-  for (const rel of relationships) {
-    if (rel.relationship_type !== "shareholder" && rel.relationship_type !== "unit_holder") continue;
-    const arr = adj.get(rel.from_entity_id) ?? [];
-    arr.push(rel.to_entity_id);
-    adj.set(rel.from_entity_id, arr);
-  }
-  const visited = new Set<string>();
-  const inStack = new Set<string>();
-  let hasCycle = false;
-  function dfs(node: string) {
-    if (hasCycle) return;
-    if (inStack.has(node)) { hasCycle = true; return; }
-    if (visited.has(node)) return;
-    visited.add(node);
-    inStack.add(node);
-    for (const n of adj.get(node) ?? []) dfs(n);
-    inStack.delete(node);
-  }
-  for (const nodeId of adj.keys()) { if (!visited.has(nodeId)) dfs(nodeId); }
-  if (hasCycle) errorCount++;
-
-  const unclassifiedDeduction = Math.min(unclassifiedCount * 10, 30);
-  const score = Math.max(0, 100 - errorCount * 25 - warningCount * 10 - unclassifiedDeduction - infoCount * 2);
-  let status: StructureHealth["status"];
-  if (errorCount > 0 || score < 60) status = "critical";
-  else if ((warningCount + unclassifiedCount) > 0 || score < 85) status = "warning";
-  else status = "good";
-
-  return { score, status };
+  const h = computeHealthScoreV2(entities, relationships);
+  return { score: h.score, status: h.status };
 }
