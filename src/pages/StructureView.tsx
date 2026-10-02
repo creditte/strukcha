@@ -176,6 +176,11 @@ export default function StructureView() {
     [entities, relationships]
   );
 
+  const exportBlock = useMemo(
+    () => getExportBlock(healthV2?.issues, tenant?.export_block_on_critical_health),
+    [healthV2, tenant?.export_block_on_critical_health]
+  );
+
   const issueOverlays = useMemo(() => {
     if (!healthV2?.issues) return [];
     const overlays: Array<{ entityId: string; severity: "critical" | "warning"; tooltip: string }> = [];
@@ -446,7 +451,7 @@ export default function StructureView() {
             isScenario={isScenario}
             scenarioLabel={scenarioLabel ?? undefined}
             tenant={tenant}
-            disabled={!!(tenant?.export_block_on_critical_health && structureHealth?.status === "critical" && !isViewingSnapshot)}
+            disabled={exportBlock.blocked && !isViewingSnapshot}
             healthV2={healthV2}
           />
 
@@ -514,8 +519,8 @@ export default function StructureView() {
       {!isViewingSnapshot && (
         <ExportBlockedBanner
           entities={entities}
-          structureHealth={structureHealth}
-          blockOnCritical={tenant?.export_block_on_critical_health}
+          exportBlock={exportBlock}
+          onOpenHealth={() => { setShowReviewPanel(true); setShowFixMode(false); setShowAiPanel(false); }}
         />
       )}
 

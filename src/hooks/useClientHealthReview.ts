@@ -108,7 +108,6 @@ async function buildReview(
   const results: StructureResult[] = [];
   const allIssues: StructureIssue[] = [];
   const trustsWithoutCorporateTrusteeIds: string[] = [];
-  const missingAppointerIds: string[] = [];
   const circularIds: string[] = [];
 
   for (let i = 0; i < structures.length; i++) {
@@ -131,7 +130,6 @@ async function buildReview(
     }
 
     if (health.isCapped) trustsWithoutCorporateTrusteeIds.push(s.id);
-    if (health.issues.some((iss) => iss.code === "missing_appointer")) missingAppointerIds.push(s.id);
     if (health.issues.some((iss) => iss.code === "circular_ownership")) circularIds.push(s.id);
 
     // Keep the tab responsive on large firms.
@@ -148,13 +146,6 @@ async function buildReview(
       message: `${trustsWithoutCorporateTrusteeIds.length} structure${trustsWithoutCorporateTrusteeIds.length > 1 ? "s have" : " has"} trusts without corporate trustees`,
       structureIds: trustsWithoutCorporateTrusteeIds,
     });
-  if (missingAppointerIds.length > 0) {
-    const totalAppointerIssues = allIssues.filter((i) => i.code === "missing_appointer").length;
-    crossObservations.push({
-      message: `${totalAppointerIssues} trust${totalAppointerIssues > 1 ? "s" : ""} missing appointors across structures`,
-      structureIds: missingAppointerIds,
-    });
-  }
   if (circularIds.length > 0)
     crossObservations.push({
       message: `${circularIds.length} structure${circularIds.length > 1 ? "s" : ""} with circular ownership detected`,
