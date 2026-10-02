@@ -15,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenantId } from "@/hooks/useSharedQueries";
 import { qk } from "@/lib/queryKeys";
-import { computeHealthScoreV2, getHealthStatus, getScoreBand } from "@/lib/structureScoring";
+import { computeHealthScoreV2 } from "@/lib/structureScoring";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { ScoringIssue } from "@/lib/structureScoring";
 
@@ -107,7 +107,6 @@ async function buildReview(
 
   const results: StructureResult[] = [];
   const allIssues: StructureIssue[] = [];
-  const trustsWithoutCorporateTrusteeIds: string[] = [];
   const circularIds: string[] = [];
 
   for (let i = 0; i < structures.length; i++) {
@@ -118,8 +117,8 @@ async function buildReview(
       id: s.id,
       name: s.name,
       score: health.score,
-      status: getHealthStatus(health.score),
-      friendlyLabel: getScoreBand(health.score).label,
+      status: health.status,
+      friendlyLabel: health.label,
       issues: health.issues,
       criticalCount: health.criticalGaps.length,
     });
@@ -129,7 +128,6 @@ async function buildReview(
       allIssues.push({ ...issue, structure_id: s.id, structure_name: s.name });
     }
 
-    if (health.isCapped) trustsWithoutCorporateTrusteeIds.push(s.id);
     if (health.issues.some((iss) => iss.code === "circular_ownership")) circularIds.push(s.id);
 
     // Keep the tab responsive on large firms.
@@ -141,11 +139,6 @@ async function buildReview(
   onProgress?.(structures.length, structures.length);
 
   const crossObservations: CrossObservation[] = [];
-  if (trustsWithoutCorporateTrusteeIds.length > 0)
-    crossObservations.push({
-      message: `${trustsWithoutCorporateTrusteeIds.length} structure${trustsWithoutCorporateTrusteeIds.length > 1 ? "s have" : " has"} trusts without corporate trustees`,
-      structureIds: trustsWithoutCorporateTrusteeIds,
-    });
   if (circularIds.length > 0)
     crossObservations.push({
       message: `${circularIds.length} structure${circularIds.length > 1 ? "s" : ""} with circular ownership detected`,
@@ -157,7 +150,7 @@ async function buildReview(
   const finalClientScore = allPerfect ? avgScore : Math.min(avgScore, 99);
 
   allIssues.sort((a, b) => {
-    const severityOrder: Record<string, number> = { critical: 0, gap: 1, minor: 2, info: 3 };
+    const severityOrder: Record<string, number> = { critical: 0, gap: 1, info: 2 };
     const sa = severityOrder[a.severity] ?? 3;
     const sb = severityOrder[b.severity] ?? 3;
     if (sa !== sb) return sa - sb;
@@ -178,7 +171,7 @@ async function buildReview(
     structures: results.sort((a, b) => a.score - b.score),
     crossObservations,
     criticalStructures: results.filter((r) => r.status === "critical").length,
-    needsAttention: results.filter((r) => r.score < 100).length,
+    needsAttention: results.filter((r) => r.status !== "good").length,
     allIssues,
     fingerprint,
   };

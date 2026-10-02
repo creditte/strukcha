@@ -18,21 +18,21 @@ const STATUS_COLORS: Record<StructureHealth["status"], string> = {
 };
 
 const STATUS_LABELS: Record<StructureHealth["status"], string> = {
-  good: "Good",
-  warning: "Warning",
-  critical: "Critical",
+  good: "Complete",
+  warning: "Review recommended",
+  critical: "Conflicting data",
 };
 
 const WHY_IT_MATTERS: Record<string, string> = {
-  ownership_exceeds: "Total ownership over 100% indicates data entry errors that could affect reporting accuracy.",
-  ownership_under: "Ownership below 100% may mean missing shareholders or incomplete records.",
-  ownership_incomplete: "Mixed filled/blank percentages make it impossible to validate ownership totals.",
-  ownership_no_percent: "No ownership percentages recorded — consider adding them for a complete picture.",
-  missing_trustee: "Trusts require a trustee to be legally valid. This must be resolved before export.",
-  missing_member: "SMSFs must have at least one member under superannuation law.",
-  missing_shareholder: "Companies typically have shareholders. Verify this is intentional or add them.",
-  circular_ownership: "Circular ownership chains create legal and tax complications and are usually data errors.",
-  unclassified: "Unclassified entities can't be validated properly. Classify them to improve data quality.",
+  ownership_exceeds: "Recorded ownership totals more than 100%, so the recorded facts contradict each other.",
+  ownership_under: "Recorded ownership totals less than 100%. Confirm whether the structure data is complete.",
+  ownership_incomplete: "Some ownership percentages are blank. Confirm whether the structure data is complete.",
+  ownership_no_percent: "Optional: no ownership percentages are recorded.",
+  missing_trustee: "No trustee is recorded in strukcha. Confirm whether the structure data is complete.",
+  missing_member: "No member is recorded in strukcha. Confirm whether the structure data is complete.",
+  missing_shareholder: "No shareholder is recorded in strukcha. Confirm whether the structure data is complete.",
+  circular_ownership: "The recorded ownership forms a loop, which is usually a data-entry error.",
+  unclassified: "No entity type is recorded. Classify it to complete the structure data.",
   duplicates_detected: "Duplicate entities can cause incorrect relationship mapping and inflated counts. Merge them to keep data clean.",
 };
 

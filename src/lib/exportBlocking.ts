@@ -7,6 +7,8 @@ import type { ScoringIssue } from "@/lib/structureScoring";
 export const EXPORT_BLOCKING_ISSUE_CODES: ReadonlySet<string> = new Set([
   "invalid_relationship_direction",
   "circular_ownership",
+  "ownership_exceeds",
+  "multiple_trades_as_owners",
 ]);
 
 export function isExportBlockingIssue(issue: Pick<ScoringIssue, "code">): boolean {

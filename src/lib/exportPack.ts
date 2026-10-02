@@ -333,33 +333,19 @@ function drawMetricBar(
   return y + barH + 8;
 }
 
-function getScoreColor(score: number): [number, number, number] {
-  if (score >= 90) return C.green;
-  if (score >= 50) return C.amber;
+function getStatusColor(status: import("@/lib/structureScoring").HealthStatus): [number, number, number] {
+  if (status === "good") return C.green;
+  if (status === "warning") return C.amber;
   return C.red;
-}
-
-function getScoreLabel(score: number): string {
-  if (score >= 90) return "Healthy";
-  if (score >= 70) return "Minor Gaps";
-  if (score >= 50) return "Control Incomplete";
-  if (score >= 30) return "Governance Gaps";
-  return "Critical Issues";
 }
 
 /* ── Advisory text generators ── */
 
-function generateAdvisory(issues: import("@/lib/structureScoring").ScoringIssue[], score: number): string {
-  if (score >= 90) {
-    return "This structure demonstrates strong governance and control arrangements. All key relationships are recorded and no critical gaps have been identified. Ongoing monitoring is recommended to maintain compliance as the structure evolves.";
-  }
-  if (score >= 70) {
-    return "The structure is fundamentally sound with minor documentation gaps. Addressing the items above will bring the structure to full compliance and strengthen governance clarity for all stakeholders.";
-  }
-  if (score >= 50) {
-    return "Material governance gaps exist that require attention. The issues identified relate to control clarity and may have implications for asset protection and succession planning. Remediation of priority items is recommended before the next review cycle.";
-  }
-  return "Critical structural and governance deficiencies have been identified. These gaps represent material risk to the integrity of the arrangement and should be addressed as a matter of urgency. Professional advisory review is strongly recommended.";
+function generateAdvisory(status: import("@/lib/structureScoring").HealthStatus): string {
+  const tail = " This is a data-quality indicator for what is recorded in strukcha, not tax, legal, regulatory or compliance advice.";
+  if (status === "critical") return "Some recorded facts contradict each other. Review the conflicting data listed above." + tail;
+  if (status === "warning") return "No conflicting data is recorded, but some important structure information is not recorded. Confirm whether the structure data is complete." + tail;
+  return "No conflicting data or important gaps are recorded." + tail;
 }
 
 function generateRecommendations(issues: import("@/lib/structureScoring").ScoringIssue[]): { priority: number; action: string; impact: string }[] {
@@ -368,7 +354,7 @@ function generateRecommendations(issues: import("@/lib/structureScoring").Scorin
 
   const criticals = issues.filter((i) => i.severity === "critical");
   const gaps = issues.filter((i) => i.severity === "gap");
-  const minors = issues.filter((i) => i.severity === "minor" || i.severity === "info");
+  const infos = issues.filter((i) => i.severity === "info");
 
   const addUnique = (priority: number, issue: import("@/lib/structureScoring").ScoringIssue) => {
     const action = sanitise(issueToAction(issue));
@@ -379,47 +365,40 @@ function generateRecommendations(issues: import("@/lib/structureScoring").Scorin
 
   for (const issue of criticals.slice(0, 4)) addUnique(1, issue);
   for (const issue of gaps.slice(0, 4)) addUnique(2, issue);
-  for (const issue of minors.slice(0, 3)) addUnique(3, issue);
+  for (const issue of infos.slice(0, 3)) addUnique(3, issue);
   return recs;
 }
 
 function issueToAction(issue: import("@/lib/structureScoring").ScoringIssue): string {
   const name = issue.entity_name ?? "the entity";
   switch (issue.code) {
-    case "missing_trustee": return `Assign a trustee to "${name}"`;
-    case "missing_appointer": return `Record an appointor for "${name}"`;
-    case "missing_member": return `Add members to SMSF "${name}"`;
-    case "missing_directors": return `Record directors for company "${name}"`;
-    case "missing_shareholders": return `Add shareholders to company "${name}"`;
-    case "missing_ownership_percent": return `Record ownership percentages for "${name}"`;
-    case "ownership_exceeds": return `Correct ownership percentages for "${name}" (currently exceeds 100%)`;
-    case "circular_ownership": return `Resolve circular ownership chain involving "${name}"`;
-    case "orphan_entity": return `Connect "${name}" to the structure or remove if redundant`;
-    case "duplicate_relationship": return `Remove duplicate relationship for "${name}"`;
-    case "unclassified": return `Classify entity "${name}" with the correct type`;
-    case "missing_identifiers": return `Add ABN or ACN for "${name}"`;
-    case "no_corporate_trustee": return `Consider appointing a corporate trustee for "${name}"`;
+    case "missing_trustee": return `Confirm and record the trustee for "${name}"`;
+    case "missing_appointer": return `Confirm whether the trust deed for "${name}" includes an appointor`;
+    case "missing_member": return `Confirm and record the members of "${name}"`;
+    case "missing_directors": return `Confirm and record the directors of "${name}"`;
+    case "missing_shareholders": return `Confirm and record the shareholders of "${name}"`;
+    case "missing_unit_holders": return `Confirm and record the unit holders of "${name}"`;
+    case "missing_partners": return `Confirm and record the partners of "${name}"`;
+    case "missing_trades_as_owner": return `Record the individual who trades as "${name}"`;
+    case "multiple_trades_as_owners": return `Keep only one Trades As owner for "${name}"`;
+    case "ownership_no_percent": return `Optionally record ownership percentages for "${name}"`;
+    case "ownership_incomplete": return `Complete the blank ownership percentages for "${name}"`;
+    case "ownership_under": return `Confirm the ownership percentages for "${name}" (recorded total is below 100%)`;
+    case "ownership_exceeds": return `Correct ownership percentages for "${name}" (recorded total exceeds 100%)`;
+    case "circular_ownership": return `Review the circular ownership recorded for "${name}"`;
+    case "invalid_relationship_direction": return `Review the conflicting relationship recorded for "${name}"`;
+    case "orphan_entity": return `Connect "${name}" to the structure or remove it if redundant`;
+    case "duplicate_relationship": return `Remove the duplicate relationship for "${name}"`;
+    case "unclassified": return `Choose the entity type for "${name}"`;
+    case "missing_identifiers": return `Optionally add an ABN or ACN for "${name}"`;
     default: return issue.message;
   }
 }
 
 function issueToImpact(issue: import("@/lib/structureScoring").ScoringIssue): string {
-  switch (issue.code) {
-    case "missing_trustee": return "Without a trustee, the trust cannot legally administer assets or make distributions.";
-    case "missing_appointer": return "An appointor controls who serves as trustee — this is a critical governance safeguard.";
-    case "missing_member": return "SMSF members must be recorded to satisfy regulatory obligations.";
-    case "missing_directors": return "Directors are legally required for company governance and ASIC compliance.";
-    case "missing_shareholders": return "Shareholder records establish beneficial ownership and are required for compliance.";
-    case "missing_ownership_percent": return "Ownership percentages are needed for tax reporting and distribution calculations.";
-    case "ownership_exceeds": return "Ownership exceeding 100% indicates a data error that will affect reporting accuracy.";
-    case "circular_ownership": return "Circular ownership creates legal ambiguity and may have adverse tax consequences.";
-    case "orphan_entity": return "Disconnected entities reduce structural clarity and may indicate missing relationships.";
-    case "duplicate_relationship": return "Duplicate entries can cause errors in reporting and governance assessments.";
-    case "unclassified": return "Unclassified entities prevent accurate governance scoring and compliance checks.";
-    case "missing_identifiers": return "ABN/ACN records are needed for regulatory correspondence and ATO compliance.";
-    case "no_corporate_trustee": return "Corporate trustees provide limited liability protection and succession continuity.";
-    default: return "Addressing this gap improves structural completeness and governance clarity.";
-  }
+  if (issue.severity === "critical") return "Recorded facts contradict each other, so the diagram cannot be relied on until reviewed.";
+  if (issue.severity === "info") return "Optional information — recording it makes the structure data more complete.";
+  return "Important structure information is not recorded in strukcha. Confirm whether the structure data is complete.";
 }
 
 /** Draw a filled circle dot for status columns */
@@ -738,7 +717,7 @@ export async function exportPdf(
 
     const scoreBlockW = 55;
     const scoreBlockH = 40;
-    const scoreColor = getScoreColor(hs.score);
+    const scoreColor = getStatusColor(hs.status);
 
     pdf.setFillColor(...C.light);
     pdf.setDrawColor(...scoreColor);
@@ -754,9 +733,9 @@ export async function exportPdf(
     pdf.setFontSize(8);
     pdf.setFont("helvetica", "normal");
     pdf.setTextColor(...C.muted);
-    pdf.text("Structure Health Score", MM_MARGIN + scoreBlockW / 2, curY + 24, { align: "center" });
+    pdf.text("Structure data completeness", MM_MARGIN + scoreBlockW / 2, curY + 24, { align: "center" });
 
-    const statusLabel = getScoreLabel(hs.score);
+    const statusLabel = hs.label;
     pdf.setFontSize(9);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(...scoreColor);
@@ -768,10 +747,10 @@ export async function exportPdf(
     let barY = curY + 4;
 
     const cats = [
-      { label: "Control Integrity", val: hs.controlScore, max: 40 },
-      { label: "Governance Completeness", val: hs.governanceScore, max: 30 },
-      { label: "Structural Clarity", val: hs.structuralScore, max: 20 },
-      { label: "Data Completeness", val: hs.dataScore, max: 10 },
+      { label: "Roles & control", val: hs.controlScore, max: 40 },
+      { label: "Officers & ownership", val: hs.governanceScore, max: 30 },
+      { label: "Diagram data", val: hs.structuralScore, max: 20 },
+      { label: "Identifiers", val: hs.dataScore, max: 10 },
     ];
     for (const cat of cats) {
       barY = drawMetricBar(pdf, barX, barY, barW, cat.label, cat.val, cat.max, brandRgb);
@@ -826,7 +805,7 @@ export async function exportPdf(
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(7);
     pdf.setTextColor(...C.body);
-    const advisory = generateAdvisory(hs.issues, hs.score);
+    const advisory = generateAdvisory(hs.status);
     const advWrapped = pdf.splitTextToSize(advisory, pageW - MM_MARGIN * 2 - 10);
     pdf.text(advWrapped.slice(0, 3), MM_MARGIN + 4, curY + 8);
 
@@ -905,7 +884,7 @@ export async function exportPdf(
         if (curY > pageH - 25) break;
 
         const isCrit = issue.severity === "critical";
-        const sevLabel = isCrit ? "HIGH" : issue.severity === "gap" ? "MEDIUM" : "LOW";
+        const sevLabel = isCrit ? "CONFLICT" : issue.severity === "gap" ? "REVIEW" : "INFO";
         const sevColor = isCrit ? C.red : issue.severity === "gap" ? C.amber : C.muted;
         const sevBg = isCrit ? C.redLight : issue.severity === "gap" ? C.amberLight : C.light;
 

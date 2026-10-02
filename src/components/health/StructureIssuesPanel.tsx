@@ -20,28 +20,21 @@ const SEVERITY_CONFIG = {
     border: "border-l-destructive",
     bg: "bg-destructive/5",
     badge: "bg-destructive/15 text-destructive",
-    label: "Critical",
+    label: "Conflicting data",
   },
   gap: {
     icon: AlertTriangle,
     border: "border-l-warning",
     bg: "bg-warning/5",
     badge: "bg-warning/15 text-warning",
-    label: "Gap",
-  },
-  minor: {
-    icon: Info,
-    border: "border-l-primary",
-    bg: "bg-primary/5",
-    badge: "bg-primary/15 text-primary",
-    label: "Minor",
+    label: "Review",
   },
   info: {
     icon: Info,
     border: "border-l-muted-foreground",
     bg: "bg-muted/30",
     badge: "bg-muted text-muted-foreground",
-    label: "Info",
+    label: "Information",
   },
 } as const;
 

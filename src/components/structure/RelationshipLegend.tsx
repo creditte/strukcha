@@ -104,7 +104,7 @@ export default function RelationshipLegend({ visible, onToggle }: Props) {
                     <div className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-white">
                       <AlertCircle className="h-2 w-2" />
                     </div>
-                    <span className="text-[11px]">Critical issue</span>
+                    <span className="text-[11px]">Conflicting data</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-white">

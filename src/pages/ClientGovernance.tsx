@@ -31,7 +31,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { SCORE_BANDS, getScoreBand } from "@/lib/structureScoring";
+import { STATUS_META, STATUS_ORDER, HEALTH_DISCLAIMER } from "@/lib/structureScoring";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
 import type { StructureResult } from "@/hooks/useClientHealthReview";
 import StructureIssuesPanel from "@/components/health/StructureIssuesPanel";
@@ -40,23 +40,19 @@ import StructureIssuesPanel from "@/components/health/StructureIssuesPanel";
 
 function getScoreMessage(score: number, count: number): string {
   if (count === 0) return "No structures to review yet.";
-  if (score >= 90) return "Your structures are in good shape.";
-  if (score >= 50) return "Some improvements needed across your structures.";
-  return "Your structures need attention.";
+  if (score >= 90) return "Your structure data is largely complete.";
+  if (score >= 50) return "Some structure information is not recorded yet.";
+  return "Much of your structure information is not recorded yet.";
 }
 
 const STRUCTURE_PAGE_SIZE = 10;
 const INSIGHT_CHIP_LIMIT = 6;
 
-const SEV_ORDER: Record<string, number> = { critical: 0, gap: 1, minor: 2, info: 3 };
+const SEV_ORDER: Record<string, number> = { critical: 0, gap: 1, info: 2 };
 
 function describeInsight(message: string): { title: string; explanation: string; entityCount: number | null; critical: boolean } {
   const lower = message.toLowerCase();
   const leading = parseInt(message, 10);
-  if (lower.includes("corporate trustee"))
-    return { title: "Trusts without corporate trustees", explanation: "These trusts have individual trustees rather than a company acting as trustee.", entityCount: null, critical: false };
-  if (lower.includes("appointor"))
-    return { title: "Trusts missing appointors", explanation: "No appointor is recorded — the person with power to appoint or remove the trustee.", entityCount: Number.isNaN(leading) ? null : leading, critical: false };
   if (lower.includes("circular"))
     return { title: "Circular ownership detected", explanation: "Entities own each other in a loop, which is usually a data-entry error.", entityCount: null, critical: true };
   return { title: message, explanation: "", entityCount: null, critical: false };
@@ -254,12 +250,12 @@ export default function ClientGovernance() {
       {review && (() => {
         const criticalCount = review.structures.filter((s) => s.status === "critical").length;
         const warningCount = review.structures.filter((s) => s.status === "warning").length;
-        const band = getScoreBand(review.clientScore);
+        const band = STATUS_META[criticalCount > 0 ? "critical" : warningCount > 0 ? "warning" : "good"];
         const tabs: { key: string | null; label: string; count: number }[] = [
           { key: null, label: "All", count: review.structures.length },
-          { key: "critical", label: "Critical", count: criticalCount },
-          { key: "warning", label: "Needs attention", count: warningCount },
-          { key: "good", label: "Healthy", count: healthyCount },
+          { key: "critical", label: STATUS_META.critical.label, count: criticalCount },
+          { key: "warning", label: STATUS_META.warning.label, count: warningCount },
+          { key: "good", label: STATUS_META.good.label, count: healthyCount },
         ];
         const activeInsight = insightFilter
           ? allInsights.find((o) => o.structureIds.join(",") === insightFilter.join(","))
@@ -280,7 +276,7 @@ export default function ClientGovernance() {
                     <span className={`h-2 w-2 rounded-full ${band.dot}`} />
                     <span className={`text-sm font-semibold ${band.text}`}>{band.label}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">Average across all structures</p>
+                  <p className="text-xs text-muted-foreground">Average completeness across all structures</p>
                 </div>
               </div>
               <dl className="grid flex-1 grid-cols-2 gap-x-6 gap-y-3 border-border/60 sm:grid-cols-4 sm:border-l sm:pl-6">
@@ -289,15 +285,15 @@ export default function ClientGovernance() {
                   <dd className="text-lg font-semibold tabular-nums text-foreground">{review.structures.length}</dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-muted-foreground">Healthy</dt>
+                  <dt className="text-[11px] text-muted-foreground">{STATUS_META.good.label}</dt>
                   <dd className="text-lg font-semibold tabular-nums text-success">{healthyCount}</dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-muted-foreground">Needs attention</dt>
+                  <dt className="text-[11px] text-muted-foreground">{STATUS_META.warning.label}</dt>
                   <dd className="text-lg font-semibold tabular-nums text-warning">{warningCount}</dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-muted-foreground">Critical</dt>
+                  <dt className="text-[11px] text-muted-foreground">{STATUS_META.critical.label}</dt>
                   <dd className={`text-lg font-semibold tabular-nums ${criticalCount > 0 ? "text-destructive" : "text-foreground"}`}>{criticalCount}</dd>
                 </div>
               </dl>
@@ -305,13 +301,13 @@ export default function ClientGovernance() {
             <Progress value={review.clientScore} className="h-1.5 rounded-full" />
             <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span>
-                {review.needsAttention} of {review.structures.length} structures have at least one issue (including some rated Healthy).
+                {review.needsAttention} of {review.structures.length} structures have at least one item to review. {HEALTH_DISCLAIMER}
               </span>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                {SCORE_BANDS.map((b) => (
-                  <span key={b.status} className="flex items-center gap-1.5">
+                {STATUS_ORDER.map((k) => STATUS_META[k]).map((b) => (
+                  <span key={b.status} className="flex items-center gap-1.5" title={b.description}>
                     <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} />
-                    {b.range}
+                    {b.label}
                   </span>
                 ))}
               </div>
@@ -466,7 +462,7 @@ export default function ClientGovernance() {
               {pageStructures.map((s) => {
                 const actionable = s.issues.filter((i) => i.severity !== "info");
                 const top = [...actionable].sort((a, b) => (SEV_ORDER[a.severity] ?? 3) - (SEV_ORDER[b.severity] ?? 3))[0];
-                const b = getScoreBand(s.score);
+                const b = STATUS_META[s.status];
                 return (
                   <button
                     key={s.id}

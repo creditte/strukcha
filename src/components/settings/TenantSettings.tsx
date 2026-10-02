@@ -341,8 +341,8 @@ export default function TenantSettings({ isAdmin = false }: Props) {
               <CollapsibleContent className="pt-3">
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-0.5">
-                    <Label className="text-sm">Block Exports on Critical Health</Label>
-                    <p className="text-xs text-muted-foreground">Prevent exports when structure health is Critical.</p>
+                    <Label className="text-sm">Block exports on conflicting data</Label>
+                    <p className="text-xs text-muted-foreground">Prevent exports when recorded facts contradict each other (e.g. ownership over 100%). Missing information never blocks export.</p>
                   </div>
                   <Switch checked={blockOnCritical} onCheckedChange={setBlockOnCritical} />
                 </div>
