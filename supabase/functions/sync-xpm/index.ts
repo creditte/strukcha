@@ -20,7 +20,26 @@ import {
   xpmGetXml,
 } from "./_lib.ts";
 import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
-import { parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
+import {
+  classifyWithProvenance,
+  normaliseXpmRelationship,
+  parseXpmLabel,
+  type EvidenceDraft,
+  type XpmRawRelationship,
+} from "../_shared/xpm-policy-normalise.ts";
+import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
+import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
+
+/**
+ * XPM labels that are deliberately not modelled as structure relationships
+ * (statutory office holdings, contacts). They are still kept as evidence but
+ * are not reported as sync problems or counted as skipped links.
+ */
+const XPM_IGNORED_RELATIONSHIP_LABELS = new Set([
+  "secretary", "secretary of", "public officer", "public officer of", "contact", "contact of",
+]);
+const isIgnoredLabel = (raw: string) =>
+  XPM_IGNORED_RELATIONSHIP_LABELS.has(raw.trim().toLowerCase().replace(/\s+/g, " "));
 import {
   loadXeroConnection,
   markXeroConnectionInvalid,
@@ -263,11 +282,12 @@ interface ParsedClient {
   /** XPM `IsArchived` — archived clients stay as history but leave active structures. */
   isArchived: boolean;
   isDeleted: boolean;
+  businessStructure: string;
   rels: {
-    type: string;
+    /** Raw XPM label as written on this client's record. */
+    label: string;
     uuid: string;
     name: string;
-    reverse: boolean;
     startDate: string | null;
     endDate: string | null;
   }[];
@@ -334,32 +354,26 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
     `${tagText(head, "FirstName")} ${tagText(head, "LastName")}`.trim();
   if (!uuid || !name) return null;
 
-  const entityType = resolveEntityType(tagText(head, "BusinessStructure"), name);
+  const businessStructure = tagText(head, "BusinessStructure");
+  const entityType = resolveEntityType(businessStructure, name);
   const rels: ParsedClient["rels"] = [];
 
   if (tail) {
     for (const m of tail.matchAll(/<Relationship>([\s\S]*?)<\/Relationship>/g)) {
       const rel = m[1];
-      const raw = (tagText(rel, "Type") || tagText(rel, "RelationshipType")).toLowerCase();
+      const raw = tagText(rel, "Type") || tagText(rel, "RelationshipType");
       const relatedIdx = rel.indexOf("<RelatedClient");
       const relatedFragment = relatedIdx === -1 ? rel : rel.slice(relatedIdx);
       const relatedUuid = tagText(relatedFragment, "UUID") || tagText(rel, "RelatedClientUUID");
       const relatedName = tagText(relatedFragment, "Name") || tagText(rel, "RelatedClientName");
       if (!raw || !relatedUuid) continue;
-      // XPM labels a relationship from either side ("Director" on the company
-      // record, "Director of" on the person record), so both forms are mapped
-      // and `reverse` restores the canonical from → to direction.
-      const rule = parseXpmRelationshipType(raw);
-      if (!rule) {
-        warnUnknownRelType(p, raw);
-        p.stats.relationshipsSkipped++;
-        continue;
-      }
+      // Every raw fact is kept: the canonical normaliser decides direction and
+      // validity later, and unknown labels become evidence rather than vanish.
+      if (!parseXpmLabel(raw).type && !isIgnoredLabel(raw)) warnUnknownRelType(p, raw.toLowerCase());
       rels.push({
-        type: rule.type,
+        label: raw,
         uuid: relatedUuid,
         name: relatedName,
-        reverse: rule.reverse,
         startDate: tagText(rel, "StartDate") || null,
         endDate: tagText(rel, "EndDate") || null,
       });
@@ -374,8 +388,120 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
     acn: tagText(head, "CompanyNumber") || tagText(head, "ACN") || null,
     isArchived: tagText(head, "IsArchived").toLowerCase() === "yes",
     isDeleted: tagText(head, "IsDeleted").toLowerCase() === "yes",
+    businessStructure,
     rels,
   };
+}
+
+/**
+ * Canonical normalisation for one chunk (Rulebook v1, contract canonical_v1).
+ *
+ * Entity types are the ones the database will hold after the upsert: a stored
+ * classified type wins, otherwise the type sent in this payload — exactly the
+ * rule `sync_xpm_upsert_clients` applies. Name-only types are provisional.
+ * Every raw relationship yields one evidence draft; only canonical edges are
+ * sent as rels (Spouse alone de-duplicated unordered; Partner keeps direction).
+ */
+async function normaliseChunk(
+  supabase: any,
+  tenantId: string,
+  parsed: ParsedClient[],
+  related: Map<string, string>,
+): Promise<{ rels: Record<string, unknown>[]; evidence: EvidenceDraft[]; skipped: number }> {
+  const t = tuning();
+  const payloadType = new Map<string, string>();
+  const provisionalCandidate = new Map<string, string>();
+  for (const c of parsed) {
+    payloadType.set(c.uuid, c.entityType);
+    const prov = classifyWithProvenance(resolveEntityType, c.businessStructure, c.name);
+    if (prov.provisional) provisionalCandidate.set(c.uuid, prov.entityType);
+  }
+  for (const [uuid, name] of related) {
+    if (payloadType.has(uuid)) continue;
+    const ty = resolveEntityType(undefined, name);
+    payloadType.set(uuid, ty);
+    if (ty !== "Unclassified") provisionalCandidate.set(uuid, ty);
+  }
+  for (const c of parsed) {
+    for (const r of c.rels) if (!payloadType.has(r.uuid)) payloadType.set(r.uuid, "Unclassified");
+  }
+
+  const uuids = [...payloadType.keys()];
+  const stored = new Map<string, { id: string; type: string }>();
+  for (const batch of chunk(uuids, t.filterBatchSize)) {
+    const startedAt = Date.now();
+    counters.dbCalls++;
+    const { data, error } = await supabase
+      .from("entities")
+      .select("id, xpm_uuid, entity_type")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .in("xpm_uuid", batch);
+    counters.dbMs += Date.now() - startedAt;
+    if (error) throw new Error(`Entity type lookup failed: ${error.message}`);
+    for (const e of data ?? []) if (e.xpm_uuid) stored.set(e.xpm_uuid, { id: e.id, type: e.entity_type });
+  }
+
+  const entityTypes = new Map<string, string>();
+  const provisionalTypes = new Set<string>();
+  for (const uuid of uuids) {
+    const s = stored.get(uuid);
+    const finalType = s && s.type !== "Unclassified" ? s.type : payloadType.get(uuid)!;
+    entityTypes.set(uuid, finalType);
+    const cand = provisionalCandidate.get(uuid);
+    if (cand && cand === finalType && (!s || s.type === "Unclassified")) provisionalTypes.add(uuid);
+  }
+
+  // Trades As owners only for Sole Traders that already exist (a new record
+  // cannot have an owner yet). Keyed by XPM UUID like every other endpoint;
+  // owners are entity ids, which the bridge resolves within the tenant.
+  const tradesAsOwners = new Map<string, string[]>();
+  const soleTraders = uuids.filter((u) => entityTypes.get(u) === "Sole Trader" && stored.has(u));
+  if (soleTraders.length > 0) {
+    const ta = await loadTradesAsOwners(
+      supabase, tenantId, soleTraders.map((u) => stored.get(u)!.id), t.filterBatchSize,
+    );
+    for (const [id, ty] of ta.ownerTypes) if (!entityTypes.has(id)) entityTypes.set(id, ty);
+    for (const u of soleTraders) {
+      const owners = ta.owners.get(stored.get(u)!.id);
+      if (owners) tradesAsOwners.set(u, owners);
+    }
+  }
+
+  const ctx = { entityTypes, provisionalTypes, tradesAsOwners };
+  const evidence: EvidenceDraft[] = [];
+  const rels: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+  for (const c of parsed) {
+    for (const r of c.rels) {
+      const raw: XpmRawRelationship = {
+        label: r.label,
+        clientId: c.uuid,
+        relatedId: r.uuid,
+        clientName: c.name,
+        relatedName: r.name || null,
+        payload: { start_date: r.startDate, end_date: r.endDate },
+      };
+      const { evidence: draft, edge } = normaliseXpmRelationship(raw, ctx);
+      evidence.push(draft);
+      if (!edge) {
+        if (!isIgnoredLabel(r.label)) skipped++;
+        continue;
+      }
+      const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rels.push({
+        type: edge.type,
+        from_uuid: edge.fromId,
+        to_uuid: edge.toId,
+        start_date: r.startDate,
+        end_date: r.endDate,
+      });
+    }
+  }
+  return { rels, evidence, skipped };
 }
 
 /**
@@ -402,6 +528,7 @@ async function processClientPage(
   trusteePairs: { trustee_uuid: string; trust_name: string }[],
   sliceStartedAt: number,
   onChunk: () => Promise<void>,
+  importRunId: string,
 ): Promise<"processed" | "empty" | "repeat" | "partial"> {
   const t = tuning();
   let pageText: string | null = await xpmGetText(
@@ -429,7 +556,7 @@ async function processClientPage(
 
     const clients: Record<string, unknown>[] = [];
     const related = new Map<string, string>();
-    const rels: Record<string, unknown>[] = [];
+    const parsedClients: ParsedClient[] = [];
 
     for (const segment of slice) {
       const c = parseClientSegment(segment, p);
@@ -455,18 +582,15 @@ async function processClientPage(
         is_archived: c.isArchived,
       });
 
+      parsedClients.push(c);
       for (const r of c.rels) {
         if (r.name) related.set(r.uuid, r.name);
-        const dates = { start_date: r.startDate, end_date: r.endDate };
-        rels.push(
-          r.reverse
-            ? { type: r.type, from_uuid: r.uuid, to_uuid: c.uuid, ...dates }
-            : { type: r.type, from_uuid: c.uuid, to_uuid: r.uuid, ...dates },
-        );
       }
     }
 
     if (clients.length > 0) {
+      const { rels, evidence, skipped } = await normaliseChunk(supabase, tenantId, parsedClients, related);
+      p.stats.relationshipsSkipped += skipped;
       const { data, error } = await rpcCall(supabase, "sync_xpm_upsert_clients", {
         _tenant_id: tenantId,
         _payload: {
@@ -479,7 +603,11 @@ async function processClientPage(
             name,
             entity_type: resolveEntityType(undefined, name),
           })),
+          contract: "canonical_v1",
+          import_source: "xpm_sync",
+          import_run_id: importRunId,
           rels,
+          evidence,
         },
       });
       if (error) throw new Error(`Client page ${page} failed: ${error.message}`);
@@ -772,7 +900,7 @@ async function runSlice(
     for (let i = 0; i < t.clientPagesPerRun; i++) {
       const outcome = await processClientPage(
         supabase, tenantId, accessToken, xeroTenantId, p.clientPage, p, trusteePairs,
-        sliceStartedAt, heartbeat,
+        sliceStartedAt, heartbeat, jobId,
       );
       // Budget spent mid-page: keep the page and offset, hand over to a fresh
       // worker rather than being killed with "CPU Time exceeded".
