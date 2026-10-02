@@ -53,7 +53,7 @@ AS $$
     WHEN 'director'    THEN jsonb_build_object('sources', to_jsonb(ARRAY['individual']), 'targets', to_jsonb(ARRAY['company']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', false)
     WHEN 'shareholder' THEN jsonb_build_object('sources', to_jsonb(econ), 'targets', to_jsonb(ARRAY['company']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', true)
     WHEN 'unit_holder' THEN jsonb_build_object('sources', to_jsonb(econ), 'targets', to_jsonb(ARRAY['unit_trust','hybrid_trust']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', true)
-    WHEN 'trustee'     THEN jsonb_build_object('sources', to_jsonb(ARRAY['individual','company']), 'targets', to_jsonb(trusts || ARRAY['smsf']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', false)
+    WHEN 'trustee'     THEN jsonb_build_object('sources', to_jsonb(ARRAY['individual','company']), 'targets', to_jsonb(trusts || ARRAY['smsf']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', true)
     WHEN 'beneficiary' THEN jsonb_build_object('sources', to_jsonb(econ), 'targets', to_jsonb(ARRAY['discretionary_trust','hybrid_trust','bare_trust','testamentary_trust','deceased_estate']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', true, 'bare_sources', to_jsonb(ARRAY['individual','company','smsf']))
     WHEN 'member'      THEN jsonb_build_object('sources', to_jsonb(ARRAY['individual']), 'targets', to_jsonb(ARRAY['smsf']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', false)
     WHEN 'appointer'   THEN jsonb_build_object('sources', to_jsonb(ARRAY['individual','company']), 'targets', to_jsonb(ARRAY['discretionary_trust']), 'symmetric', false, 'auto_reverse', true, 'st_resolves', false)

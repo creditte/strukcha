@@ -1,10 +1,10 @@
 # Relationship policy (Rulebook v1) — developer notes
 
 ## Where it lives
-- `src/lib/relationshipPolicy.ts` — the single application authority.
+- `src/lib/relationshipPolicy.ts` — the sole target/canonical policy. **Not yet active at runtime in Phase 1**: nothing in the app, XPM functions or database calls it.
 - `supabase/pending-migrations/phase1/002_relationship_policy_foundation.sql` — SQL twin `public.relationship_policy_evaluate()`.
 - `src/test/fixtures/relationship-policy-vectors.json` — shared hand-written vectors; both sides must match them.
-- `src/lib/relationshipRules.ts` — legacy facade. Labels come from the policy; its direction matrix is frozen v0 behaviour, kept only so Health scoring and pickers don't change in Phase 1. Deleted in Phase 2.
+- Legacy runtime validation — still what actually decides today: the direction matrix in `src/lib/relationshipRules.ts` (Health scoring, pickers), `supabase/functions/_shared/xpm-relationships.ts` (XPM), and the DB trigger `validate_relationship_rules()` / `rel_direction_valid()`. All are **frozen: do not edit**. They are removed in Phase 2. Only labels in `relationshipRules.ts` already come from the policy.
 
 ## Outcomes
 `evaluateRelationship(type, fromDbType, toDbType, { directionKnown })` returns
@@ -36,4 +36,4 @@ The files sit in `supabase/pending-migrations/`, outside `supabase/migrations/`,
 ```
 bunx vitest run
 ```
-SQL parity was checked in Phase 1 with an in-memory Postgres (PGlite): all 60 vectors and all 6,300 type × type × direction combinations match the TypeScript.
+SQL parity was checked in Phase 1 with an in-memory Postgres (PGlite): all 61 vectors and all 6,300 type × type × direction combinations match the TypeScript.

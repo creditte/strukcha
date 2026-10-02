@@ -117,6 +117,17 @@ describe("partner", () => {
   });
 });
 
+describe("sole trader as trustee", () => {
+  it("resolves to the underlying Individual", () => {
+    expect(getPolicyRule("trustee")!.soleTraderResolves).toBe(true);
+    for (const t of ["trust_discretionary", "trust_family", "trust_unit", "smsf"]) {
+      expect(evaluateRelationship("trustee", "Sole Trader", t)).toMatchObject({
+        outcome: "resolve_sole_trader", reason: "sole_trader_resolves_to_individual", swapped: false,
+      });
+    }
+  });
+});
+
 describe("trades_as", () => {
   it("only Individual → Sole Trader is valid", () => {
     for (const f of ALL_DB_TYPES) for (const t of ALL_DB_TYPES) {
