@@ -165,7 +165,7 @@ GROUP BY 1, 2, 3 ORDER BY n DESC;
 --   fe.entity_type::text, te.entity_type::text, false) AS o
 -- WHERE rel.source::text = 'imported' AND rel.deleted_at IS NULL AND rel.end_date IS NULL
 --   AND fe.deleted_at IS NULL AND te.deleted_at IS NULL AND NOT fe.is_archived AND NOT te.is_archived
---   AND o->>'policy_reason' IS NULL AND o->>'reason' = 'ambiguous_direction'
+--   AND o->>'reason' = 'ambiguous_direction'   -- the policy_reason; evaluator key is 'reason'
 -- GROUP BY 1, 2, 3 ORDER BY n DESC;
 
 -- 9. History: rows touching archived/deleted endpoints (current vs ended vs soft-deleted). Reported only.
