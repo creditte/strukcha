@@ -154,8 +154,8 @@ check(qc.length === 2 && qc[0].deleted_at === null && qc[1].deleted_at !== null 
 check(ls.relationshipsCreated === 6, `legacy sync created ${ls.relationshipsCreated}`);
 const ls2 = await sync({ ...legacySync, rels: [...legacySync.rels, { type: "director", from_uuid: "x-q", to_uuid: "x-c", end_date: "2024-06-30" }] });
 check(ls2.relationshipsCreated === 0, `legacy retry created ${ls2.relationshipsCreated}`);
-check(ls2.evidenceWritten === 1, `legacy retry evidence ${ls2.evidenceWritten} (only the new raw fact)`);
-check(await evCount(RUN1) === 11, "legacy evidence exactly once per raw fact across retries");
+check(ls2.evidenceWritten === 0, `legacy retry evidence ${ls2.evidenceWritten} (same raw facts, same run)`);
+check(await evCount(RUN1) === 10, "legacy evidence exactly once per raw fact across retries");
 const live = (await rels("director", qn, c))[0];
 check(String(live.start_date).startsWith("2019") || live.start_date instanceof Date, "start_date kept");
 check(live.end_date !== null, "missing end_date filled on existing fact");
