@@ -28,6 +28,7 @@
     { "type": "trustee", "from": "Individual", "to": "smsf", "outcome": "valid", "reason": "valid", "canonicalType": "trustee", "swapped": false },
     { "type": "trustee", "from": "trust_unit", "to": "Company", "outcome": "reverse", "reason": "auto_reversed", "canonicalType": "trustee", "swapped": true },
     { "type": "trustee", "from": "Company", "to": "Trust", "outcome": "review", "reason": "generic_trust_review", "canonicalType": "trustee", "swapped": false },
+    { "type": "trustee", "from": "Sole Trader", "to": "trust_discretionary", "outcome": "resolve_sole_trader", "reason": "sole_trader_resolves_to_individual", "canonicalType": "trustee", "swapped": false },
     { "type": "trustee", "from": "Partnership", "to": "trust_unit", "outcome": "invalid", "reason": "invalid_source", "canonicalType": "trustee", "swapped": false },
 
     { "type": "beneficiary", "from": "Individual", "to": "trust_discretionary", "outcome": "valid", "reason": "valid", "canonicalType": "beneficiary", "swapped": false },
