@@ -1,39 +1,41 @@
 import { Link } from "react-router-dom";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { EntityNode, StructureHealth } from "@/hooks/useStructureData";
+import type { EntityNode } from "@/hooks/useStructureData";
+import type { ExportBlockResult } from "@/lib/exportBlocking";
 
 interface Props {
   entities: EntityNode[];
-  structureHealth?: StructureHealth;
-  blockOnCritical?: boolean;
+  exportBlock?: ExportBlockResult;
   onOpenHealth?: () => void;
 }
 
-export default function ExportBlockedBanner({ entities, structureHealth, blockOnCritical, onOpenHealth }: Props) {
+export default function ExportBlockedBanner({ entities, exportBlock, onOpenHealth }: Props) {
   const unclassified = entities.filter((e) => e.entity_type === "Unclassified");
-  const isCriticalBlocked = blockOnCritical && structureHealth?.status === "critical";
+  const isBlocked = !!exportBlock?.blocked;
 
-  if (unclassified.length === 0 && !isCriticalBlocked) return null;
+  if (unclassified.length === 0 && !isBlocked) return null;
 
   return (
     <div className="space-y-1.5">
-      {isCriticalBlocked && (
+      {isBlocked && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
           <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
           <span className="text-muted-foreground">
-            Export blocked due to Critical Structure Health issues. Fix errors to proceed.
+            Export is blocked because this structure contains contradictory or invalid structural data
+            ({exportBlock!.blockingIssues.length} {exportBlock!.blockingIssues.length === 1 ? "error" : "errors"}).
+            Review the specific errors in Structure Health to proceed.
           </span>
           {onOpenHealth && (
             <Button variant="outline" size="sm" className="ml-auto h-7 text-xs gap-1" onClick={onOpenHealth}>
-              Open Structure Health
+              Review errors
             </Button>
           )}
         </div>
       )}
       {unclassified.length > 0 && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+        <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
           <span className="text-muted-foreground">
             {unclassified.length} unclassified {unclassified.length === 1 ? "entity" : "entities"} may affect export quality.
           </span>

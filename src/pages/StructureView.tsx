@@ -21,6 +21,7 @@ import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPa
 import RelationshipLegend from "@/components/structure/RelationshipLegend";
 import ExportMenu from "@/components/structure/ExportMenu";
 import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
+import { getExportBlock } from "@/lib/exportBlocking";
 import StructureHealthPanel from "@/components/structure/StructureHealthPanel";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
@@ -174,6 +175,11 @@ export default function StructureView() {
   const healthV2 = useMemo(
     () => computeHealthScoreV2(entities, relationships),
     [entities, relationships]
+  );
+
+  const exportBlock = useMemo(
+    () => getExportBlock(healthV2?.issues, tenant?.export_block_on_critical_health),
+    [healthV2, tenant?.export_block_on_critical_health]
   );
 
   const issueOverlays = useMemo(() => {
@@ -446,7 +452,7 @@ export default function StructureView() {
             isScenario={isScenario}
             scenarioLabel={scenarioLabel ?? undefined}
             tenant={tenant}
-            disabled={!!(tenant?.export_block_on_critical_health && structureHealth?.status === "critical" && !isViewingSnapshot)}
+            disabled={exportBlock.blocked && !isViewingSnapshot}
             healthV2={healthV2}
           />
 
@@ -514,8 +520,8 @@ export default function StructureView() {
       {!isViewingSnapshot && (
         <ExportBlockedBanner
           entities={entities}
-          structureHealth={structureHealth}
-          blockOnCritical={tenant?.export_block_on_critical_health}
+          exportBlock={exportBlock}
+          onOpenHealth={() => { setShowReviewPanel(true); setShowFixMode(false); setShowAiPanel(false); }}
         />
       )}
 

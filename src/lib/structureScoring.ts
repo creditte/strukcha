@@ -73,6 +73,9 @@ function isSMSF(t: string): boolean {
   return t === "smsf";
 }
 
+/** Only these trust types are checked for a missing appointor. */
+export const APPOINTOR_ELIGIBLE_TYPES: ReadonlySet<string> = new Set(["trust_discretionary", "trust_family"]);
+
 function isCompany(t: string): boolean {
   return t === "Company";
 }
@@ -229,22 +232,21 @@ export function computeHealthScoreV2(
     }
   }
 
-  // Missing appointer for trusts (if model supports it)
+  // Missing appointor — informational only, and only for trust types that
+  // can have an appointor (Family / Discretionary). Never deducts or blocks.
   for (const entity of entities) {
-    if (!isTrustType(entity.entity_type) || isSMSF(entity.entity_type)) continue;
+    if (!APPOINTOR_ELIGIBLE_TYPES.has(entity.entity_type)) continue;
     const inbound = inboundByType.get(entity.id);
     const appointers = inbound?.get("appointer") ?? [];
     if (appointers.length === 0) {
-      const ded = 15;
-      controlDeductions += ded;
       issues.push({
         code: "missing_appointer",
         category: "control",
-        severity: "critical",
-        message: `Trust "${entity.name}" has no appointor recorded`,
+        severity: "info",
+        message: `No appointor is recorded for "${entity.name}". Confirm whether the trust deed includes an appointor.`,
         entity_id: entity.id,
         entity_name: entity.name,
-        deduction: ded,
+        deduction: 0,
       });
     }
   }
