@@ -4,6 +4,7 @@ import {
   chunk,
   discoverPmTenantId,
   extractTrustName,
+  DatabaseStepError,
   FatalXpmError,
   isCorporateTrustee,
   LEASE_SECONDS,
@@ -610,7 +611,7 @@ async function processClientPage(
           evidence,
         },
       });
-      if (error) throw new Error(`Client page ${page} failed: ${error.message}`);
+      if (error) throw new DatabaseStepError(`Client page ${page} failed: ${error.message}`);
 
       const res = (data ?? {}) as any;
       p.stats.entitiesCreated += res.entitiesCreated ?? 0;
@@ -628,7 +629,7 @@ async function processClientPage(
       // A failed mark-seen call would make live clients look absent and get them
       // archived by the sweep, so it must fail the slice instead of passing quietly.
       if (markSeen.error) {
-        throw new Error(
+        throw new DatabaseStepError(
           `Could not record clients as seen: ${markSeen.error.message ?? markSeen.error}`,
         );
       }
@@ -1178,7 +1179,7 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
       const message = e instanceof Error ? e.message : String(e);
       if (conn && fatal) {
         await markXeroConnectionInvalid(supabase, conn.id, message);
-      } else if (conn) {
+      } else if (conn && !(e instanceof DatabaseStepError)) {
         // Not fatal, but it did fail: stamping the failure time starts the
         // cooling-off period so the next click can't fire straight into it.
         await supabase
@@ -1198,7 +1199,10 @@ function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress:
             success: false,
             phase: progress.phase,
             requiresReconnect: fatal,
-            error: e instanceof Error ? e.message : String(e),
+            error: e instanceof DatabaseStepError
+              ? "The sync failed while saving to strukcha (not a Xero problem). Please contact support@strukcha.app."
+              : e instanceof Error ? e.message : String(e),
+            internalError: e instanceof DatabaseStepError ? message.slice(0, 500) : undefined,
             ...progress.stats,
             progress: {
               clientPage: progress.clientPage,

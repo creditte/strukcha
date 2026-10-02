@@ -77,6 +77,12 @@ export function tuning() {
 export class FatalXpmError extends Error {}
 
 /**
+ * Raised when one of our own database steps fails (not Xero). Must not start
+ * the Xero cooling-off period, and is reported as an internal sync failure.
+ */
+export class DatabaseStepError extends Error {}
+
+/**
  * Per-worker counters. Used to report how many XPM HTTP requests a slice made
  * so sync cost is observable from the job row instead of guessed at.
  */
