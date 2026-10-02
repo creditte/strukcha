@@ -548,6 +548,4 @@ BEGIN
   );
 END;
 $function$;
-
-REVOKE ALL ON FUNCTION public.sync_xpm_upsert_clients(uuid, jsonb) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.sync_xpm_upsert_clients(uuid, jsonb) TO service_role;
+-- sync_xpm_upsert_clients privileges are unchanged (CREATE OR REPLACE keeps them).
