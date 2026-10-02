@@ -80,7 +80,7 @@ export default function StructureIssueGroup({
               </Badge>
               {criticalCount > 0 && (
                 <Badge className="shrink-0 border-0 bg-destructive/10 px-2 py-0 text-[11px] font-medium text-destructive">
-                  {criticalCount} critical
+                  {criticalCount} conflicting
                 </Badge>
               )}
             </button>

@@ -371,7 +371,7 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
               <span>•</span>
               <span>Control Chain: <strong className={health.controlChainStatus === "Confirmed" ? "text-emerald-600" : "text-amber-600"}>{health.controlChainStatus}</strong></span>
               <span>•</span>
-              <span>Data Gaps: <strong className="text-foreground">{health.dataGapCount}</strong></span>
+              <span>Items: <strong className="text-foreground">{health.dataGapCount}</strong></span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -453,22 +453,15 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
             icon={<AlertTriangle className="h-3 w-3 text-amber-500" />}
           >
             <div className="space-y-3">
-              {health.criticalGaps.length > 0 && (
-                <div>
-                  <p className="font-semibold text-red-600 mb-1">Critical Gaps</p>
-                  <IssueList issues={health.criticalGaps} label="critical gaps" onSelect={onSelectEntity} />
+              {groupIssuesBySeverity(health.issues).map((g) => g.issues.length > 0 && (
+                <div key={g.severity}>
+                  <p className={`font-semibold mb-1 ${g.severity === "critical" ? "text-red-600" : g.severity === "gap" ? "text-amber-600" : "text-muted-foreground"}`}>{g.label} ({g.issues.length})</p>
+                  <IssueList issues={g.issues} label={g.label} onSelect={onSelectEntity} />
                 </div>
-              )}
-
-              {health.governanceGaps.length > 0 && (
-                <div>
-                  <p className="font-semibold text-amber-600 mb-1">Governance Gaps</p>
-                  <IssueList issues={health.governanceGaps} label="governance gaps" onSelect={onSelectEntity} />
-                </div>
-              )}
+              ))}
 
               <div>
-                <p className="font-semibold mb-1">Diagram Integrity</p>
+                <p className="font-semibold mb-1">Summary</p>
                 <ul className="space-y-1 text-muted-foreground">
                   <li>Circular ownership recorded: <strong className={circularOwnership === "Yes" ? "text-red-600" : "text-emerald-600"}>{circularOwnership}</strong></li>
                   <li>Orphan entities: <strong className={orphanCount > 0 ? "text-amber-600" : "text-emerald-600"}>{orphanCount > 0 ? `${orphanCount} found` : "None"}</strong></li>

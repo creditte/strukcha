@@ -19,8 +19,8 @@ export default function CanvasHealthBadge({ health, onClick }: Props) {
   const warningCount = health.issues.filter((i) => i.severity !== "critical" && i.severity !== "info").length;
 
   const summaryParts: string[] = [];
-  if (criticalCount > 0) summaryParts.push(`${criticalCount} critical`);
-  if (warningCount > 0) summaryParts.push(`${warningCount} warning${warningCount !== 1 ? "s" : ""}`);
+  if (criticalCount > 0) summaryParts.push(`${criticalCount} conflicting`);
+  if (warningCount > 0) summaryParts.push(`${warningCount} to review`);
   const summaryText = summaryParts.length > 0 ? ` (${summaryParts.join(", ")})` : "";
 
   return (

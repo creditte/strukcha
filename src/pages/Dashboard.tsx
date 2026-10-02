@@ -630,15 +630,15 @@ export default function Dashboard() {
                   <p className="text-sm text-muted-foreground">
                     {review.criticalStructures > 0 ? (
                       <>
-                        <span className="font-medium text-destructive">{review.criticalStructures} critical</span>
+                        <span className="font-medium text-destructive">{review.criticalStructures} with conflicting data</span>
                         {review.needsAttention > 0 && (
-                          <>, {review.needsAttention} need{review.needsAttention !== 1 ? "" : "s"} attention</>
+                          <>, {review.needsAttention} to review</>
                         )}
                       </>
                     ) : review.needsAttention > 0 ? (
-                      <span className="font-medium text-warning">{review.needsAttention} structure{review.needsAttention !== 1 ? "s" : ""} need{review.needsAttention === 1 ? "s" : ""} attention</span>
+                      <span className="font-medium text-warning">{review.needsAttention} structure{review.needsAttention !== 1 ? "s" : ""} to review</span>
                     ) : (
-                      <span className="text-success font-medium">All structures healthy</span>
+                      <span className="text-success font-medium">All structures complete</span>
                     )}
                   </p>
                   <p className="text-[11px] text-muted-foreground/70">
@@ -705,7 +705,7 @@ export default function Dashboard() {
               )}
               <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
                 <span>
-                  {review && review.allIssues.length > 0 ? "Fix Issues" : "Review Issues"} <ArrowRight className="h-3 w-3" />
+                  {review && review.allIssues.length > 0 ? "Review items" : "Review items"} <ArrowRight className="h-3 w-3" />
                 </span>
               </Button>
             </Link>

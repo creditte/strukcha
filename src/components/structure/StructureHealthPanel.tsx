@@ -85,9 +85,9 @@ export default function StructureHealthPanel({ health, onSelectEntity }: Props) 
         </Badge>
         {totalIssues > 0 && (
           <span className="text-muted-foreground ml-1">
-            {health.errors.length > 0 && <span className="text-destructive font-semibold">{health.errors.length} error{health.errors.length !== 1 ? "s" : ""}</span>}
+            {health.errors.length > 0 && <span className="text-destructive font-semibold">{health.errors.length} conflicting</span>}
             {health.errors.length > 0 && health.warnings.length > 0 && ", "}
-            {health.warnings.length > 0 && <span>{health.warnings.length} warning{health.warnings.length !== 1 ? "s" : ""}</span>}
+            {health.warnings.length > 0 && <span>{health.warnings.length} to review</span>}
           </span>
         )}
         {expanded ? <ChevronDown className="ml-auto h-3.5 w-3.5" /> : <ChevronRight className="ml-auto h-3.5 w-3.5" />}
@@ -124,13 +124,13 @@ export default function StructureHealthPanel({ health, onSelectEntity }: Props) 
           <Tabs defaultValue={health.errors.length > 0 ? "errors" : "warnings"}>
             <TabsList className="h-7 w-full">
               <TabsTrigger value="errors" className="text-[10px] gap-1 flex-1" disabled={health.errors.length === 0}>
-                Errors ({health.errors.length})
+                Conflicting ({health.errors.length})
               </TabsTrigger>
               <TabsTrigger value="warnings" className="text-[10px] gap-1 flex-1" disabled={health.warnings.length === 0}>
-                Warnings ({health.warnings.length})
+                Review ({health.warnings.length})
               </TabsTrigger>
               <TabsTrigger value="info" className="text-[10px] gap-1 flex-1" disabled={health.info.length === 0}>
-                Info ({health.info.length})
+                Information ({health.info.length})
               </TabsTrigger>
             </TabsList>
             <TabsContent value="errors" className="mt-1 max-h-40 overflow-y-auto space-y-0.5">

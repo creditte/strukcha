@@ -56,13 +56,13 @@ export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: 
         {criticalCount > 0 && (
           <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
             <AlertCircle className="h-3 w-3" />
-            {criticalCount} critical
+            {criticalCount} conflicting
           </span>
         )}
         {warningCount > 0 && (
           <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-3 w-3" />
-            {warningCount} warning{warningCount !== 1 ? "s" : ""}
+            {warningCount} to review
           </span>
         )}
       </div>
@@ -72,7 +72,7 @@ export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: 
       {totalFixable > 0 && (
         <Button variant="default" size="sm" className="h-7 gap-1.5 text-xs" onClick={onFixIssues}>
           <Wrench className="h-3 w-3" />
-          Fix Issues
+          Review items
         </Button>
       )}
       <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-muted-foreground" onClick={onViewDetails}>

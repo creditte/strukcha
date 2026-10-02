@@ -213,7 +213,7 @@ export default function Review() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-success" />
                 <span className="text-sm font-medium text-foreground">
-                  {healthyCount} of {totalStructures} structures healthy
+                  {healthyCount} of {totalStructures} structures complete
                 </span>
               </div>
               <span className="text-sm font-semibold tabular-nums text-muted-foreground">
