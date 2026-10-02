@@ -118,7 +118,7 @@ async function buildReview(
       id: s.id,
       name: s.name,
       score: health.score,
-      status: getHealthStatus(health.score),
+      status: health.status,
       friendlyLabel: getScoreBand(health.score).label,
       issues: health.issues,
       criticalCount: health.criticalGaps.length,

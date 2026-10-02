@@ -8,7 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { HealthScoreV2, ScoringIssue } from "@/lib/structureScoring";
-import { getHealthStatus } from "@/lib/structureScoring";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -207,7 +206,7 @@ function AiLoadingSkeleton() {
 
 export default function ReviewDiagramPanel({ health, entities, relationships, structureName, structureId, onClose, onSelectEntity }: Props) {
   const { toast } = useToast();
-  const status = getHealthStatus(health.score);
+  const status = health.status;
 
   // Panel width state
   const [expanded, setExpanded] = useState(false);

@@ -1,5 +1,4 @@
 import { HeartPulse } from "lucide-react";
-import { getHealthStatus } from "@/lib/structureScoring";
 import type { HealthScoreV2 } from "@/lib/structureScoring";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -15,7 +14,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function CanvasHealthIndicator({ health, onClick }: Props) {
-  const status = getHealthStatus(health.score);
+  const status = health.status;
 
   return (
     <Tooltip>

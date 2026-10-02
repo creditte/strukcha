@@ -1,7 +1,6 @@
 import { HeartPulse, AlertTriangle, AlertCircle, Wrench, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { getHealthStatus } from "@/lib/structureScoring";
 import type { HealthScoreV2 } from "@/lib/structureScoring";
 
 interface Props {
@@ -11,7 +10,7 @@ interface Props {
 }
 
 export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: Props) {
-  const status = getHealthStatus(health.score);
+  const status = health.status;
   const criticalCount = health.issues.filter((i) => i.severity === "critical").length;
   const warningCount = health.issues.filter((i) => i.severity !== "critical" && i.severity !== "info").length;
   const totalFixable = health.issues.filter((i) => i.severity !== "info").length;
