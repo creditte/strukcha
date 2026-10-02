@@ -11,3 +11,12 @@ ALTER TABLE public.relationship_import_evidence
 
 CREATE INDEX IF NOT EXISTS rie_tenant_outcome_idx
   ON public.relationship_import_evidence (tenant_id, policy_outcome);
+
+-- Retry safety: with an import_run_id, the same raw fact is recorded once per
+-- run even if a chunk is re-sent after a lost progress save.
+ALTER TABLE public.relationship_import_evidence
+  ADD COLUMN IF NOT EXISTS dedupe_key text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS rie_run_dedupe_uidx
+  ON public.relationship_import_evidence (tenant_id, import_run_id, dedupe_key)
+  WHERE import_run_id IS NOT NULL AND dedupe_key IS NOT NULL;
