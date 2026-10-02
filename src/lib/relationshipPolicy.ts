@@ -232,7 +232,7 @@ export function evaluateRelationship(
     if (inner.outcome === "valid") {
       return { outcome: "reverse", reason: "child_alias_reversed", canonicalType: "parent", swapped: true, fromType: to, toType: from };
     }
-    return { ...inner, swapped: !inner.swapped, fromType: inner.swapped ? from : to, toType: inner.swapped ? to : from };
+    return { ...inner, swapped: !inner.swapped };
   }
 
   const rule = RULES.get(type);
@@ -258,8 +258,7 @@ export function evaluateRelationship(
   }
 
   if (fwd.result === "ok") {
-    if (!directionKnown && rev.result === "ok" && fc !== tc) return out("review", "ambiguous_direction");
-    if (!directionKnown && rev.result === "ok" && fc === tc) return out("review", "ambiguous_direction");
+    if (!directionKnown && rev.result === "ok") return out("review", "ambiguous_direction");
     return out("valid", "valid");
   }
   if (fwd.result === "resolve") return out("resolve_sole_trader", fwd.reason);
