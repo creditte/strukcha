@@ -1,42 +1,46 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { corsHeadersFor } from "../_shared/cors.ts";
+import { normaliseXpmRelationship, parseXpmLabel, type EvidenceDraft } from "../_shared/xpm-policy-normalise.ts";
+import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
+import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+let corsHeaders = corsHeadersFor(new Request("https://strukcha.app"));
 
-// ── Canonical relationship mapping ──────────────────────────────────────
-interface CanonicalRule {
-  type: string;
-  reverse: boolean;
+/**
+ * Rows a single slice hands to the database. Everything a slice does is now a
+ * SINGLE `import_xpm_batch` RPC — no per-row HTTP inserts, no `.in(...)`
+ * lookup chunking — so a slice can be large. The cap exists only to bound the
+ * JSON payload size of one request.
+ */
+const ROWS_PER_RUN = Number(Deno.env.get("XPM_IMPORT_ROWS_PER_RUN") ?? "2000");
+
+const MAX_WARNINGS = 200;
+
+/** Largest payload we accept in one upload — mirrors the client-side guard. */
+const MAX_CONTENT_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Failure carrying a stable machine code so the UI can show a plain,
+ * actionable message instead of raw server text.
+ */
+class ImportFailure extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
-const RELATIONSHIP_MAP: Record<string, CanonicalRule> = {
-  "director of":      { type: "director",      reverse: false },
-  "director":         { type: "director",      reverse: true  },
-  "shareholder of":   { type: "shareholder",   reverse: false },
-  "shareholder":      { type: "shareholder",   reverse: true  },
-  "beneficiary of":   { type: "beneficiary",   reverse: false },
-  "beneficiary":      { type: "beneficiary",   reverse: true  },
-  "trustee of":       { type: "trustee",       reverse: false },
-  "trustee":          { type: "trustee",       reverse: true  },
-  "appointer of":     { type: "appointer",     reverse: false },
-  "appointer":        { type: "appointer",     reverse: true  },
-  "appointor of":     { type: "appointer",     reverse: false },
-  "appointor":        { type: "appointer",     reverse: true  },
-  "settlor of":       { type: "settlor",       reverse: false },
-  "settlor":          { type: "settlor",       reverse: true  },
-  "partner of":       { type: "partner",       reverse: false },
-  "partner":          { type: "partner",       reverse: false },
-  "spouse":           { type: "spouse",        reverse: false },
-  "parent of":        { type: "parent",        reverse: false },
-  "parent":           { type: "parent",        reverse: true  },
-  "child of":         { type: "child",         reverse: false },
-  "child":            { type: "child",         reverse: true  },
-  "member of":        { type: "member",        reverse: false },
-  "member":           { type: "member",        reverse: true  },
-};
+function jsonError(code: string, message: string, status: number, detail = "") {
+  return new Response(JSON.stringify({ code, error: message, detail }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// ── Canonical relationship policy (Rulebook v1) ─────────────────────────
+// Labels are parsed and decided by the shared normaliser; this file holds no
+// relationship rules of its own.
 
 // Flat entity_type mapping from business structure strings
 const ENTITY_TYPE_MAP: Record<string, string> = {
@@ -58,6 +62,32 @@ const ENTITY_TYPE_MAP: Record<string, string> = {
   // Generic trust → Unclassified (needs manual review)
   trust: "Unclassified",
 };
+
+// ── Generic helpers ─────────────────────────────────────────────────────
+
+/**
+ * Retry a DB call on transient transport failures (HTTP/2 stream errors,
+ * connection resets, timeouts). Deterministic errors are re-thrown at once.
+ */
+async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message ?? e).toLowerCase();
+      const transient = msg.includes("http2") || msg.includes("sendrequest") ||
+        msg.includes("connection") || msg.includes("stream error") ||
+        msg.includes("error sending request") || msg.includes("timed out") ||
+        msg.includes("timeout") || msg.includes("reset");
+      if (!transient || attempt === attempts) break;
+      console.warn(`[import-xpm] transient failure in ${label} (attempt ${attempt}), retrying`);
+      await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastErr;
+}
 
 // ── Parsing helpers ─────────────────────────────────────────────────────
 
@@ -99,6 +129,11 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
+/**
+ * Parse the WHOLE payload exactly once per worker execution. Earlier versions
+ * re-split and re-parsed the file for every slice, which made a large file
+ * quadratic in field parsing; slices are now taken from this array.
+ */
 function parseCSV(text: string): RawRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
@@ -112,7 +147,6 @@ function parseCSV(text: string): RawRow[] {
     rel: header.findIndex((h) => h.includes("relationship")),
     related: header.findIndex((h) => h.includes("related")),
   };
-  console.log("CSV header indices:", JSON.stringify(idx), "from headers:", JSON.stringify(header));
 
   const rows: RawRow[] = [];
   for (let i = 1; i < lines.length; i++) {
@@ -137,15 +171,17 @@ function getTagText(record: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
+/** XML equivalent of parseCSV — also a single pass over the payload. */
 function parseXML(text: string): RawRow[] {
   const rows: RawRow[] = [];
   const recordRe = /<Record>([\s\S]*?)<\/Record>/gi;
   let m: RegExpExecArray | null;
-  let rowNum = 1;
+  let index = 0;
   while ((m = recordRe.exec(text)) !== null) {
+    const i = index++;
     const rec = m[1];
     rows.push({
-      rowNum: rowNum++,
+      rowNum: i + 1,
       groups: getTagText(rec, "Client-Groups"),
       client: getTagText(rec, "Client-Client"),
       uuid: getTagText(rec, "Client-UUID"),
@@ -157,369 +193,539 @@ function parseXML(text: string): RawRow[] {
   return rows;
 }
 
+function parseAll(text: string, isXml: boolean): RawRow[] {
+  return isXml ? parseXML(text) : parseCSV(text);
+}
+
+/**
+ * Count rows without materialising them — used at job creation so we never hold
+ * a parsed copy of a large file alongside the raw text.
+ */
+function countRows(text: string, isXml: boolean): number {
+  if (isXml) return (text.match(/<Record>/gi) ?? []).length;
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  return Math.max(0, lines.length - 1);
+}
+
+
+// ── Job progress shape ──────────────────────────────────────────────────
+
+type Phase = "importing" | "done";
+
+interface Progress {
+  phase: Phase | string;
+  rowIndex: number;
+  totalRowsParsed: number;
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  relationshipsCreated: number;
+  relationshipsSkipped: number;
+  structuresCreated: number;
+  /** Groups that could not be created because the plan's structure limit was hit. */
+  structuresSkippedLimit: number;
+  /** Rows that referenced a group which could not be created due to the limit. */
+  rowsSkippedLimit: number;
+  structureLimit: number;
+  limitReached: boolean;
+  /** Why groups were skipped: structure_limit_reached | subscription_inactive. */
+  limitCode: string | null;
+  /** Names of the groups that could not be created (bounded). */
+  blockedGroups: string[];
+  runs: number;
+  warnings: string[];
+}
+
+const MAX_BLOCKED_GROUPS = 200;
+
+function emptyProgress(total: number): Progress {
+  return {
+    phase: "importing",
+    rowIndex: 0,
+    totalRowsParsed: total,
+    entitiesCreated: 0,
+    entitiesUpdated: 0,
+    relationshipsCreated: 0,
+    relationshipsSkipped: 0,
+    structuresCreated: 0,
+    structuresSkippedLimit: 0,
+    rowsSkippedLimit: 0,
+    structureLimit: 0,
+    limitReached: false,
+    limitCode: null,
+    blockedGroups: [],
+    runs: 0,
+    warnings: [],
+  };
+}
+
+
+// ── One bounded slice of work: build payload → ONE RPC ──────────────────
+
+interface BatchResult {
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  structuresCreated: number;
+  structuresSkippedLimit: number;
+  structureLimit: number;
+  relationshipsCreated: number;
+  relationshipsSkipped: number;
+  warnings: string[];
+  limitCode: string | null;
+  unavailableGroups: string[];
+  unresolvedRels: { row: number; label: string }[];
+}
+
+async function runSlice(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string,
+  allRows: RawRow[],
+  progressIn: Progress,
+  importRunId: string,
+): Promise<Progress> {
+  const p: Progress = {
+    ...progressIn,
+    // Jobs created before these counters existed resume without them.
+    structuresSkippedLimit: progressIn.structuresSkippedLimit ?? 0,
+    rowsSkippedLimit: progressIn.rowsSkippedLimit ?? 0,
+    structureLimit: progressIn.structureLimit ?? 0,
+    limitReached: progressIn.limitReached ?? false,
+    limitCode: progressIn.limitCode ?? null,
+    blockedGroups: [...(progressIn.blockedGroups ?? [])],
+    warnings: [...(progressIn.warnings ?? [])],
+  };
+
+  p.runs += 1;
+  p.totalRowsParsed = allRows.length;
+
+  const end = Math.min(allRows.length, p.rowIndex + ROWS_PER_RUN);
+  const rows = allRows.slice(p.rowIndex, end);
+
+  const warn = (msg: string) => {
+    if (p.warnings.length < MAX_WARNINGS) p.warnings.push(msg);
+  };
+
+  // ── Build the payload entirely in memory (no DB calls) ────────────────
+  const wanted = new Map<string, { name: string; uuid: string | null; entity_type: string }>();
+  const groupNames = new Set<string>();
+
+  const noteEntity = (name: string, uuid: string | null, entityType: string) => {
+    const prev = wanted.get(name);
+    if (!prev) {
+      wanted.set(name, { name, uuid, entity_type: entityType });
+      return;
+    }
+    if (!prev.uuid && uuid) prev.uuid = uuid;
+    if (prev.entity_type === "Unclassified" && entityType !== "Unclassified") prev.entity_type = entityType;
+  };
+
+  const rowGroups: string[][] = rows.map((row) => {
+    const gs = row.groups ? row.groups.split(";").map((g) => g.trim()).filter(Boolean) : [];
+    for (const g of gs) groupNames.add(g);
+    return gs;
+  });
+
+  for (const row of rows) {
+    if (row.client) {
+      noteEntity(row.client, row.uuid || null, ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified");
+    }
+    if (row.relatedClient) noteEntity(row.relatedClient, null, "Unclassified");
+  }
+
+  // Structure membership pairs (deduped).
+  const memberKeys = new Set<string>();
+  const members: { grp: string; ent: string }[] = [];
+  rows.forEach((row, i) => {
+    for (const grp of rowGroups[i]) {
+      for (const ent of [row.client, row.relatedClient]) {
+        if (!ent) continue;
+        const key = `${grp}|${ent}`;
+        if (memberKeys.has(key)) continue;
+        memberKeys.add(key);
+        members.push({ grp, ent });
+      }
+    }
+  });
+
+  // Relationship candidates (deduped by canonical key).
+  interface RelPayload {
+    row: number;
+    type: string;
+    from_key: string;
+    to_key: string;
+    label: string;
+    groups: string[];
+  }
+  const relByKey = new Map<string, RelPayload>();
+  const evidence: EvidenceDraft[] = [];
+
+  // Entity types the database will hold after this batch: a stored classified
+  // type wins, otherwise the type sent here — the same rule import_xpm_batch
+  // applies (match by XPM UUID, else the oldest record with the same name).
+  const stored = await loadStoredEntities(supabase, tenantId);
+  const entityTypes = new Map<string, string>();
+  const storedIdByName = new Map<string, string>();
+  for (const w of wanted.values()) {
+    const s = (w.uuid ? stored.byUuid.get(w.uuid) : undefined) ?? stored.byName.get(w.name);
+    entityTypes.set(w.name, s && s.type !== "Unclassified" ? s.type : w.entity_type);
+    if (s) storedIdByName.set(w.name, s.id);
+  }
+  const soleTraderNames = [...entityTypes].filter(([n, t]) => t === "Sole Trader" && storedIdByName.has(n)).map(([n]) => n);
+  const tradesAsOwners = new Map<string, string[]>();
+  if (soleTraderNames.length > 0) {
+    const ta = await loadTradesAsOwners(supabase, tenantId, soleTraderNames.map((n) => storedIdByName.get(n)!));
+    for (const [id, t] of ta.ownerTypes) if (!entityTypes.has(id)) entityTypes.set(id, t);
+    for (const n of soleTraderNames) {
+      const owners = ta.owners.get(storedIdByName.get(n)!);
+      if (owners) tradesAsOwners.set(n, owners);
+    }
+  }
+  const ctx = { entityTypes, tradesAsOwners };
+
+  rows.forEach((row, i) => {
+    if (!row.relationshipType || !row.client || !row.relatedClient) return;
+
+    const label = row.relationshipType
+      .replace(/^"+|"+$/g, '')
+      .replace(/""+/g, '"')
+      .trim();
+    if (!parseXpmLabel(label).type) {
+      warn(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
+    }
+
+    // One evidence draft per raw row; only canonical edges become rels.
+    const { evidence: draft, edge } = normaliseXpmRelationship({
+      label,
+      clientId: row.client,
+      relatedId: row.relatedClient,
+      clientName: row.client,
+      relatedName: row.relatedClient,
+      payload: { row: row.rowNum, groups: rowGroups[i] },
+    }, ctx);
+    evidence.push(draft);
+    if (!edge) {
+      p.relationshipsSkipped++;
+      return;
+    }
+
+    // Spouse alone is unordered; Partner and every other type keep direction.
+    const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
+    const existing = relByKey.get(key);
+    if (existing) {
+      for (const g of rowGroups[i]) if (!existing.groups.includes(g)) existing.groups.push(g);
+      return;
+    }
+    relByKey.set(key, {
+      row: row.rowNum,
+      type: edge.type,
+      from_key: edge.fromId,
+      to_key: edge.toId,
+      label: `${edge.type} "${row.client}" → "${row.relatedClient}"`,
+      groups: [...rowGroups[i]],
+    });
+  });
+
+  // ── ONE round trip for the whole slice ───────────────────────────────
+  const { data, error } = await withRetry("import_xpm_batch", () =>
+    supabase.rpc("import_xpm_batch", {
+      _tenant_id: tenantId,
+      _payload: {
+        entities: [...wanted.values()],
+        groups: [...groupNames],
+        members,
+        contract: "canonical_v1",
+        import_source: "xpm_csv",
+        import_run_id: importRunId,
+        rels: [...relByKey.values()],
+        evidence,
+      },
+    }));
+
+  if (error) throw new ImportFailure("database", `Import batch failed: ${error.message}`);
+  const res = (data ?? {}) as unknown as BatchResult;
+
+  p.entitiesCreated += res.entitiesCreated ?? 0;
+  p.entitiesUpdated += res.entitiesUpdated ?? 0;
+  p.structuresCreated += res.structuresCreated ?? 0;
+  p.structuresSkippedLimit += res.structuresSkippedLimit ?? 0;
+  p.relationshipsCreated += res.relationshipsCreated ?? 0;
+  p.relationshipsSkipped += res.relationshipsSkipped ?? 0;
+  if (res.structureLimit) p.structureLimit = res.structureLimit;
+  if ((res.structuresSkippedLimit ?? 0) > 0) p.limitReached = true;
+  if (res.limitCode && !p.limitCode) p.limitCode = res.limitCode;
+
+  for (const w of res.warnings ?? []) warn(String(w));
+
+  // Rows whose grouping was lost because a structure could not be created.
+  const unavailable = new Set(res.unavailableGroups ?? []);
+  if (unavailable.size > 0) {
+    for (const g of unavailable) {
+      if (p.blockedGroups.length < MAX_BLOCKED_GROUPS && !p.blockedGroups.includes(g)) {
+        p.blockedGroups.push(g);
+      }
+    }
+    for (const gs of rowGroups) {
+      if (gs.some((g) => unavailable.has(g))) p.rowsSkippedLimit++;
+    }
+  }
+
+  for (const u of res.unresolvedRels ?? []) {
+    p.relationshipsSkipped++;
+    warn(`Row ${u.row}: Could not resolve entities for ${u.label}`);
+  }
+
+  p.rowIndex = end;
+  if (p.rowIndex >= allRows.length) p.phase = "done";
+  return p;
+}
+
+/** Live entities of the tenant, keyed by XPM UUID and by (oldest) name. */
+async function loadStoredEntities(supabase: ReturnType<typeof createClient>, tenantId: string) {
+  const byUuid = new Map<string, { id: string; type: string }>();
+  const byName = new Map<string, { id: string; type: string }>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await withRetry("load entities", async () => {
+      const r = await supabase
+        .from("entities")
+        .select("id, name, xpm_uuid, entity_type")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
+      return r;
+    });
+    if (error) throw new ImportFailure("database", `Could not read existing entities: ${error.message}`);
+    for (const e of (data ?? []) as Array<{ id: string; name: string; xpm_uuid: string | null; entity_type: string }>) {
+      const v = { id: e.id, type: e.entity_type };
+      if (e.xpm_uuid && !byUuid.has(e.xpm_uuid)) byUuid.set(e.xpm_uuid, v);
+      if (!byName.has(e.name)) byName.set(e.name, v);
+    }
+    if (!data || data.length < PAGE) break;
+  }
+  return { byUuid, byName };
+}
+
+// ── Background driver: slices, persist, hand off to a fresh worker ──────
+
+async function processJob(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceKey: string,
+  logId: string,
+) {
+  const { data: log } = await supabase
+    .from("import_logs")
+    .select("id, tenant_id, file_name, raw_payload, result, status")
+    .eq("id", logId)
+    .maybeSingle();
+
+  if (!log || log.status !== "processing") return;
+
+  const fileName = (log.file_name as string) ?? "import.csv";
+  const content = (log.raw_payload as string) ?? "";
+  const progress = (log.result as Progress | null) ?? emptyProgress(0);
+  let current = progress;
+
+  try {
+    // Parse the payload ONCE for this execution, then slice from memory.
+    const allRows = parseAll(content, fileName.toLowerCase().endsWith(".xml"));
+
+    // Heartbeat before any heavy work, so a worker death is visible as a
+    // stalled `updated_at` (and gets reaped) rather than an invisible hang.
+    await supabase
+      .from("import_logs")
+      .update({ status: "processing", result: { ...current, totalRowsParsed: allRows.length } })
+      .eq("id", logId);
+
+    const started = Date.now();
+    const BUDGET_MS = 45_000;
+    let done = false;
+
+    for (;;) {
+      current = await runSlice(supabase, log.tenant_id as string, allRows, current, logId);
+      done = current.phase === "done";
+      await supabase
+        .from("import_logs")
+        .update({ status: done ? "completed" : "processing", result: current })
+        .eq("id", logId);
+      if (done || Date.now() - started > BUDGET_MS) break;
+    }
+
+    if (!done) {
+      // Chain a fresh worker so no single execution can exhaust its budget.
+      await fetch(`${supabaseUrl}/functions/v1/import-xpm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceKey}`,
+          apikey: serviceKey,
+        },
+        body: JSON.stringify({ jobId: logId, __continue: true }),
+      });
+    }
+
+  } catch (err) {
+    console.error("import-xpm slice failed:", err);
+    // rowIndex is only advanced on success, so a retry resumes at the start of
+    // the failed slice; every write in a slice is idempotent (lookup-then-
+    // insert / upsert), so nothing is duplicated.
+    await supabase
+      .from("import_logs")
+      .update({
+        status: "failed",
+        result: {
+          ...current,
+          error: err instanceof Error ? err.message : String(err),
+          errorCode: err instanceof ImportFailure ? err.code : "unknown",
+        },
+      })
+      .eq("id", logId);
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const supabase = createClient(supabaseUrl, serviceKey);
+
   try {
     const authHeader = req.headers.get("authorization") ?? "";
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const body = await req.json().catch(() => ({}));
 
-    const supabase = createClient(supabaseUrl, serviceKey);
+    // ── Internal continuation call ──────────────────────────────────────
+    if (body?.__continue && body?.jobId) {
+      if (authHeader !== `Bearer ${serviceKey}`) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const jobId = body.jobId as string;
+      // deno-lint-ignore no-explicit-any
+      const runtime = (globalThis as any).EdgeRuntime;
+      const task = processJob(supabase, supabaseUrl, serviceKey, jobId);
+      if (runtime?.waitUntil) runtime.waitUntil(task); else await task;
+      return new Response(JSON.stringify({ status: "processing", jobId }), {
+        status: 202,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // Verify caller
+    // ── User-initiated import ───────────────────────────────────────────
     const anonClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: authErr } = await anonClient.auth.getUser();
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("unauthorized", "Your session has expired.", 401);
     }
 
-    // Get tenant
     const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
     if (!tenantId) {
-      return new Response(JSON.stringify({ error: "No tenant found" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonError("unauthorized", "No workspace found for this account.", 400);
     }
 
-    const { fileName, content } = await req.json();
-    if (!content || !fileName) {
-      return new Response(JSON.stringify({ error: "Missing fileName or content" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Abandoned jobs must not stay "processing" forever.
+    await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 10 });
 
-    // Parse
-    const isXml = fileName.toLowerCase().endsWith(".xml");
-    const rows = isXml ? parseXML(content) : parseCSV(content);
-    if (rows.length === 0) {
-      return new Response(JSON.stringify({ error: "No records found in file" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const warnings: string[] = [];
-    let entitiesCreated = 0;
-    let entitiesUpdated = 0;
-    let relationshipsCreated = 0;
-    let relationshipsSkipped = 0;
-    let structuresCreated = 0;
-
-    // ── Helper: resolve or create an entity by uuid/name ────────────────
-    const entityIdCache = new Map<string, string>();
-
-    async function resolveEntity(
-      name: string,
-      xpmUuid: string | null,
-      entityType: string,
-      rowNum: number,
-    ): Promise<string | null> {
-      if (!name) return null;
-
-      const cacheKey = xpmUuid || name;
-      if (entityIdCache.has(cacheKey)) return entityIdCache.get(cacheKey)!;
-      if (xpmUuid && entityIdCache.has(name)) return entityIdCache.get(name)!;
-
-      let existing: { id: string; entity_type: string; xpm_uuid: string | null } | null = null;
-
-      if (xpmUuid) {
-        const { data } = await supabase
-          .from("entities")
-          .select("id, entity_type, xpm_uuid")
-          .eq("tenant_id", tenantId)
-          .eq("xpm_uuid", xpmUuid)
-          .maybeSingle();
-        existing = data;
-      }
-
-      if (!existing) {
-        const { data } = await supabase
-          .from("entities")
-          .select("id, entity_type, xpm_uuid")
-          .eq("tenant_id", tenantId)
-          .eq("name", name)
-          .maybeSingle();
-        existing = data;
-      }
-
-      if (existing) {
-        const updates: Record<string, string> = {};
-        if (entityType !== "Unclassified" && existing.entity_type === "Unclassified") {
-          updates.entity_type = entityType;
-          updates.source = "imported";
-        }
-        if (xpmUuid && !existing.xpm_uuid) {
-          updates.xpm_uuid = xpmUuid;
-        }
-        if (Object.keys(updates).length > 0) {
-          await supabase.from("entities").update(updates).eq("id", existing.id);
-          entitiesUpdated++;
-        }
-
-        entityIdCache.set(cacheKey, existing.id);
-        if (cacheKey !== name) entityIdCache.set(name, existing.id);
-        return existing.id;
-      }
-
-      const { data, error } = await supabase
-        .from("entities")
-        .insert({
-          tenant_id: tenantId,
-          name,
-          xpm_uuid: xpmUuid,
-          entity_type: entityType,
-          source: "imported",
-        })
-        .select("id")
-        .single();
-
-      if (error) {
-        warnings.push(`Row ${rowNum}: Failed to create entity "${name}": ${error.message}`);
-        return null;
-      }
-
-      entityIdCache.set(cacheKey, data.id);
-      if (cacheKey !== name) entityIdCache.set(name, data.id);
-      entitiesCreated++;
-      return data.id;
-    }
-
-    // ── 1. First pass: resolve all entities ─────────────────────────────
-    for (const row of rows) {
-      if (row.client) {
-        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-        await resolveEntity(row.client, row.uuid || null, et, row.rowNum);
-      }
-      if (row.relatedClient) {
-        await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum);
-      }
-    }
-
-    // ── 2. Structures from Group(s) ────────────────────────────────────
-    const structureIdByName = new Map<string, string>();
-    const structureEntityPairs = new Set<string>();
-
-    for (const row of rows) {
-      if (!row.groups) continue;
-      const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
-      for (const gn of groupNames) {
-        if (!structureIdByName.has(gn)) {
-          const { data: existing } = await supabase
-            .from("structures")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .eq("name", gn)
-            .maybeSingle();
-          if (existing) {
-            structureIdByName.set(gn, existing.id);
-          } else {
-            const { data, error } = await supabase
-              .from("structures")
-              .insert({ tenant_id: tenantId, name: gn })
-              .select("id")
-              .single();
-            if (error) {
-              warnings.push(`Row ${row.rowNum}: Failed to create structure "${gn}": ${error.message}`);
-              continue;
-            }
-            structureIdByName.set(gn, data.id);
-            structuresCreated++;
-          }
-        }
-
-        const clientId = entityIdCache.get(row.uuid || row.client);
-        const structureId = structureIdByName.get(gn);
-        if (clientId && structureId) {
-          const pairKey = `${structureId}:${clientId}`;
-          if (!structureEntityPairs.has(pairKey)) {
-            structureEntityPairs.add(pairKey);
-            await supabase
-              .from("structure_entities")
-              .upsert({ structure_id: structureId, entity_id: clientId }, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
-          }
-        }
-
-        const relatedId = entityIdCache.get(row.relatedClient);
-        if (relatedId && structureId) {
-          const pairKey = `${structureId}:${relatedId}`;
-          if (!structureEntityPairs.has(pairKey)) {
-            structureEntityPairs.add(pairKey);
-            await supabase
-              .from("structure_entities")
-              .upsert({ structure_id: structureId, entity_id: relatedId }, { onConflict: "structure_id,entity_id", ignoreDuplicates: true });
-          }
-        }
-      }
-    }
-
-    // ── 3. Relationships – iterate EVERY row ───────────────────────────
-    const relDedupeSet = new Set<string>();
-
-    for (const row of rows) {
-      if (!row.relationshipType || !row.client || !row.relatedClient) continue;
-
-      const normalizedRelType = row.relationshipType
-        .replace(/^"+|"+$/g, '')
-        .replace(/""+/g, '"')
-        .trim()
-        .toLowerCase();
-      console.log(`Row ${row.rowNum}: relType="${row.relationshipType}" normalized="${normalizedRelType}" client="${row.client}" related="${row.relatedClient}"`);
-      const rule = RELATIONSHIP_MAP[normalizedRelType];
-      if (!rule) {
-        warnings.push(`Row ${row.rowNum}: Unknown relationship type "${row.relationshipType}"`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      const clientKey = row.uuid || row.client;
-      let fromId = entityIdCache.get(clientKey);
-      let toId = entityIdCache.get(row.relatedClient);
-
-      if (!fromId) {
-        const et = ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified";
-        fromId = await resolveEntity(row.client, row.uuid || null, et, row.rowNum) ?? undefined;
-      }
-      if (!toId) {
-        toId = await resolveEntity(row.relatedClient, null, "Unclassified", row.rowNum) ?? undefined;
-      }
-
-      if (!fromId || !toId) {
-        warnings.push(`Row ${row.rowNum}: Could not resolve entities for "${row.client}" → "${row.relatedClient}"`);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      if (rule.reverse) {
-        [fromId, toId] = [toId, fromId];
-      }
-
-      if (rule.type === "spouse" || rule.type === "partner") {
-        if (fromId > toId) [fromId, toId] = [toId, fromId];
-      }
-
-      // Enforce Individual → SMSF direction for member relationships
-      if (rule.type === "member") {
-        const fromEntity = entityIdCache.get(row.client) || entityIdCache.get(row.uuid);
-        const toEntity = entityIdCache.get(row.relatedClient);
-        // Look up entity types to check if we need to flip
-        if (fromId && toId) {
-          const { data: fromEnt } = await supabase.from("entities").select("entity_type").eq("id", fromId).single();
-          const { data: toEnt } = await supabase.from("entities").select("entity_type").eq("id", toId).single();
-          if (fromEnt?.entity_type === "smsf" && toEnt?.entity_type === "Individual") {
-            [fromId, toId] = [toId, fromId];
-          }
-        }
-      }
-
-      const dedupeKey = `${rule.type}:${fromId}:${toId}`;
-      if (relDedupeSet.has(dedupeKey)) {
-        continue;
-      }
-      relDedupeSet.add(dedupeKey);
-
-      const { data: existingRel } = await supabase
-        .from("relationships")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("from_entity_id", fromId)
-        .eq("to_entity_id", toId)
-        .eq("relationship_type", rule.type)
+    // ── Resume an existing job (failed or interrupted) ───────────────────
+    if (body?.resumeJobId) {
+      const resumeId = String(body.resumeJobId);
+      const { data: existing } = await supabase
+        .from("import_logs")
+        .select("id, tenant_id, status")
+        .eq("id", resumeId)
         .maybeSingle();
 
-      if (existingRel) {
-        await linkRelToStructures(existingRel.id, row);
-        continue;
+      if (!existing || existing.tenant_id !== tenantId) {
+        return jsonError("unknown", "That import could not be found in your workspace.", 404);
       }
-
-      const { data: relData, error: relErr } = await supabase
-        .from("relationships")
-        .insert({
-          tenant_id: tenantId,
-          from_entity_id: fromId,
-          to_entity_id: toId,
-          relationship_type: rule.type,
-          source: "imported",
-          confidence: "imported",
-        })
-        .select("id")
-        .single();
-
-      if (relErr) {
-        warnings.push(`Row ${row.rowNum}: Failed to create relationship ${rule.type} "${row.client}" → "${row.relatedClient}": ${relErr.message}`);
-        relationshipsSkipped++;
-        continue;
+      if (existing.status === "completed") {
+        return jsonError("unknown", "That import already finished.", 400);
       }
+      await supabase.from("import_logs").update({ status: "processing" }).eq("id", resumeId);
 
-      relationshipsCreated++;
-      await linkRelToStructures(relData.id, row);
+      // deno-lint-ignore no-explicit-any
+      const rt = (globalThis as any).EdgeRuntime;
+      const resumeTask = processJob(supabase, supabaseUrl, serviceKey, resumeId);
+      if (rt?.waitUntil) rt.waitUntil(resumeTask); else await resumeTask;
 
-      // Auto-set is_trustee_company for companies acting as trustee for a trust
-      if (rule.type === "trustee") {
-        // fromId is the trustee entity (person/company acting as trustee)
-        const { data: trusteeEnt } = await supabase.from("entities").select("entity_type, is_trustee_company").eq("id", fromId).single();
-        if (trusteeEnt && trusteeEnt.entity_type === "Company" && !trusteeEnt.is_trustee_company) {
-          await supabase.from("entities").update({ is_trustee_company: true }).eq("id", fromId);
-        }
-      }
+      return new Response(JSON.stringify({ status: "processing", jobId: resumeId }), {
+        status: 202,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    async function linkRelToStructures(relationshipId: string, row: RawRow) {
-      if (!row.groups) return;
-      const groupNames = row.groups.split(";").map((g) => g.trim()).filter(Boolean);
-      for (const gn of groupNames) {
-        const structureId = structureIdByName.get(gn);
-        if (structureId) {
-          await supabase
-            .from("structure_relationships")
-            .upsert(
-              { structure_id: structureId, relationship_id: relationshipId },
-              { onConflict: "structure_id,relationship_id", ignoreDuplicates: true }
-            );
-        }
-      }
+    const { fileName, content } = body ?? {};
+    if (!content || !fileName) {
+      return jsonError("wrong_report", "No file content was received.", 400);
     }
 
-    // ── 4. Import log ──────────────────────────────────────────────────
-    const result = {
-      entitiesCreated,
-      entitiesUpdated,
-      relationshipsCreated,
-      relationshipsSkipped,
-      structuresCreated,
-      totalRowsParsed: rows.length,
-      warnings,
-    };
+    const contentBytes = new TextEncoder().encode(String(content)).length;
+    if (contentBytes > MAX_CONTENT_BYTES) {
+      return jsonError(
+        "file_too_large",
+        "That report is too large to import in one upload.",
+        413,
+        `${(contentBytes / 1024 / 1024).toFixed(1)} MB received, ${MAX_CONTENT_BYTES / 1024 / 1024} MB maximum.`,
+      );
+    }
 
-    await supabase.from("import_logs").insert({
-      tenant_id: tenantId,
-      user_id: user.id,
-      file_name: fileName,
-      raw_payload: content,
-      status: "completed",
-      result,
-    });
+    const isXml = String(fileName).toLowerCase().endsWith(".xml");
+    const totalRows = countRows(content, isXml);
+    if (totalRows === 0) {
+      return jsonError("no_records", "No client records were found in that file.", 400);
+    }
 
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+
+    const { data: log, error: logErr } = await supabase
+      .from("import_logs")
+      .insert({
+        tenant_id: tenantId,
+        user_id: user.id,
+        file_name: fileName,
+        raw_payload: content,
+        status: "processing",
+        result: emptyProgress(totalRows),
+      })
+      .select("id")
+      .single();
+
+    if (logErr || !log) {
+      return jsonError(
+        "database",
+        "The import could not be started.",
+        500,
+        logErr?.message ?? "",
+      );
+    }
+
+    // deno-lint-ignore no-explicit-any
+    const runtime = (globalThis as any).EdgeRuntime;
+    const task = processJob(supabase, supabaseUrl, serviceKey, log.id as string);
+    if (runtime?.waitUntil) runtime.waitUntil(task); else await task;
+
+    return new Response(
+      JSON.stringify({ status: "processing", jobId: log.id, totalRowsParsed: totalRows }),
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (err) {
     console.error("import-xpm error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const detail = err instanceof Error ? err.message : String(err);
+    return jsonError(
+      err instanceof ImportFailure ? err.code : "unknown",
+      "The import could not be started.",
+      500,
+      detail,
+    );
   }
 });

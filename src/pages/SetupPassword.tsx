@@ -41,7 +41,7 @@ export default function SetupPassword() {
       if (user) {
         await supabase
           .from("profiles")
-          .update({ onboarding_complete: true })
+          .update({ onboarding_complete: true, password_set: true } as any)
           .eq("user_id", user.id);
       }
 

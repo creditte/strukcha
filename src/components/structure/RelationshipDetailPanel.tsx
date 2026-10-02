@@ -9,20 +9,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getEntityLabel } from "@/lib/entityTypes";
 import {
-  RELATIONSHIP_RULES,
-  isDirectionValid,
   isReverseAllowed,
   getDirectionError,
   getRelationshipLabel,
-  getMetadataFields,
   getEffectiveMetadataFields,
-  hasMetadataFields,
   getValidRelationshipTypes,
-  isDiscretionaryTrustBeneficiary,
 } from "@/lib/relationshipRules";
+import { CREATABLE_RELATIONSHIP_TYPES, evaluateRelationship } from "@/lib/relationshipPolicy";
+import { planReverse, planTypeChange } from "@/lib/manualRelationship";
+import { manualRelationshipDeps } from "@/lib/manualRelationshipDeps";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
-const ALL_TYPE_VALUES = RELATIONSHIP_RULES.map((r) => r.type);
 
 interface Props {
   relationship: RelationshipEdge;
@@ -49,28 +46,35 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
   const [confirmReverse, setConfirmReverse] = useState(false);
   const [reversing, setReversing] = useState(false);
 
-  // Check if current relationship is invalid per rules
-  const isInvalid = fromEntity && toEntity
-    ? !isDirectionValid(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
-    : false;
+  // Current status per the canonical policy (review is not valid).
+  const currentEval = fromEntity && toEntity
+    ? evaluateRelationship(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
+    : null;
+  const isInvalid = !!currentEval && currentEval.outcome !== "valid";
+  const isReviewState = currentEval?.outcome === "review" || currentEval?.outcome === "resolve_sole_trader";
   const invalidMessage = fromEntity && toEntity
     ? getDirectionError(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
     : null;
 
-  // Valid types for editing (filtered by entity pair)
+  // Edit types: creatable types valid exactly as stored (endpoints don't change on edit).
   const editValidTypes = fromEntity && toEntity
-    ? getValidRelationshipTypes(ALL_TYPE_VALUES, fromEntity.entity_type, toEntity.entity_type)
-    : [...ALL_TYPE_VALUES];
+    ? getValidRelationshipTypes(CREATABLE_RELATIONSHIP_TYPES, fromEntity.entity_type, toEntity.entity_type)
+    : [];
 
-  const isDiscTrustBene = toEntity ? isDiscretionaryTrustBeneficiary(editType, toEntity.entity_type) : false;
-  const editMeta = isDiscTrustBene ? [] : [...getMetadataFields(editType)];
+  const editMeta = [...getEffectiveMetadataFields(editType, toEntity?.entity_type)];
+  const siblings = allRelationships.map((r) => ({
+    id: r.id,
+    relationship_type: r.relationship_type,
+    from_entity_id: r.from_entity_id,
+    to_entity_id: r.to_entity_id,
+  }));
 
   const handleSave = async () => {
-    // Validate the new type against entity types
-    if (fromEntity && toEntity) {
-      const error = getDirectionError(editType, fromEntity.entity_type, toEntity.entity_type);
-      if (error) {
-        toast({ title: "Invalid relationship", description: error, variant: "destructive" });
+    if (!fromEntity || !toEntity) return;
+    if (editType !== relationship.relationship_type) {
+      const plan = await planTypeChange(editType, fromEntity, toEntity, siblings, relationship.id, manualRelationshipDeps);
+      if (!plan.ok) {
+        toast({ title: plan.title, description: plan.description, variant: "destructive" });
         return;
       }
     }
@@ -82,15 +86,9 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     }
     setSaving(true);
     const updates: Record<string, unknown> = { relationship_type: editType };
-    if (hasMetadataFields(editType)) {
-      updates.ownership_percent = pctVal;
-      updates.ownership_units = editUnits ? parseFloat(editUnits) : null;
-      updates.ownership_class = editClass || null;
-    } else {
-      updates.ownership_percent = null;
-      updates.ownership_units = null;
-      updates.ownership_class = null;
-    }
+    updates.ownership_percent = editMeta.includes("ownership_percent") ? pctVal : null;
+    updates.ownership_units = editMeta.includes("ownership_units") && editUnits ? parseFloat(editUnits) : null;
+    updates.ownership_class = editMeta.includes("ownership_class") && editClass ? editClass : null;
     const { error } = await supabase
       .from("relationships")
       .update(updates as any)
@@ -121,47 +119,23 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
     setDeleting(false);
   };
 
-  // Check if reversing would fix an invalid relationship
+  // Reversal is offered only when the reversed row is valid per policy.
   const wouldReverseBeValid = fromEntity && toEntity
-    ? isDirectionValid(relationship.relationship_type, toEntity.entity_type, fromEntity.entity_type)
+    ? isReverseAllowed(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
     : false;
 
   const handleReverseClick = () => {
-    // Allow reverse if the relationship is currently invalid and reversing would fix it
-    if (!isInvalid && !isReverseAllowed(relationship.relationship_type, fromEntity?.entity_type ?? "Unclassified", toEntity?.entity_type ?? "Unclassified")) {
-      toast({
-        title: "Cannot reverse",
-        description: "This relationship type has a required direction and cannot be reversed.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (isInvalid && !wouldReverseBeValid) {
-      toast({
-        title: "Cannot reverse",
-        description: "Reversing would not fix this invalid relationship. Consider deleting it instead.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const duplicate = allRelationships.find(
-      (r) =>
-        r.id !== relationship.id &&
-        r.from_entity_id === relationship.to_entity_id &&
-        r.to_entity_id === relationship.from_entity_id &&
-        r.relationship_type === relationship.relationship_type
+    if (!fromEntity || !toEntity) return;
+    const plan = planReverse(
+      { id: relationship.id, relationship_type: relationship.relationship_type, from_entity_id: relationship.from_entity_id, to_entity_id: relationship.to_entity_id },
+      fromEntity,
+      toEntity,
+      siblings,
     );
-    if (duplicate) {
-      toast({
-        title: "Duplicate exists",
-        description: "A relationship with the reversed direction already exists.",
-        variant: "destructive",
-      });
+    if (!plan.ok) {
+      toast({ title: plan.kind === "duplicate" ? plan.title : "Cannot reverse", description: plan.description, variant: "destructive" });
       return;
     }
-
     setConfirmReverse(true);
   };
 
@@ -234,7 +208,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
           <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
             <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="text-xs font-medium text-destructive">Invalid Relationship</p>
+              <p className="text-xs font-medium text-destructive">{isReviewState ? "Needs review" : "Invalid Relationship"}</p>
               <p className="text-xs text-destructive/80 mt-0.5">{invalidMessage}</p>
               <div className="flex gap-2 mt-2">
                 {wouldReverseBeValid && (
@@ -309,7 +283,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
         </div>
 
         {/* Metadata fields */}
-        {(editing ? editMeta : (toEntity && isDiscretionaryTrustBeneficiary(relationship.relationship_type, toEntity.entity_type) ? [] : getMetadataFields(relationship.relationship_type))).length > 0 && (
+        {(editing ? editMeta : getEffectiveMetadataFields(relationship.relationship_type, toEntity?.entity_type)).length > 0 && (
           editing ? (
             <>
               {editMeta.includes("ownership_percent") && (
@@ -370,7 +344,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
 
         {editing && (
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">
+            <Button size="sm" onClick={handleSave} disabled={saving || !editValidTypes.includes(editType)} className="flex-1">
               {saving ? "Saving..." : "Save"}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setEditing(false)} className="flex-1">

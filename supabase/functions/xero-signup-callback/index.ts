@@ -1,8 +1,12 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { encryptToken } from "../_shared/crypto.ts";
 import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { TRIAL_GROUP_LIMIT } from "../_shared/stripe-plans.ts";
 
 type PendingSignup = {
   firm_name: string;
@@ -35,7 +39,7 @@ Deno.serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const oauthError = url.searchParams.get("error");
 
-    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
 
     if (oauthError) {
       console.error("Xero OAuth error:", oauthError);
@@ -54,7 +58,7 @@ Deno.serve(async (req) => {
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       csrfToken = state.csrf;
-      frontendUrl = state.origin || defaultFrontendUrl;
+      frontendUrl = safeFrontend(state.origin);
       if (state.flow !== "signup") {
         return Response.redirect(`${frontendUrl}/signup?xero_signup=error&reason=invalid_flow`, 302);
       }
@@ -125,6 +129,8 @@ Deno.serve(async (req) => {
       refresh_token?: string;
       expires_in: number;
       id_token?: string;
+      scope?: string;
+
     };
 
     if (!tokens.id_token) {
@@ -172,6 +178,7 @@ Deno.serve(async (req) => {
       user_metadata: {
         full_name: fullName,
         signup_source: "xero",
+        auth_method: "xero",
         ...(xeroUserId ? { xero_userid: xeroUserId } : {}),
       },
     });
@@ -184,20 +191,21 @@ Deno.serve(async (req) => {
 
     const userId = authData.user.id;
     const now = new Date();
-    const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const planLimits: Record<string, number> = { starter: 15, pro: 50 };
-    const diagramLimit = planLimits[plan] || 50;
 
+    // No trial here — Stripe creates and manages the 7-day trial once the owner
+    // attaches a payment method through Checkout (/complete-setup).
     const { data: tenant, error: tenantError } = await supabase
       .from("tenants")
       .insert({
         name: firmName.toLowerCase().replace(/\s+/g, "-"),
         firm_name: firmName,
-        trial_starts_at: now.toISOString(),
-        trial_ends_at: trialEnd.toISOString(),
-        subscription_status: "trialing",
+        subscription_status: "incomplete",
         subscription_plan: plan,
-        diagram_limit: diagramLimit,
+        selected_plan: plan,
+        diagram_limit: TRIAL_GROUP_LIMIT,
+        payment_method_captured: false,
+        access_enabled: false,
+        access_locked_reason: "payment_method_required",
       })
       .select("id")
       .single();
@@ -207,17 +215,17 @@ Deno.serve(async (req) => {
       return Response.redirect(`${frontendUrl}/signup?xero_signup=error&reason=tenant_failed`, 302);
     }
 
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
-        const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+        const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
         const customer = await stripe.customers.create({
           email,
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
         });
         await supabase.from("tenants").update({
           stripe_customer_id: customer.id,
-          trial_used_at: now.toISOString(),
+          stripe_mode: stripeMode(),
         }).eq("id", tenant.id);
       } catch (stripeErr: unknown) {
         console.error("[xero-signup-callback] Stripe:", stripeErr);
@@ -258,9 +266,17 @@ Deno.serve(async (req) => {
       user_id: userId,
       role: "admin",
     });
-    if (roleError) {
+    if (roleError && roleError.code !== "23505") {
       console.error("[xero-signup-callback] user_roles:", roleError);
     }
+    // The new-user trigger first parks everyone as a plain "user" of the
+    // fallback firm; the owner of a brand-new firm should only be "admin".
+    await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", "user");
+
+    const connectionType: "practice_manager" | "standard" =
+      pending.connection_type === "standard" || pending.connection_type === "accounting"
+        ? "standard"
+        : "practice_manager";
 
     const connectionsRes = await fetch("https://api.xero.com/connections", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
@@ -268,10 +284,18 @@ Deno.serve(async (req) => {
     let xeroTenantId: string | null = null;
     let xeroOrgName: string | null = null;
     if (connectionsRes.ok) {
-      const connections = await connectionsRes.json() as Array<{ tenantId?: string; tenantName?: string }>;
-      if (connections.length > 0) {
-        xeroTenantId = connections[0].tenantId ?? null;
-        xeroOrgName = connections[0].tenantName ?? null;
+      const connections = await connectionsRes.json() as Array<
+        { tenantId?: string; tenantName?: string; tenantType?: string }
+      >;
+      // Match the organisation to what was authorised — a Practice Manager
+      // sign-up must not store a plain organisation, or client sync fails 401.
+      const preferred = connectionType === "practice_manager"
+        ? connections.find((c) => c.tenantType === "PRACTICEMANAGER")
+        : connections.find((c) => c.tenantType !== "PRACTICEMANAGER");
+      const chosen = preferred ?? connections[0];
+      if (chosen) {
+        xeroTenantId = chosen.tenantId ?? null;
+        xeroOrgName = chosen.tenantName ?? null;
       }
     }
 
@@ -289,6 +313,14 @@ Deno.serve(async (req) => {
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
           expires_at: expiresAt,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
+          last_refresh_at: now.toISOString(),
           connected_at: now.toISOString(),
           updated_at: now.toISOString(),
         },
@@ -296,6 +328,7 @@ Deno.serve(async (req) => {
       );
       if (xcError) console.error("[xero-signup-callback] xero_connections:", xcError);
     }
+
 
     await supabase.from("xero_oauth_states").delete().eq("id", csrfRecord.id);
 
@@ -327,7 +360,7 @@ Deno.serve(async (req) => {
     return Response.redirect(linkData.properties.action_link, 302);
   } catch (err) {
     console.error("xero-signup-callback error:", err);
-    const fallback = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const fallback = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
     return Response.redirect(`${fallback}/signup?xero_signup=error&reason=server_error`, 302);
   }
 });

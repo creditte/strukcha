@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getRelationshipEdgeLabel } from "@/lib/relationshipRules";
 import dagre from "@dagrejs/dagre";
 import { getEntityLabel, getEntityIcon } from "@/lib/entityTypes";
 import { formatAbn, formatAcn } from "./EntityInfoFields";
@@ -92,7 +93,8 @@ function EntityNodeComponent({ data }: { data: any }) {
         isIndividual ? "rounded-full" : "rounded-lg"
       } ${isTrust ? "border-dashed" : ""} shadow-sm min-w-[140px] max-w-[220px] text-center transition-shadow hover:shadow-md`}
     >
-      <Handle type="target" position={Position.Top} className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="target" position={Position.Top} id="top-target" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
       <p className="text-xs font-semibold truncate">{label}</p>
       <p className="text-[9px] opacity-60 mt-0.5">{typeLabel}</p>
       {(abn || acn) && (
@@ -100,7 +102,8 @@ function EntityNodeComponent({ data }: { data: any }) {
           {abn ? `ABN ${formatAbn(abn)}` : `ACN ${formatAcn(acn!)}`}
         </p>
       )}
-      <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="target" position={Position.Bottom} id="bottom-target" className="!bg-transparent !border-0 !w-0 !h-0" />
     </div>
   );
 }
@@ -182,25 +185,76 @@ export default function GroupStructureViewer({ groupUuid, groupName, onClose }: 
       },
     }));
 
-    const rfEdges: Edge[] = groupEdges.map((e) => ({
+    // Merge edges that share the same source/target so their labels never overlap
+    const merged = new Map<string, { edge: typeof groupEdges[number]; labels: string[] }>();
+    for (const e of groupEdges) {
+      const key = `${e.source}->${e.target}`;
+      const text = getRelationshipEdgeLabel(e.type) +
+        (e.percentage && e.percentage > 0 ? ` (${e.percentage}%)` : "");
+      const existing = merged.get(key);
+      if (existing) {
+        if (!existing.labels.includes(text)) existing.labels.push(text);
+      } else {
+        merged.set(key, { edge: e, labels: [text] });
+      }
+    }
+
+    // Arrows point the same way as the editor canvas: owner/controller at the
+    // bottom of the arrow, so source is the related (upper) entity.
+    const rfEdges: Edge[] = [...merged.values()].map(({ edge: e, labels }) => ({
       id: e.id,
-      source: e.source,
-      target: e.target,
-      label: e.percentage && e.percentage > 0
-        ? `${e.type} (${e.percentage}%)`
-        : e.type,
+      source: e.target,
+      target: e.source,
+      sourceHandle: "top",
+      targetHandle: "bottom-target",
+      label: labels.join(" · "),
       type: "default",
       animated: false,
       style: { stroke: "hsl(var(--muted-foreground))", strokeWidth: 1.5 },
-      labelStyle: { fontSize: 10, fill: "hsl(var(--muted-foreground))" },
-      labelBgStyle: { fill: "hsl(var(--background))", fillOpacity: 0.9 },
+      labelStyle: { fontSize: 10, fill: "hsl(var(--foreground))" },
+      labelShowBg: true,
+      labelBgStyle: { fill: "hsl(var(--background))", fillOpacity: 1 },
+      labelBgPadding: [4, 2] as [number, number],
+      labelBgBorderRadius: 4,
       markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
     }));
 
-    const laid = layoutGraph(rfNodes, rfEdges);
+    // Lay out using the ownership direction so hierarchy stays top-down.
+    const layoutEdges = [...merged.values()].map(({ edge: e }) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+    })) as Edge[];
+
+    const laid = layoutGraph(rfNodes, layoutEdges);
     setNodes(laid);
     setEdges(rfEdges);
   }, [groupNodes, groupEdges]);
+
+  // Re-pick the nearest handles as nodes are dragged, like the editor canvas.
+  const positionsKey = useMemo(
+    () => nodes.map((n) => `${n.id}:${Math.round(n.position.y)}`).join("|"),
+    [nodes]
+  );
+  useEffect(() => {
+    const posMap = new Map(nodes.map((n) => [n.id, n.position]));
+    setEdges((eds) => {
+      let changed = false;
+      const next = eds.map((e) => {
+        const s = posMap.get(e.source);
+        const t = posMap.get(e.target);
+        if (!s || !t) return e;
+        const sourceAbove = s.y < t.y;
+        const sh = sourceAbove ? "bottom" : "top";
+        const th = sourceAbove ? "top-target" : "bottom-target";
+        if (e.sourceHandle === sh && e.targetHandle === th) return e;
+        changed = true;
+        return { ...e, sourceHandle: sh, targetHandle: th };
+      });
+      return changed ? next : eds;
+    });
+  }, [positionsKey, setEdges, nodes]);
+
 
   const GROUP_ORDER = [
     "director", "shareholder", "trustee", "beneficiary", "spouse",

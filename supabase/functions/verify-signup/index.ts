@@ -1,10 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
@@ -42,6 +38,7 @@ async function sendViaSmtp2go(to: string, subject: string, html: string, text?: 
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const json = (body: Record<string, unknown>, status = 200) =>
@@ -151,31 +148,14 @@ Deno.serve(async (req) => {
     // Self-signup users already chose a password; never send them to /setup-password.
     await supabaseAdmin
       .from("profiles")
-      .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
+      .update({ onboarding_complete: true, password_set: true, updated_at: new Date().toISOString() })
       .eq("user_id", codeRow.user_id);
 
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("full_name")
-      .eq("user_id", codeRow.user_id)
-      .maybeSingle();
+    // NOTE: the welcome email is intentionally NOT sent here. Registration is only
+    // complete once the Stripe free trial starts, so the welcome email is sent from
+    // the stripe-webhooks checkout.session.completed handler.
+    return json({ ok: true, verified: true, needsPayment: true });
 
-    const displayName =
-      (existingUser.user.user_metadata?.full_name as string | undefined) ||
-      profile?.full_name;
-
-    try {
-      await invokeTransactionalEmail({
-        templateName: "welcome",
-        recipientEmail: email.toLowerCase(),
-        templateData: { name: displayName || undefined },
-        idempotencyKey: `welcome:${codeRow.user_id}`,
-      });
-    } catch (err) {
-      console.error("[VerifySignup] welcome email:", err);
-    }
-
-    return json({ ok: true, verified: true });
   } catch (err: any) {
     console.error("[verify-signup] Error:", err);
     return json({ error: err.message || "Verification failed" }, 500);

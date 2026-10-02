@@ -43,7 +43,7 @@ export default function ForgotPassword() {
       }
 
       toast({
-        title: data?.code === "user_not_found" ? "No account found" : "Could not send reset link",
+        title: "Could not send reset link",
         description:
           typeof data?.error === "string"
             ? data.error

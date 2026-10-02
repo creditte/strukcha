@@ -1,11 +1,20 @@
+import { corsHeadersFor } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
+import {
+  PLAN_DIAGRAM_LIMITS,
+  effectiveDiagramLimit as resolveEffectiveDiagramLimit,
+} from "../_shared/stripe-plans.ts";
+import {
+  isStripeMissingResource,
+  quarantineLegacyStripeRefs,
+  tenantStripeRefs,
+} from "../_shared/stripe-tenant.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
@@ -29,14 +38,54 @@ Deno.serve(async (req) => {
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, trial_used_at, last_plan_switch_at")
+      .select("id, subscription_status, subscription_plan, selected_plan, access_enabled, access_locked_reason, trial_ends_at, current_period_end, diagram_limit, diagram_count, cancel_at_period_end, stripe_customer_id, stripe_subscription_id, stripe_mode, trial_used_at, last_plan_switch_at, payment_method_captured, unlimited_structures, billing_exempt")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
 
+    // Billing-exempt firms (the product owner's own firm) are never charged,
+    // never capped and never locked. No Stripe call is made for them.
+    if (tenant.billing_exempt === true) {
+      return new Response(JSON.stringify({
+        enforcement_enabled: false,
+        billing_exempt: true,
+        unlimited_structures: true,
+        payment_method_required: false,
+        payment_method_captured: true,
+        subscription_status: "exempt",
+        subscription_plan: tenant.subscription_plan,
+        selected_plan: tenant.selected_plan,
+        pending_downgrade: null,
+        access_enabled: true,
+        access_locked_reason: null,
+        trial_ends_at: null,
+        current_period_end: null,
+        diagram_limit: Number.MAX_SAFE_INTEGER,
+        diagram_count: tenant.diagram_count,
+        cancel_at_period_end: false,
+        billing_interval: null,
+        price_amount: null,
+        last_plan_switch_at: null,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+
+    // Stripe references saved in a different Stripe mode (legacy sandbox data while
+    // the app now runs live) cannot be read with the active key. Quarantine them so
+    // no Stripe call is made with an ID that does not exist in this environment.
+    let refs = tenantStripeRefs(tenant);
+    let legacyStripeData = refs.isLegacy;
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "check-subscription");
+      refs = tenantStripeRefs(tenant);
+    }
+
     // Mark expired trials and lock access (no subscription = must subscribe)
     if (
       tenant.subscription_status === "trialing" &&
+      !refs.subscriptionId &&
       tenant.trial_ends_at &&
       new Date(tenant.trial_ends_at) < new Date()
     ) {
@@ -57,18 +106,18 @@ Deno.serve(async (req) => {
     // Determine billing interval from Stripe subscription if available, otherwise fall back to the user's chosen billing cycle
     let billing_interval: string | null = profile.selected_billing === "annual" ? "year" : "month";
     let price_amount: number | null = null;
-    if (tenant.stripe_subscription_id) {
+    if (refs.subscriptionId) {
       try {
-        const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+        const stripeKey = stripeVar("STRIPE_SECRET_KEY");
         if (stripeKey) {
           const { default: Stripe } = await import("https://esm.sh/stripe@18.5.0");
-          const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
-          const sub = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+          const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
+          const sub = await stripe.subscriptions.retrieve(refs.subscriptionId);
+
+          const life = getSubscriptionLifecycle(sub);
           const priceData = sub.items?.data?.[0]?.price;
-          if (priceData) {
-            billing_interval = priceData.recurring?.interval || null;
-            price_amount = priceData.unit_amount || null;
-          }
+          if (life.interval) billing_interval = life.interval;
+          if (life.priceAmount !== null) price_amount = life.priceAmount;
 
           // If Stripe subscription is not actually active/trialing, reflect that in app state
           if (!["active", "trialing"].includes(sub.status) && tenant.subscription_status !== "trial_expired") {
@@ -88,16 +137,36 @@ Deno.serve(async (req) => {
           // If Stripe subscription IS active/trialing but DB disagrees, self-heal
           if (["active", "trialing"].includes(sub.status) && !["active", "trialing"].includes(tenant.subscription_status)) {
             const productId = priceData?.product as string | undefined;
-            const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-            let resolvedPlan = "pro";
-            if (productId && starterProductId && productId === starterProductId) {
+            const parseIdList = (name: string) =>
+              (Deno.env.get(name) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+            const starterProductIds = [
+              stripeVar("STRIPE_STARTER_PRODUCT_ID"),
+              ...parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS"),
+            ].filter(Boolean) as string[];
+            const proProductIds = [
+              stripeVar("STRIPE_PRO_PRODUCT_ID"),
+              ...parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS"),
+            ].filter(Boolean) as string[];
+
+            let resolvedPlan: string | null = null;
+            let resolvedLimit: number | null = null;
+            if (productId && starterProductIds.includes(productId)) {
               resolvedPlan = "starter";
+              resolvedLimit = PLAN_DIAGRAM_LIMITS.starter;
+            } else if (productId && proProductIds.includes(productId)) {
+              resolvedPlan = "pro";
+              resolvedLimit = PLAN_DIAGRAM_LIMITS.pro;
             }
 
-            // Determine limit based on status + plan
-            let resolvedLimit = 3; // default for trialing
-            if (sub.status === "active") {
-              resolvedLimit = resolvedPlan === "starter" ? 15 : 50;
+
+            if (!resolvedPlan || resolvedLimit === null) {
+              // Refuse to self-heal with an unknown Stripe product — do NOT grant any plan benefits.
+              console.error(
+                `[check-subscription] Refusing to self-heal tenant ${profile.tenant_id}: unmapped Stripe product ${productId} on subscription ${sub.id}. Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID.`,
+              );
+              throw new Error(
+                `Unmapped Stripe product "${productId}" on active subscription. Cannot activate access without a resolved plan mapping.`,
+              );
             }
 
             const healUpdate: Record<string, any> = {
@@ -107,14 +176,11 @@ Deno.serve(async (req) => {
               access_locked_reason: null,
               diagram_limit: resolvedLimit,
               stripe_subscription_id: sub.id,
-              current_period_start: sub.current_period_start
-                ? new Date(sub.current_period_start * 1000).toISOString()
-                : null,
-              current_period_end: sub.current_period_end
-                ? new Date(sub.current_period_end * 1000).toISOString()
-                : null,
-              cancel_at_period_end: sub.cancel_at_period_end ?? false,
+              current_period_start: life.currentPeriodStart,
+              current_period_end: life.currentPeriodEnd,
+              cancel_at_period_end: life.cancelAtPeriodEnd,
             };
+            if (life.trialEnd) healUpdate.trial_ends_at = life.trialEnd;
 
             await supabaseAdmin.from("tenants").update(healUpdate).eq("id", profile.tenant_id);
             console.log(`[check-subscription] Self-healed tenant: ${tenant.subscription_status} → ${sub.status}`);
@@ -124,39 +190,69 @@ Deno.serve(async (req) => {
             tenant.access_enabled = true;
             tenant.access_locked_reason = null;
             tenant.diagram_limit = resolvedLimit;
-            tenant.cancel_at_period_end = sub.cancel_at_period_end ?? false;
+            tenant.cancel_at_period_end = life.cancelAtPeriodEnd;
             tenant.current_period_end = healUpdate.current_period_end;
           } else if (["active", "trialing"].includes(sub.status)) {
             // Always sync current_period_end from Stripe even when statuses match
-            const stripePeriodEnd = sub.current_period_end
-              ? new Date(sub.current_period_end * 1000).toISOString()
-              : null;
-            const stripePeriodStart = sub.current_period_start
-              ? new Date(sub.current_period_start * 1000).toISOString()
-              : null;
+            const stripePeriodEnd = life.currentPeriodEnd;
+            const stripePeriodStart = life.currentPeriodStart;
 
+            const drift: Record<string, any> = {};
             if (stripePeriodEnd && stripePeriodEnd !== tenant.current_period_end) {
-              await supabaseAdmin.from("tenants").update({
-                current_period_end: stripePeriodEnd,
-                current_period_start: stripePeriodStart,
-              }).eq("id", profile.tenant_id);
-              tenant.current_period_end = stripePeriodEnd;
+              drift.current_period_end = stripePeriodEnd;
+              if (stripePeriodStart) drift.current_period_start = stripePeriodStart;
+            }
+            if (life.cancelAtPeriodEnd !== tenant.cancel_at_period_end) {
+              drift.cancel_at_period_end = life.cancelAtPeriodEnd;
+            }
+            if (life.trialEnd && life.trialEnd !== tenant.trial_ends_at) {
+              drift.trial_ends_at = life.trialEnd;
+            }
+            if (Object.keys(drift).length > 0) {
+              await supabaseAdmin.from("tenants").update(drift).eq("id", profile.tenant_id);
+              if (drift.current_period_end) tenant.current_period_end = drift.current_period_end;
+              if ("cancel_at_period_end" in drift) tenant.cancel_at_period_end = drift.cancel_at_period_end;
+              if (drift.trial_ends_at) tenant.trial_ends_at = drift.trial_ends_at;
             }
           }
         }
       } catch (e) {
+        // A subscription that vanished from the active Stripe environment is stale
+        // data (typically created in the other mode) — quarantine rather than retry.
+        if (isStripeMissingResource(e)) {
+          await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "check-subscription:resource_missing");
+          refs = tenantStripeRefs(tenant);
+          legacyStripeData = true;
+        }
         console.error("[check-subscription] Error fetching Stripe sub:", e);
       }
     }
 
-    // Determine effective diagram_limit based on subscription_status
-    let effectiveDiagramLimit = 3; // default for trialing, trial_expired, canceled
-    if (["active", "past_due"].includes(tenant.subscription_status)) {
-      effectiveDiagramLimit = tenant.subscription_plan === "starter" ? 15 : 50;
+
+    // One shared rule decides the allowance: trials get the trial cap, paying
+    // plans get their plan limit, and an unmapped plan is an error rather than a
+    // silent fallback to a bigger limit.
+    let effectiveDiagramLimit: number;
+    try {
+      effectiveDiagramLimit = resolveEffectiveDiagramLimit(
+        tenant.subscription_status,
+        tenant.subscription_plan,
+      );
+    } catch (e) {
+      console.error(
+        `[check-subscription] Tenant ${profile.tenant_id} is ${tenant.subscription_status} with unmapped subscription_plan="${tenant.subscription_plan}". Refusing to grant a plan limit.`,
+      );
+      throw e;
     }
 
-    // Persist corrected limit to DB if it differs
-    if (effectiveDiagramLimit !== tenant.diagram_limit) {
+
+    // Permanent per-tenant override: this firm is never capped on structures,
+    // regardless of plan, trial state or future billing logic changes.
+    const unlimitedStructures = tenant.unlimited_structures === true;
+
+    // Persist corrected limit to DB if it differs. Skipped for override tenants so
+    // the plan-derived limit never overwrites their uncapped state.
+    if (!unlimitedStructures && effectiveDiagramLimit !== tenant.diagram_limit) {
       await supabaseAdmin
         .from("tenants")
         .update({ diagram_limit: effectiveDiagramLimit })
@@ -177,10 +273,22 @@ Deno.serve(async (req) => {
 
     const effectiveAccessEnabled = enforcementEnabled ? tenant.access_enabled : true;
     const effectiveAccessLockedReason = enforcementEnabled ? tenant.access_locked_reason : null;
-    const exposedDiagramLimit = enforcementEnabled ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
+    const exposedDiagramLimit =
+      enforcementEnabled && !unlimitedStructures ? effectiveDiagramLimit : Number.MAX_SAFE_INTEGER;
+
+    // Mandatory payment-method capture during registration is enforced
+    // independently of the billing enforcement kill-switch.
+    const paymentMethodRequired =
+      tenant.payment_method_captured !== true && !refs.subscriptionId;
 
     return new Response(JSON.stringify({
       enforcement_enabled: enforcementEnabled,
+      unlimited_structures: unlimitedStructures,
+      payment_method_required: paymentMethodRequired,
+      payment_method_captured: tenant.payment_method_captured === true,
+      stripe_mode: refs.mode,
+      legacy_stripe_data: legacyStripeData,
+
       subscription_status: tenant.subscription_status,
       subscription_plan: tenant.subscription_plan,
       selected_plan: tenant.selected_plan,

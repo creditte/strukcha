@@ -123,7 +123,9 @@ export default function Signup() {
     }
   };
 
-  const handleXeroSignup = async () => {
+  const handleXeroSignup = async (
+    connectionType: "practice_manager" | "standard" = "practice_manager",
+  ) => {
     if (!firmName.trim()) {
       toast({
         title: "Firm name required",
@@ -140,6 +142,7 @@ export default function Signup() {
           origin: window.location.origin,
           selectedPlan,
           selectedBilling,
+          connection_type: connectionType,
         },
       });
       if (error) throw error;
@@ -205,10 +208,19 @@ export default function Signup() {
     const handleStartTrial = async () => {
       setStartingCheckout(true);
       try {
-        // Sign in the user — subscription already created during signup
+        // Sign in, then go straight to Stripe Checkout — registration is only
+        // complete once the free trial subscription exists.
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-        navigate("/");
+
+        const { data, error } = await supabase.functions.invoke("create-checkout");
+        const url = (data as { url?: string } | null)?.url;
+        if (error || (data as { error?: string } | null)?.error || !url) {
+          // Fall back to the resumable payment step rather than dropping the user.
+          navigate("/complete-setup");
+          return;
+        }
+        window.location.href = url;
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" });
         navigate("/login");
@@ -217,6 +229,7 @@ export default function Signup() {
       }
     };
 
+
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
         <div className="w-full max-w-md text-center">
@@ -224,16 +237,20 @@ export default function Signup() {
             <ShieldCheck className="h-8 w-8 text-primary" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email verified!</h1>
-          <p className="mt-3 text-muted-foreground">Your 7-day free trial is ready. Let's get started!</p>
+          <p className="mt-3 text-muted-foreground">
+            Final step — start your 7-day free trial. Your card is stored securely by Stripe and
+            won't be charged today. Your account becomes active once the trial starts.
+          </p>
           <Button className="mt-8 w-full h-11 font-semibold" onClick={handleStartTrial} disabled={startingCheckout}>
             {startingCheckout ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening secure checkout…
               </>
             ) : (
-              "Get Started"
+              "Start free trial"
             )}
           </Button>
+
         </div>
       </div>
     );
@@ -417,7 +434,7 @@ export default function Signup() {
                   variant="default"
                   className="w-full h-11 border-0 bg-[#14B5EA] text-base font-semibold text-white hover:bg-[#14B5EA]/90 focus-visible:ring-white/40"
                   disabled={xeroLoading || submitting}
-                  onClick={handleXeroSignup}
+                  onClick={() => handleXeroSignup("practice_manager")}
                 >
                   {xeroLoading ? (
                     <>
@@ -439,6 +456,7 @@ export default function Signup() {
                 </Button>
                 <p className="text-xs text-center text-muted-foreground">
                   Uses your Xero profile email. Your firm name above will be your workspace name.
+                  You can connect Xero Practice Manager after sign-up.
                 </p>
               </form>
             </CardContent>

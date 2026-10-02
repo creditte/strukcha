@@ -1,9 +1,7 @@
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
 import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
-import { useDuplicateCount } from "@/hooks/useDuplicateCount";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import FeedbackModal from "@/components/FeedbackModal";
 import {
   Home,
@@ -20,14 +18,14 @@ const navItems = [
   { to: "/import", label: "Import", icon: Upload },
   { to: "/structures", label: "Structures", icon: Network },
   { to: "/governance", label: "Health Check", icon: HeartPulse },
-  { to: "/review", label: "Review & Improve", icon: Sparkles, badgeKey: "review" as const },
+  { to: "/review", label: "Review & Improve", icon: Sparkles },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 export default function AppSidebar() {
   const { signOut, user } = useAuth();
   const { tenant } = useSharedTenantSettings();
-  const { duplicateCount } = useDuplicateCount();
+  
 
   const firmName = tenant?.firm_name || tenant?.name;
   const logoUrl = tenant?.logo_url;
@@ -64,11 +62,6 @@ export default function AppSidebar() {
           >
             <item.icon className="h-4 w-4" />
             <span className="flex-1">{item.label}</span>
-            {item.badgeKey === "review" && duplicateCount > 0 && (
-              <Badge className="h-5 min-w-5 px-1.5 text-[10px] font-semibold rounded-full bg-warning/15 text-warning border-0">
-                {duplicateCount}
-              </Badge>
-            )}
           </NavLink>
         ))}
       </nav>

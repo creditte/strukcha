@@ -9,6 +9,8 @@ import {
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { translateXeroError } from "@/lib/xeroErrors";
+import { useXeroConnectionQuery } from "@/hooks/useSharedQueries";
+
 
 export interface XeroConnectionInfo {
   id: string;
@@ -17,6 +19,13 @@ export interface XeroConnectionInfo {
   xero_tenant_id: string | null;
   xero_org_name: string | null;
   connected_by_email?: string | null;
+  /** "practice_manager" or "standard" — what the firm authorised. */
+  connection_type?: string | null;
+  /** "active" or "needs_reauth", stored server-side so every device agrees. */
+  status?: string | null;
+  last_error?: string | null;
+  last_error_at?: string | null;
+  invalidated_at?: string | null;
 }
 
 interface XeroConnectionContextValue {
@@ -49,8 +58,6 @@ interface XeroConnectionContextValue {
 const XeroConnectionContext = createContext<XeroConnectionContextValue | null>(null);
 
 export function XeroConnectionProvider({ children }: { children: ReactNode }) {
-  const [connection, setConnection] = useState<XeroConnectionInfo | null>(null);
-  const [loading, setLoading] = useState(true);
   const [invalid, setInvalid] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const mounted = useRef(true);
@@ -59,23 +66,29 @@ export function XeroConnectionProvider({ children }: { children: ReactNode }) {
     mounted.current = false;
   }, []);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await supabase.rpc("get_xero_connection_info");
-      if (!mounted.current) return;
-      const parsed = data && data !== "null" ? (data as unknown as XeroConnectionInfo) : null;
-      setConnection(parsed);
-      // If the connection record disappeared, nothing to mark invalid on.
-      if (!parsed) setInvalid(false);
-    } finally {
-      if (mounted.current) setLoading(false);
-    }
-  }, []);
+  // Single shared fetch of the connection record — deduplicated with every
+  // other consumer (Dashboard, Structures, Settings → Integrations).
+  const query = useXeroConnectionQuery();
+  const connection = (query.data ?? null) as XeroConnectionInfo | null;
+  const loading = query.isLoading && !query.data;
 
+  const reload = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
+
+  // The broken/healthy state is stored on the connection itself, so a refresh,
+  // a second device or another staff member sees the same reconnect prompt.
   useEffect(() => {
-    reload();
-  }, [reload]);
+    if (!query.isSuccess) return;
+    if (!query.data) {
+      setInvalid(false);
+      return;
+    }
+    const status = (query.data as XeroConnectionInfo).status;
+    if (status === "needs_reauth") setInvalid(true);
+    else if (status === "active") setInvalid(false);
+  }, [query.isSuccess, query.data]);
+
 
   // Dev helper: allow forcing the "invalid connection" state from the console
   // via `window.dispatchEvent(new Event('xero-force-invalid'))` so the

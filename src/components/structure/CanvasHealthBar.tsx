@@ -1,7 +1,6 @@
 import { HeartPulse, AlertTriangle, AlertCircle, Wrench, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { getHealthStatus } from "@/lib/structureScoring";
 import type { HealthScoreV2 } from "@/lib/structureScoring";
 
 interface Props {
@@ -11,7 +10,7 @@ interface Props {
 }
 
 export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: Props) {
-  const status = getHealthStatus(health.score);
+  const status = health.status;
   const criticalCount = health.issues.filter((i) => i.severity === "critical").length;
   const warningCount = health.issues.filter((i) => i.severity !== "critical" && i.severity !== "info").length;
   const totalFixable = health.issues.filter((i) => i.severity !== "info").length;
@@ -57,13 +56,13 @@ export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: 
         {criticalCount > 0 && (
           <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
             <AlertCircle className="h-3 w-3" />
-            {criticalCount} critical
+            {criticalCount} conflicting
           </span>
         )}
         {warningCount > 0 && (
           <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-3 w-3" />
-            {warningCount} warning{warningCount !== 1 ? "s" : ""}
+            {warningCount} to review
           </span>
         )}
       </div>
@@ -73,7 +72,7 @@ export default function CanvasHealthBar({ health, onFixIssues, onViewDetails }: 
       {totalFixable > 0 && (
         <Button variant="default" size="sm" className="h-7 gap-1.5 text-xs" onClick={onFixIssues}>
           <Wrench className="h-3 w-3" />
-          Fix Issues
+          Review items
         </Button>
       )}
       <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-muted-foreground" onClick={onViewDetails}>

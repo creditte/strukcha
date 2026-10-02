@@ -1,13 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendXpmWelcomeEmail } from "../_shared/xpm-welcome-email.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
 
 serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -85,7 +83,9 @@ serve(async (req) => {
       expires_at: string;
       connected_by_email: string | null;
       tenant_id: string;
-      organisations: Array<{ id: string; name: string }>;
+      organisations: Array<{ id: string; name: string; type?: string | null }>;
+      connection_type?: string;
+      scopes?: string | null;
     };
 
     const chosen = link.organisations.find((o) => o.id === xeroTenantId);
@@ -94,6 +94,21 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const connectionType = link.connection_type === "standard" ? "standard" : "practice_manager";
+
+    // Practice Manager connections must point at a Practice Manager entry,
+    // otherwise every later sync would fail with "Unauthorized".
+    if (connectionType === "practice_manager" && chosen.type && chosen.type !== "PRACTICEMANAGER") {
+      return new Response(
+        JSON.stringify({
+          error:
+            "That organisation doesn't include Xero Practice Manager. Please choose the Practice Manager entry, or connect it as a standard Xero organisation.",
+          code: "xero_practice_manager_required",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     const { error: upsertErr } = await service
@@ -108,6 +123,13 @@ serve(async (req) => {
           access_token: link.access_token,
           refresh_token: link.refresh_token,
           expires_at: link.expires_at,
+          connection_type: connectionType,
+          scopes: link.scopes ?? null,
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -124,6 +146,9 @@ serve(async (req) => {
 
     // Clean up all pending states for this user
     await service.from("xero_oauth_states").delete().eq("user_id", userId);
+
+    // XPM is connected — this is when the firm can actually use strukcha.
+    await sendXpmWelcomeEmail(service, link.tenant_id);
 
     return new Response(
       JSON.stringify({ ok: true, xero_tenant_id: chosen.id, xero_org_name: chosen.name }),

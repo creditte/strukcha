@@ -1,3 +1,4 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptToken } from "../_shared/crypto.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
@@ -5,7 +6,7 @@ import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
 async function findAuthUserByEmail(
   admin: ReturnType<typeof createClient>,
   email: string,
-): Promise<{ id: string; email?: string } | null> {
+): Promise<{ id: string; email?: string; user_metadata?: Record<string, unknown> } | null> {
   const normalized = email.toLowerCase();
   let page = 1;
   const perPage = 1000;
@@ -13,7 +14,7 @@ async function findAuthUserByEmail(
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
     if (error) throw error;
     const u = data.users.find((x) => x.email?.toLowerCase() === normalized);
-    if (u) return { id: u.id, email: u.email };
+    if (u) return { id: u.id, email: u.email, user_metadata: u.user_metadata ?? {} };
     if (data.users.length < perPage) return null;
     page++;
   }
@@ -26,7 +27,7 @@ Deno.serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const oauthError = url.searchParams.get("error");
 
-    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
 
     if (oauthError) {
       console.error("Xero OAuth error:", oauthError);
@@ -42,16 +43,21 @@ Deno.serve(async (req) => {
 
     let csrfToken: string;
     let frontendUrl: string;
+    let connectionType: "practice_manager" | "standard" = "practice_manager";
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       csrfToken = state.csrf;
-      frontendUrl = state.origin || defaultFrontendUrl;
+      frontendUrl = safeFrontend(state.origin);
+      if (state.connection_type === "standard" || state.connection_type === "accounting") {
+        connectionType = "standard";
+      }
       if (state.flow !== "login") {
         return Response.redirect(`${frontendUrl}/login?xero_login=error&reason=invalid_flow`, 302);
       }
     } catch {
       return Response.redirect(`${defaultFrontendUrl}/login?xero_login=error&reason=invalid_state`, 302);
     }
+
 
     if (!csrfToken) {
       return Response.redirect(`${frontendUrl}/login?xero_login=error&reason=missing_csrf`, 302);
@@ -111,6 +117,8 @@ Deno.serve(async (req) => {
       refresh_token?: string;
       expires_in: number;
       id_token?: string;
+      scope?: string;
+
     };
 
     if (!tokens.id_token) {
@@ -138,6 +146,13 @@ Deno.serve(async (req) => {
     }
 
     const userId = existing.id;
+    // Remember that this person signs in with Xero, so they're never forced
+    // onto the "Set your password" screen (they can set one later in Settings).
+    if (existing.user_metadata?.auth_method !== "xero") {
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: { ...(existing.user_metadata ?? {}), auth_method: "xero" },
+      }).catch((e: unknown) => console.error("[xero-login-callback] tag auth_method:", e));
+    }
     const { data: profile } = await supabase
       .from("profiles")
       .select("tenant_id")
@@ -155,17 +170,39 @@ Deno.serve(async (req) => {
       let xeroTenantId: string | null = null;
       let xeroOrgName: string | null = null;
       if (connectionsRes.ok) {
-        const connections = await connectionsRes.json() as Array<{ tenantId?: string; tenantName?: string }>;
-        if (connections.length > 0) {
-          xeroTenantId = connections[0].tenantId ?? null;
-          xeroOrgName = connections[0].tenantName ?? null;
+        const connections = await connectionsRes.json() as Array<
+          { tenantId?: string; tenantName?: string; tenantType?: string }
+        >;
+        // Pick the organisation that matches what was authorised. Taking the
+        // first entry blindly could store a plain organisation for a Practice
+        // Manager sign-in, and every later client sync would fail with 401.
+        const preferred = connectionType === "practice_manager"
+          ? connections.find((c) => c.tenantType === "PRACTICEMANAGER")
+          : connections.find((c) => c.tenantType !== "PRACTICEMANAGER");
+        const chosen = preferred ?? connections[0];
+        if (chosen) {
+          xeroTenantId = chosen.tenantId ?? null;
+          xeroOrgName = chosen.tenantName ?? null;
         }
       }
 
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
       const encryptedAccessToken = await encryptToken(tokens.access_token);
       const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
-      const { error: xcError } = await supabase.from("xero_connections").upsert(
+      // Sign-in uses basic Xero access. Never let it replace a firm's working
+      // Practice Manager link, or client syncs would stop.
+      let keepPracticeManager = false;
+      if (connectionType === "standard") {
+        const { data: pm } = await supabase
+          .from("xero_connections")
+          .select("id")
+          .eq("tenant_id", String(profile.tenant_id))
+          .eq("connection_type", "practice_manager")
+          .neq("status", "needs_reauth")
+          .limit(1);
+        keepPracticeManager = Boolean(pm && pm.length > 0);
+      }
+      const { error: xcError } = keepPracticeManager ? { error: null } : await supabase.from("xero_connections").upsert(
         {
           user_id: userId,
           tenant_id: String(profile.tenant_id),
@@ -175,6 +212,16 @@ Deno.serve(async (req) => {
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
           expires_at: expiresAt,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
+          // A fresh authorisation clears any remembered "needs reconnecting"
+          // state, otherwise signing in through Xero left the firm blocked.
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
+          last_refresh_at: new Date().toISOString(),
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -182,6 +229,7 @@ Deno.serve(async (req) => {
       );
       if (xcError) console.error("[xero-login-callback] xero_connections:", xcError);
     }
+
 
     await supabase.from("xero_oauth_states").delete().eq("id", csrfRecord.id);
 
@@ -202,7 +250,7 @@ Deno.serve(async (req) => {
     return Response.redirect(linkData.properties.action_link, 302);
   } catch (err) {
     console.error("xero-login-callback error:", err);
-    const fallback = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const fallback = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
     return Response.redirect(`${fallback}/login?xero_login=error&reason=server_error`, 302);
   }
 });

@@ -1,5 +1,4 @@
 import { HeartPulse, AlertTriangle, AlertCircle } from "lucide-react";
-import { getHealthStatus } from "@/lib/structureScoring";
 import type { HealthScoreV2 } from "@/lib/structureScoring";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -15,13 +14,13 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function CanvasHealthBadge({ health, onClick }: Props) {
-  const status = getHealthStatus(health.score);
+  const status = health.status;
   const criticalCount = health.issues.filter((i) => i.severity === "critical").length;
   const warningCount = health.issues.filter((i) => i.severity !== "critical" && i.severity !== "info").length;
 
   const summaryParts: string[] = [];
-  if (criticalCount > 0) summaryParts.push(`${criticalCount} critical`);
-  if (warningCount > 0) summaryParts.push(`${warningCount} warning${warningCount !== 1 ? "s" : ""}`);
+  if (criticalCount > 0) summaryParts.push(`${criticalCount} conflicting`);
+  if (warningCount > 0) summaryParts.push(`${warningCount} to review`);
   const summaryText = summaryParts.length > 0 ? ` (${summaryParts.join(", ")})` : "";
 
   return (

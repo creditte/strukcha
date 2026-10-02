@@ -1,235 +1,1296 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decryptToken, encryptToken } from "../_shared/crypto.ts";
-import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
+import {
+  chunk,
+  discoverPmTenantId,
+  extractTrustName,
+  DatabaseStepError,
+  FatalXpmError,
+  isCorporateTrustee,
+  LEASE_SECONDS,
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+  mapLimit,
+  refreshAccessToken,
+  rpcCall,
+  counters,
+  resolveEntityType,
+  tuning,
+  xmlArray,
+  xmlText,
+  xpmGetText,
+  xpmGetXml,
+} from "./_lib.ts";
+import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
+import {
+  classifyWithProvenance,
+  normaliseXpmRelationship,
+  parseXpmLabel,
+  type EvidenceDraft,
+  type XpmRawRelationship,
+} from "../_shared/xpm-policy-normalise.ts";
+import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
+import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
 
-const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
+/**
+ * XPM labels that are deliberately not modelled as structure relationships
+ * (statutory office holdings, contacts). They are still kept as evidence but
+ * are not reported as sync problems or counted as skipped links.
+ */
+const XPM_IGNORED_RELATIONSHIP_LABELS = new Set([
+  "secretary", "secretary of", "public officer", "public officer of", "contact", "contact of",
+]);
+const isIgnoredLabel = (raw: string) =>
+  XPM_IGNORED_RELATIONSHIP_LABELS.has(raw.trim().toLowerCase().replace(/\s+/g, " "));
+import {
+  loadXeroConnection,
+  markXeroConnectionInvalid,
+  XeroReauthRequiredError,
+} from "../_shared/xero-token.ts";
 
-// ── Token refresh ───────────────────────────────────────────────────
-async function refreshAccessToken(supabase: any, connection: any): Promise<string> {
-  const now = new Date();
-  const expiresAt = new Date(connection.expires_at);
-  const currentAccessToken = await decryptToken(connection.access_token);
 
-  if (expiresAt.getTime() - now.getTime() > 300_000) {
-    return currentAccessToken;
-  }
+/**
+ * Chunked, resumable XPM sync.
+ *
+ * A sync is a job row in `import_logs`. Each execution processes a bounded
+ * slice of work (a few XPM client pages OR a batch of client groups), persists
+ * progress on the job row, then self-invokes to continue in a fresh worker.
+ *
+ * Memory discipline:
+ * - client XML is parsed one page at a time and dropped immediately;
+ * - the group catalogue lives in `xpm_groups`, not in the job row — the job row
+ *   only stores a cursor, so it stays a few hundred bytes regardless of whether
+ *   the practice has 10 or 10,000 groups.
+ *
+ * Concurrency is bounded (`mapLimit`) so a large practice never fires hundreds
+ * of XPM or DB calls at once.
+ */
 
-  console.log("[sync-xpm] Token expired, refreshing...");
-  const clientId = Deno.env.get("XERO_CLIENT_ID")!;
-  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
-  const currentRefreshToken = await decryptToken(connection.refresh_token);
+const JOB_FILE_NAME = "xpm-sync-3.1";
 
-  const res = await fetch("https://identity.xero.com/connect/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: currentRefreshToken,
-    }),
-  });
+/**
+ * A running sync writes progress after every page and batch, and its lease is
+ * 90 seconds. Silence for longer than this means the worker is gone, so the job
+ * is taken over instead of blocking new syncs for ever.
+ */
+const STALE_JOB_MS = 3 * 60_000;
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token refresh failed: ${body}`);
-  }
+/**
+ * How long to refuse a new sync after Xero rejected the last one. Five failed
+ * runs once landed inside a single minute because nothing stopped an immediate
+ * retry after an authorisation failure.
+ */
+const AUTH_FAILURE_COOLDOWN_MS = 5 * 60_000;
 
-  const tokens = await res.json();
-  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-  const encryptedAccessToken = await encryptToken(tokens.access_token);
-  const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
 
-  await supabase
-    .from("xero_connections")
-    .update({
-      access_token: encryptedAccessToken,
-      refresh_token: encryptedRefreshToken,
-      expires_at: newExpiresAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", connection.id);
+type Phase = "clients" | "groups" | "staff" | "done";
 
-  return tokens.access_token;
+interface Stats {
+  clientsFetched: number;
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  relationshipsCreated: number;
+  relationshipsSkipped: number;
+  /** Groups selected by the user — the groups this sync will turn into diagrams. */
+  groupsFound: number;
+  /** Every group that exists in XPM, selected or not. */
+  groupsCatalogued: number;
+  groupsCreated: number;
+  groupsProcessed: number;
+  /** Groups whose XPM membership is unchanged since the last sync. */
+  groupsSkippedUnchanged: number;
+  trusteesDetected: number;
+  staffFetched: number;
+  /**
+   * Groups that could not become a structure because the firm is at its
+   * structure limit (or its subscription is inactive). These groups are left
+   * untouched so a later sync retries them once capacity is freed.
+   */
+  groupsBlockedByLimit: number;
+  /** Observability: cost of the sync so far. */
+  xpmRequests: number;
+  xpmMs: number;
+  dbCalls: number;
+  dbMs: number;
+  wallMs: number;
+  typeCounts: Record<string, number>;
 }
 
-// ── XPM API helpers ─────────────────────────────────────────────────
-function xpmHeaders(accessToken: string, xeroTenantId: string): Record<string, string> {
+interface Progress {
+  phase: Phase;
+  clientPage: number;
+  /**
+   * How many clients of the current page have already been persisted. A single
+   * detailed page can hold well over a thousand clients, which is more than one
+   * worker can process, so a page is handled in chunks and this is the resume
+   * point inside it.
+   */
+  clientOffset: number;
+  /** Last processed group `xpm_uuid` — the resume cursor for the group phase. */
+  groupCursor: string;
+  /** True once the group catalogue has been pulled from XPM into `xpm_groups`. */
+  groupsLoaded: boolean;
+  /**
+   * Fingerprint of the last client page. XPM 3.1 silently ignores `page` on
+   * some practices and keeps returning the same full list, which used to make
+   * the sync re-process identical data hundreds of times. An identical
+   * fingerprint means paging is unsupported and the client phase is complete.
+   */
+  lastPageKey: string;
+  /** Start of the current full client sweep; drives archived-in-XPM detection. */
+  sweepStartedAt: string | null;
+  /** When true, every group is re-read from XPM instead of honouring freshness. */
+  fullSync: boolean;
+  /**
+   * Catalogue-only run: refresh the list of client groups from XPM and stop.
+   * A brand-new firm needs the list before it can choose which groups become
+   * diagrams, and choosing has to come before any diagram is built.
+   */
+  catalogueOnly: boolean;
+  /** Worker lease expiry — only the lease holder may talk to XPM. */
+  leaseUntil: string;
+  runs: number;
+  started_at: string;
+  updated_at: string;
+  stats: Stats;
+  warnings: string[];
+  /** Terminal capacity condition met during this run. */
+  limitReached: boolean;
+  /** `structure_limit_reached` or `subscription_inactive`. */
+  limitCode: string;
+  /** Example group names that were blocked, for user-facing messaging. */
+  blockedGroups: string[];
+  /** Remaining structure slots observed when the run started (null = unlimited). */
+  capacityRemaining: number | null;
+}
+
+function emptyProgress(): Progress {
   return {
-    Authorization: `Bearer ${accessToken}`,
-    "xero-tenant-id": xeroTenantId,
-    Accept: "application/xml",
+    phase: "clients",
+    clientPage: 1,
+    clientOffset: 0,
+    groupCursor: "",
+    groupsLoaded: false,
+    lastPageKey: "",
+    sweepStartedAt: null,
+    fullSync: false,
+    catalogueOnly: false,
+    leaseUntil: "",
+    runs: 0,
+    started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    stats: {
+      clientsFetched: 0,
+      entitiesCreated: 0,
+      entitiesUpdated: 0,
+      relationshipsCreated: 0,
+      relationshipsSkipped: 0,
+      groupsFound: 0,
+      groupsCatalogued: 0,
+      groupsCreated: 0,
+      groupsProcessed: 0,
+      groupsSkippedUnchanged: 0,
+      trusteesDetected: 0,
+      staffFetched: 0,
+      groupsBlockedByLimit: 0,
+      xpmRequests: 0,
+      xpmMs: 0,
+      dbCalls: 0,
+      dbMs: 0,
+      wallMs: 0,
+      typeCounts: {},
+    },
+    warnings: [],
+    limitReached: false,
+    limitCode: "",
+    blockedGroups: [],
+    capacityRemaining: null,
   };
 }
 
-async function xpmGetXml(path: string, accessToken: string, xeroTenantId: string): Promise<any> {
-  const url = `${XPM_BASE}${path}`;
-  console.log(`[sync-xpm] GET ${url}`);
-  const res = await fetch(url, { headers: xpmHeaders(accessToken, xeroTenantId) });
+/** Remaining structure capacity for a tenant, as reported by the database. */
+async function readCapacity(supabase: any, tenantId: string): Promise<{
+  found: boolean;
+  enforced: boolean;
+  accessEnabled: boolean;
+  unlimited: boolean;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+}> {
+  const { data } = await supabase.rpc("tenant_structure_capacity", { _tenant_id: tenantId });
+  const c = (data ?? {}) as any;
+  return {
+    found: c.found === true,
+    enforced: c.enforced === true,
+    accessEnabled: c.accessEnabled === true,
+    unlimited: c.unlimited === true,
+    used: c.used ?? 0,
+    limit: c.limit ?? null,
+    remaining: c.remaining ?? null,
+  };
+}
 
-  if (res.status === 304) return null;
-  if (res.status === 403 || res.status === 401) {
-    console.warn(`[sync-xpm] ${res.status} on ${path}`);
-    return null;
-  }
-  if (!res.ok) {
-    const errText = await res.text();
-    console.warn(`[sync-xpm] ${res.status} on ${path}: ${errText.substring(0, 300)}`);
-    return null;
-  }
-  const text = await res.text();
-  try {
-    return parseXml(text);
-  } catch (e) {
-    console.warn(`[sync-xpm] XML parse error on ${path}:`, e);
-    return null;
+
+/** Warnings are capped so the job row can't grow unbounded. */
+function warn(p: Progress, msg: string) {
+  if (p.warnings.length < 200) p.warnings.push(msg);
+}
+
+/**
+ * Unknown relationship labels repeat on nearly every client, so they are
+ * recorded once per distinct label. Building thousands of warning strings was
+ * pure CPU spent on a row the user never reads in full.
+ */
+const seenUnknownRelTypes = new Set<string>();
+function warnUnknownRelType(p: Progress, raw: string) {
+  if (seenUnknownRelTypes.has(raw)) return;
+  seenUnknownRelTypes.add(raw);
+  warn(p, `Unsupported XPM relationship type "${raw}" — those links were skipped`);
+}
+
+// ── Small helpers ──────────────────────────────────────────────────
+/** Stable fingerprint of a group's membership, used for change detection. */
+async function hashMembers(name: string, memberUuids: string[]): Promise<string> {
+  const payload = `${name}\n${[...memberUuids].sort().join(",")}`;
+  const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(payload));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Bulk insert helper — only used for the small staff list. */
+async function bulkInsertEntities(
+  supabase: any,
+  rows: Record<string, unknown>[],
+  batchSize: number,
+  p: Progress,
+): Promise<void> {
+  for (const part of chunk(rows, batchSize)) {
+    const { data, error } = await supabase.from("entities").insert(part).select("id");
+    if (error) {
+      warn(p, `Failed to create ${part.length} staff entities: ${error.message}`);
+      continue;
+    }
+    p.stats.entitiesCreated += data?.length ?? part.length;
   }
 }
 
-// Helper to safely extract array from XML parsed result
-function xmlArray(parent: any, key: string): any[] {
-  if (!parent) return [];
-  const val = parent[key];
-  if (!val) return [];
-  if (Array.isArray(val)) return val;
-  return [val];
+// ── Phase: clients (paged) ─────────────────────────────────────────
+interface ParsedClient {
+  uuid: string;
+  name: string;
+  entityType: string;
+  abn: string | null;
+  acn: string | null;
+  /** XPM `IsArchived` — archived clients stay as history but leave active structures. */
+  isArchived: boolean;
+  isDeleted: boolean;
+  businessStructure: string;
+  rels: {
+    /** Raw XPM label as written on this client's record. */
+    label: string;
+    uuid: string;
+    name: string;
+    startDate: string | null;
+    endDate: string | null;
+  }[];
 }
 
-function xmlText(node: any, key: string): string {
-  if (!node) return "";
-  const val = node[key];
-  if (val === null || val === undefined) return "";
-  if (typeof val === "object" && val["#text"] !== undefined) return String(val["#text"]);
-  return String(val);
+/**
+ * Split a raw client-list body into one string per `<Client>` record.
+ *
+ * A plain index scan, not a DOM parse: XPM ignores `pagesize` on detailed
+ * client lists and returns the practice's whole client list (4 MB+, 1,000+
+ * clients) in one response, and parsing that in one go exhausts the worker's
+ * CPU allowance before a single client can be saved.
+ */
+function splitClientSegments(xml: string): string[] {
+  const out: string[] = [];
+  let from = 0;
+  for (;;) {
+    const open = xml.indexOf("<Client>", from);
+    if (open === -1) break;
+    const close = xml.indexOf("</Client>", open);
+    if (close === -1) break;
+    out.push(xml.slice(open + 8, close));
+    from = close + 9;
+  }
+  return out;
 }
 
-// ── Entity type mapping from XPM BusinessStructure field ────────────
-// NOTE: XPM's "Type" field is billing/payment info (PaymentTerm, CostMarkup).
-// The actual entity classification comes from "BusinessStructure".
-const BUSINESS_STRUCTURE_MAP: Record<string, string> = {
-  Individual: "Individual",
-  Company: "Company",
-  Trust: "Trust",
-  Partnership: "Partnership",
-  "Sole Trader": "Sole Trader",
-  "Trustee Company": "Company",
-  "Discretionary Trust": "trust_discretionary",
-  "Unit Trust": "trust_unit",
-  "Hybrid Trust": "trust_hybrid",
-  "Bare Trust": "trust_bare",
-  "Testamentary Trust": "trust_testamentary",
-  "Deceased Estate": "trust_deceased_estate",
-  "Family Trust": "trust_family",
-  "Self Managed Superannuation Fund": "smsf",
-  SMSF: "smsf",
-  "Super Fund": "smsf",
-  SuperFund: "smsf",
+const ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&apos;": "'",
 };
 
-function resolveEntityType(businessStructure?: string): string {
-  if (businessStructure) {
-    const mapped = BUSINESS_STRUCTURE_MAP[businessStructure];
-    if (mapped) return mapped;
-    // Try case-insensitive match
-    const lower = businessStructure.toLowerCase();
-    for (const [key, val] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
-      if (key.toLowerCase() === lower) return val;
+function decodeXml(s: string): string {
+  if (!s.includes("&")) return s;
+  return s
+    .replace(/&(amp|lt|gt|quot|apos);/g, (m) => ENTITIES[m] ?? m)
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+}
+
+/** First `<tag>…</tag>` value inside a fragment, decoded. Empty when absent. */
+function tagText(fragment: string, tag: string): string {
+  const open = `<${tag}>`;
+  const start = fragment.indexOf(open);
+  if (start === -1) return "";
+  const end = fragment.indexOf(`</${tag}>`, start);
+  if (end === -1) return "";
+  return decodeXml(fragment.slice(start + open.length, end)).trim();
+}
+
+/** Parse one `<Client>` fragment down to the minimal shape the sync persists. */
+function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
+  // Client-level fields live before the relationship list; splitting first keeps
+  // a relationship's own UUID/Name from being read as the client's.
+  const relStart = segment.indexOf("<Relationships");
+  const head = relStart === -1 ? segment : segment.slice(0, relStart);
+  const tail = relStart === -1 ? "" : segment.slice(relStart);
+
+  const uuid = tagText(head, "UUID");
+  const name = tagText(head, "Name") ||
+    `${tagText(head, "FirstName")} ${tagText(head, "LastName")}`.trim();
+  if (!uuid || !name) return null;
+
+  const businessStructure = tagText(head, "BusinessStructure");
+  const entityType = resolveEntityType(businessStructure, name);
+  const rels: ParsedClient["rels"] = [];
+
+  if (tail) {
+    for (const m of tail.matchAll(/<Relationship>([\s\S]*?)<\/Relationship>/g)) {
+      const rel = m[1];
+      const raw = tagText(rel, "Type") || tagText(rel, "RelationshipType");
+      const relatedIdx = rel.indexOf("<RelatedClient");
+      const relatedFragment = relatedIdx === -1 ? rel : rel.slice(relatedIdx);
+      const relatedUuid = tagText(relatedFragment, "UUID") || tagText(rel, "RelatedClientUUID");
+      const relatedName = tagText(relatedFragment, "Name") || tagText(rel, "RelatedClientName");
+      if (!raw || !relatedUuid) continue;
+      // Every raw fact is kept: the canonical normaliser decides direction and
+      // validity later, and unknown labels become evidence rather than vanish.
+      if (!parseXpmLabel(raw).type && !isIgnoredLabel(raw)) warnUnknownRelType(p, raw.toLowerCase());
+      rels.push({
+        label: raw,
+        uuid: relatedUuid,
+        name: relatedName,
+        startDate: tagText(rel, "StartDate") || null,
+        endDate: tagText(rel, "EndDate") || null,
+      });
     }
   }
-  return "Unclassified";
+
+  return {
+    uuid,
+    name,
+    entityType,
+    abn: tagText(head, "TaxNumber") || tagText(head, "ABN") || null,
+    acn: tagText(head, "CompanyNumber") || tagText(head, "ACN") || null,
+    isArchived: tagText(head, "IsArchived").toLowerCase() === "yes",
+    isDeleted: tagText(head, "IsDeleted").toLowerCase() === "yes",
+    businessStructure,
+    rels,
+  };
 }
 
-// ── Relationship type mapping ───────────────────────────────────────
-const REL_TYPE_MAP: Record<string, string> = {
-  "director of": "director",
-  "trustee of": "trustee",
-  "shareholder of": "shareholder",
-  "beneficiary of": "beneficiary",
-  "partner of": "partner",
-  "appointer of": "appointer",
-  "appointor of": "appointer",
-  "settlor of": "settlor",
-  "member of": "member",
-  "spouse of": "spouse",
-  "parent of": "parent",
-  "child of": "child",
-};
+/**
+ * Canonical normalisation for one chunk (Rulebook v1, contract canonical_v1).
+ *
+ * Entity types are the ones the database will hold after the upsert: a stored
+ * classified type wins, otherwise the type sent in this payload — exactly the
+ * rule `sync_xpm_upsert_clients` applies. Name-only types are provisional.
+ * Every raw relationship yields one evidence draft; only canonical edges are
+ * sent as rels (Spouse alone de-duplicated unordered; Partner keeps direction).
+ */
+async function normaliseChunk(
+  supabase: any,
+  tenantId: string,
+  parsed: ParsedClient[],
+  related: Map<string, string>,
+): Promise<{ rels: Record<string, unknown>[]; evidence: EvidenceDraft[]; skipped: number }> {
+  const t = tuning();
+  const payloadType = new Map<string, string>();
+  const provisionalCandidate = new Map<string, string>();
+  for (const c of parsed) {
+    payloadType.set(c.uuid, c.entityType);
+    const prov = classifyWithProvenance(resolveEntityType, c.businessStructure, c.name);
+    if (prov.provisional) provisionalCandidate.set(c.uuid, prov.entityType);
+  }
+  for (const [uuid, name] of related) {
+    if (payloadType.has(uuid)) continue;
+    const ty = resolveEntityType(undefined, name);
+    payloadType.set(uuid, ty);
+    if (ty !== "Unclassified") provisionalCandidate.set(uuid, ty);
+  }
+  for (const c of parsed) {
+    for (const r of c.rels) if (!payloadType.has(r.uuid)) payloadType.set(r.uuid, "Unclassified");
+  }
 
-// ── Detect corporate trustee from name ──────────────────────────────
-function isCorporateTrustee(name: string, entityType: string): boolean {
-  if (entityType !== "Company") return false;
-  const lower = name.toLowerCase();
-  return lower.includes("as trustee for") || lower.includes("atf ") || lower.includes(" atf") || /\btrustee\b/.test(lower);
+  const uuids = [...payloadType.keys()];
+  const stored = new Map<string, { id: string; type: string }>();
+  for (const batch of chunk(uuids, t.filterBatchSize)) {
+    const startedAt = Date.now();
+    counters.dbCalls++;
+    const { data, error } = await supabase
+      .from("entities")
+      .select("id, xpm_uuid, entity_type")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .in("xpm_uuid", batch);
+    counters.dbMs += Date.now() - startedAt;
+    if (error) throw new Error(`Entity type lookup failed: ${error.message}`);
+    for (const e of data ?? []) if (e.xpm_uuid) stored.set(e.xpm_uuid, { id: e.id, type: e.entity_type });
+  }
+
+  const entityTypes = new Map<string, string>();
+  const provisionalTypes = new Set<string>();
+  for (const uuid of uuids) {
+    const s = stored.get(uuid);
+    const finalType = s && s.type !== "Unclassified" ? s.type : payloadType.get(uuid)!;
+    entityTypes.set(uuid, finalType);
+    const cand = provisionalCandidate.get(uuid);
+    if (cand && cand === finalType && (!s || s.type === "Unclassified")) provisionalTypes.add(uuid);
+  }
+
+  // Trades As owners only for Sole Traders that already exist (a new record
+  // cannot have an owner yet). Keyed by XPM UUID like every other endpoint;
+  // owners are entity ids, which the bridge resolves within the tenant.
+  const tradesAsOwners = new Map<string, string[]>();
+  const soleTraders = uuids.filter((u) => entityTypes.get(u) === "Sole Trader" && stored.has(u));
+  if (soleTraders.length > 0) {
+    const ta = await loadTradesAsOwners(
+      supabase, tenantId, soleTraders.map((u) => stored.get(u)!.id), t.filterBatchSize,
+    );
+    for (const [id, ty] of ta.ownerTypes) if (!entityTypes.has(id)) entityTypes.set(id, ty);
+    for (const u of soleTraders) {
+      const owners = ta.owners.get(stored.get(u)!.id);
+      if (owners) tradesAsOwners.set(u, owners);
+    }
+  }
+
+  const ctx = { entityTypes, provisionalTypes, tradesAsOwners };
+  const evidence: EvidenceDraft[] = [];
+  const rels: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+  for (const c of parsed) {
+    for (const r of c.rels) {
+      const raw: XpmRawRelationship = {
+        label: r.label,
+        clientId: c.uuid,
+        relatedId: r.uuid,
+        clientName: c.name,
+        relatedName: r.name || null,
+        payload: { start_date: r.startDate, end_date: r.endDate },
+      };
+      const { evidence: draft, edge } = normaliseXpmRelationship(raw, ctx);
+      evidence.push(draft);
+      if (!edge) {
+        if (!isIgnoredLabel(r.label)) skipped++;
+        continue;
+      }
+      const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rels.push({
+        type: edge.type,
+        from_uuid: edge.fromId,
+        to_uuid: edge.toId,
+        start_date: r.startDate,
+        end_date: r.endDate,
+      });
+    }
+  }
+  return { rels, evidence, skipped };
 }
 
-function extractTrustName(name: string): string | null {
-  const atfMatch = name.match(/(?:as\s+trustee\s+for|atf)\s+(.+)/i);
-  return atfMatch ? atfMatch[1].trim() : null;
-}
+/**
+ * Fetch one client page and persist it in bounded chunks.
+ *
+ * XPM ignores `pagesize` on detailed client lists: one "page" can be the whole
+ * practice (4 MB, 1,300+ clients), which is far more than a single worker can
+ * parse. The body is therefore scanned as text, and clients are parsed and
+ * persisted `clientChunkSize` at a time, saving `clientOffset` after each chunk.
+ * When the slice budget runs out mid-page the function returns "partial" and a
+ * fresh worker resumes at the same offset — nothing is reprocessed and nothing
+ * is lost.
+ *
+ * Entity resolution, inserts, field backfills and relationship de-duplication
+ * all happen inside `sync_xpm_upsert_clients`, so a chunk costs one DB request.
+ */
+async function processClientPage(
+  supabase: any,
+  tenantId: string,
+  accessToken: string,
+  xeroTenantId: string,
+  page: number,
+  p: Progress,
+  trusteePairs: { trustee_uuid: string; trust_name: string }[],
+  sliceStartedAt: number,
+  onChunk: () => Promise<void>,
+  importRunId: string,
+): Promise<"processed" | "empty" | "repeat" | "partial"> {
+  const t = tuning();
+  let pageText: string | null = await xpmGetText(
+    `/client.api/list?detailed=true&page=${page}&pagesize=${t.clientPageSize}`,
+    accessToken,
+    xeroTenantId,
+  );
+  if (!pageText) return "empty";
 
-// ── Discover PRACTICEMANAGER tenant ID ──────────────────────────────
-async function discoverPmTenantId(accessToken: string, storedTenantId: string | null): Promise<string | null> {
-  try {
-    const res = await fetch("https://api.xero.com/connections", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (res.ok) {
-      const conns = await res.json();
-      const pmConn = conns.find((c: any) => c.tenantType === "PRACTICEMANAGER");
-      if (pmConn) {
-        console.log(`[sync-xpm] Using PRACTICEMANAGER tenant: ${pmConn.tenantName} (${pmConn.tenantId})`);
-        return pmConn.tenantId;
+  let segments: string[] | null = splitClientSegments(pageText);
+  // Release the 4 MB body as soon as it has been indexed.
+  pageText = null;
+  if (segments.length === 0) return "empty";
+
+  // Same page as last time → XPM is not paginating this practice's client list.
+  const firstUuid = tagText(segments[0], "UUID");
+  const lastUuid = tagText(segments[segments.length - 1], "UUID");
+  const pageKey = `${segments.length}:${firstUuid}:${lastUuid}`;
+  if (pageKey === p.lastPageKey && p.clientOffset === 0) return "repeat";
+  p.lastPageKey = pageKey;
+
+  const total = segments.length;
+  while (p.clientOffset < total) {
+    const slice = segments.slice(p.clientOffset, p.clientOffset + t.clientChunkSize);
+
+    const clients: Record<string, unknown>[] = [];
+    const related = new Map<string, string>();
+    const parsedClients: ParsedClient[] = [];
+
+    for (const segment of slice) {
+      const c = parseClientSegment(segment, p);
+      if (!c) continue;
+      // Deleted in XPM means the record no longer exists there; skip it entirely
+      // rather than resurrecting it as an entity.
+      if (c.isDeleted) continue;
+      const isTrustee = isCorporateTrustee(c.name, c.entityType);
+      p.stats.typeCounts[c.entityType] = (p.stats.typeCounts[c.entityType] || 0) + 1;
+      if (isTrustee) {
+        p.stats.trusteesDetected++;
+        const trustName = extractTrustName(c.name);
+        if (trustName) trusteePairs.push({ trustee_uuid: c.uuid, trust_name: trustName });
+      }
+
+      clients.push({
+        uuid: c.uuid,
+        name: c.name,
+        entity_type: c.entityType,
+        abn: c.abn,
+        acn: c.acn,
+        is_trustee: isTrustee,
+        is_archived: c.isArchived,
+      });
+
+      parsedClients.push(c);
+      for (const r of c.rels) {
+        if (r.name) related.set(r.uuid, r.name);
       }
     }
-  } catch (e) {
-    console.warn("[sync-xpm] Failed to fetch /connections:", e);
+
+    if (clients.length > 0) {
+      const { rels, evidence, skipped } = await normaliseChunk(supabase, tenantId, parsedClients, related);
+      p.stats.relationshipsSkipped += skipped;
+      const { data, error } = await rpcCall(supabase, "sync_xpm_upsert_clients", {
+        _tenant_id: tenantId,
+        _payload: {
+          clients,
+          // Related parties arrive as name-only mentions. Classifying from the
+          // name lets a record that is only ever mentioned (never a primary
+          // client) still be typed instead of staying Unclassified forever.
+          related: [...related.entries()].map(([uuid, name]) => ({
+            uuid,
+            name,
+            entity_type: resolveEntityType(undefined, name),
+          })),
+          contract: "canonical_v1",
+          import_source: "xpm_sync",
+          import_run_id: importRunId,
+          rels,
+          evidence,
+        },
+      });
+      if (error) throw new DatabaseStepError(`Client page ${page} failed: ${error.message}`);
+
+      const res = (data ?? {}) as any;
+      p.stats.entitiesCreated += res.entitiesCreated ?? 0;
+      p.stats.entitiesUpdated += res.entitiesUpdated ?? 0;
+      p.stats.relationshipsCreated += res.relationshipsCreated ?? 0;
+      p.stats.relationshipsSkipped += res.relationshipsSkipped ?? 0;
+      for (const w of res.warnings ?? []) warn(p, String(w));
+
+      // Only clients that appear in XPM's list are "seen": a client that shows up
+      // solely as a relation is archived in XPM and must not look live here.
+      const markSeen = await rpcCall(supabase, "sync_xpm_mark_seen", {
+        _tenant_id: tenantId,
+        _uuids: clients.map((c) => c.uuid as string),
+      });
+      // A failed mark-seen call would make live clients look absent and get them
+      // archived by the sweep, so it must fail the slice instead of passing quietly.
+      if (markSeen.error) {
+        throw new DatabaseStepError(
+          `Could not record clients as seen: ${markSeen.error.message ?? markSeen.error}`,
+        );
+      }
+    }
+
+    p.stats.clientsFetched += clients.length;
+    p.clientOffset += slice.length;
+    // Persist after every chunk: the progress bar moves, and a worker that dies
+    // costs at most one chunk of work.
+    await onChunk();
+
+    if (p.clientOffset < total && Date.now() - sliceStartedAt > t.sliceBudgetMs) {
+      segments = null;
+      return "partial";
+    }
   }
-  return storedTenantId;
+
+  segments = null;
+  p.clientOffset = 0;
+  return "processed";
 }
 
-// ── Main ────────────────────────────────────────────────────────────
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+// ── Phase: groups ──────────────────────────────────────────────────
+/**
+ * Pull the group catalogue from XPM once and persist it to `xpm_groups`.
+ * The list is never kept on the job row: the group phase pages through the
+ * table by `xpm_uuid` cursor instead, so job-row size is O(1).
+ */
+async function loadGroupList(
+  supabase: any,
+  tenantId: string,
+  accessToken: string,
+  xeroTenantId: string,
+  p: Progress,
+) {
+  let groupXml: any = await xpmGetXml("/clientgroup.api/list", accessToken, xeroTenantId);
+  const groups = xmlArray(groupXml?.Response?.Groups, "Group")
+    .map((g: any) => ({ uuid: xmlText(g, "UUID"), name: xmlText(g, "Name") }))
+    .filter((g) => g.uuid && g.name);
+  groupXml = null;
+
+  const t = tuning();
+  const now = new Date().toISOString();
+  for (const part of chunk(groups, t.dbBatchSize)) {
+    // `member_hash` and `is_selected` are deliberately left untouched so
+    // previously synced groups keep their fingerprint and the user's choice of
+    // which groups become diagrams survives every catalogue refresh.
+    const { error } = await supabase.from("xpm_groups").upsert(
+      part.map((g) => ({ tenant_id: tenantId, xpm_uuid: g.uuid, name: g.name, updated_at: now })),
+      { onConflict: "tenant_id,xpm_uuid" },
+    );
+    if (error) warn(p, `Failed to persist group batch: ${error.message}`);
   }
 
+  // Only the groups the user chose are turned into diagrams, so progress is
+  // measured against the selection — not the whole XPM catalogue.
+  const { count } = await supabase
+    .from("xpm_groups")
+    .select("xpm_uuid", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("is_selected", true);
+  p.stats.groupsCatalogued = groups.length;
+  p.stats.groupsFound = count ?? 0;
+
+  p.groupsLoaded = true;
+}
+
+/** Next slice of groups to process, ordered by `xpm_uuid` after the cursor. */
+async function fetchGroupSlice(
+  supabase: any,
+  tenantId: string,
+  cursor: string,
+  limit: number,
+): Promise<{ uuid: string; name: string; lastSyncedAt: string | null }[]> {
+  let q = supabase
+    .from("xpm_groups")
+    .select("xpm_uuid, name, last_synced_at")
+    .eq("tenant_id", tenantId)
+    .eq("is_selected", true)
+    .order("xpm_uuid", { ascending: true })
+    .limit(limit);
+  if (cursor) q = q.gt("xpm_uuid", cursor);
+  const { data, error } = await q;
+  if (error) throw new Error(`Failed to read group slice: ${error.message}`);
+  return (data ?? []).map((r: any) => ({
+    uuid: r.xpm_uuid,
+    name: r.name,
+    lastSyncedAt: r.last_synced_at as string | null,
+  }));
+}
+
+
+/**
+ * Fetch one group's membership from XPM. No database work happens here: group
+ * rows are linked in batches (see `linkGroupBatch`) so the per-group database
+ * round-trip is off the critical path and XPM latency is the only cost.
+ */
+async function fetchGroupMembers(
+  accessToken: string,
+  xeroTenantId: string,
+  group: { uuid: string; name: string },
+  p: Progress,
+): Promise<{ uuid: string; name: string; hash: string; members: string[] } | null> {
+  let detail: any = await xpmGetXml(`/clientgroup.api/get/${group.uuid}`, accessToken, xeroTenantId);
+  if (!detail) {
+    warn(p, `Could not read group "${group.name}" from XPM`);
+    return null;
+  }
+  const members = xmlArray(detail?.Response?.Group?.Clients, "Client")
+    .map((m: any) => xmlText(m, "UUID"))
+    .filter(Boolean);
+  detail = null;
+
+  return { uuid: group.uuid, name: group.name, hash: await hashMembers(group.name, members), members };
+}
+
+/**
+ * Link a batch of groups in ONE database request. The routine resolves each
+ * structure, links members and their relationships, and compares the membership
+ * fingerprint so an unchanged group short-circuits server-side.
+ */
+async function linkGroupBatch(
+  supabase: any,
+  tenantId: string,
+  batch: { uuid: string; name: string; hash: string; members: string[] }[],
+  p: Progress,
+) {
+  if (batch.length === 0) return;
+  const { data, error } = await rpcCall(supabase, "sync_xpm_link_groups", {
+    _tenant_id: tenantId,
+    _groups: batch,
+  });
+  if (error) {
+    warn(p, `Failed to sync ${batch.length} group(s): ${error.message}`);
+    return;
+  }
+  const res = (data ?? {}) as any;
+  p.stats.groupsCreated += res.structuresCreated ?? 0;
+  p.stats.groupsSkippedUnchanged += res.skippedUnchanged ?? 0;
+  const blocked = res.groupsBlocked ?? 0;
+  if (blocked > 0 || res.limitReached === true) {
+    // Distinct, expected condition — recorded once, not buried in warnings.
+    p.stats.groupsBlockedByLimit += blocked;
+    if (!p.limitReached) {
+      p.limitReached = true;
+      p.limitCode = String(res.limitCode ?? "structure_limit_reached");
+      warn(
+        p,
+        p.limitCode === "subscription_inactive"
+          ? "Some client groups could not be turned into diagrams because the subscription is inactive."
+          : "Some client groups could not be turned into diagrams because the workspace structure limit was reached.",
+      );
+    }
+    for (const name of res.blockedGroups ?? []) {
+      if (p.blockedGroups.length < 20) p.blockedGroups.push(String(name));
+    }
+  }
+  for (const e of res.errors ?? []) warn(p, String(e));
+}
+
+// ── Phase: staff + fallback structure ──────────────────────────────
+async function processStaff(
+  supabase: any,
+  tenantId: string,
+  accessToken: string,
+  xeroTenantId: string,
+  p: Progress,
+) {
+  const t = tuning();
+  const staffXml = await xpmGetXml("/staff.api/list", accessToken, xeroTenantId, 3, {
+    optionalScope: true,
+  });
+  if (!staffXml) {
+    warn(p, "Your Xero connection doesn't include staff access, so staff were skipped.");
+    return;
+  }
+
+  const names = xmlArray(staffXml?.Response?.StaffList, "Staff")
+    .map((s: any) => xmlText(s, "Name") || `${xmlText(s, "FirstName")} ${xmlText(s, "LastName")}`.trim())
+    .filter(Boolean);
+  p.stats.staffFetched = names.length;
+
+  const existing = new Set<string>();
+  for (const part of chunk([...new Set(names)], t.filterBatchSize)) {
+    const { data } = await supabase
+      .from("entities")
+      .select("name")
+      .eq("tenant_id", tenantId)
+      .eq("entity_type", "Individual")
+      .is("deleted_at", null)
+      .in("name", part);
+    for (const row of data ?? []) existing.add(row.name);
+  }
+
+  const rows = [...new Set(names)]
+    .filter((n) => !existing.has(n))
+    .map((name) => ({ tenant_id: tenantId, name, entity_type: "Individual", source: "imported" }));
+
+  await bulkInsertEntities(supabase, rows, t.dbBatchSize, p);
+}
+
+/**
+ * Only used when the practice has no client groups at all. Scoped to records
+ * touched by THIS sync (one INSERT … SELECT per table), so it never rescans the
+ * tenant's whole entity/relationship history like the paged version did.
+ */
+async function ensureFallbackStructure(supabase: any, tenantId: string, p: Progress) {
+  if (p.stats.groupsFound > 0) return;
+  if (p.stats.entitiesCreated === 0 && p.stats.entitiesUpdated === 0) return;
+
+  const { error } = await rpcCall(supabase, "sync_xpm_ensure_fallback_structure", {
+    _tenant_id: tenantId,
+    _since: p.started_at,
+  });
+  if (error) warn(p, `Failed to build fallback structure: ${error.message}`);
+}
+
+
+// ── One bounded slice of work ──────────────────────────────────────
+async function runSlice(
+  supabase: any,
+  jobId: string,
+  tenantId: string,
+  progress: Progress,
+): Promise<Progress> {
+  const t = tuning();
+  const p = progress;
+  p.runs++;
+  const c0 = { ...counters };
+  const sliceStartedAt = Date.now();
+
+  const chosenConnection = await loadXeroConnection(supabase, tenantId);
+  if (!chosenConnection) throw new Error("No Xero connection found");
+  const connections = [chosenConnection];
+
+
+  const accessToken = await refreshAccessToken(supabase, connections[0]);
+  // Discover the Practice Manager tenant once, then persist it so later slices
+  // skip the extra /connections round-trip entirely.
+  let xeroTenantId = connections[0].xero_tenant_id as string | null;
+  if (!xeroTenantId) {
+    xeroTenantId = await discoverPmTenantId(accessToken, null);
+    if (xeroTenantId) {
+      await supabase
+        .from("xero_connections")
+        .update({ xero_tenant_id: xeroTenantId, updated_at: new Date().toISOString() })
+        .eq("id", connections[0].id);
+    }
+  }
+  if (!xeroTenantId) throw new Error("Xero tenant ID not available");
+
+  // Heartbeat BEFORE any heavy XPM/XML work so a worker that dies mid-page
+  // leaves a visible, reap-able timestamp instead of a silently stuck job.
+  p.updated_at = new Date().toISOString();
+  await saveProgress(supabase, jobId, p);
+
+  if (p.phase === "clients") {
+    const trusteePairs: { trustee_uuid: string; trust_name: string }[] = [];
+    // Save after every chunk of clients so the progress counter moves and the
+    // job row's `updated_at` proves this worker is alive.
+    const heartbeat = async () => {
+      p.updated_at = new Date().toISOString();
+      await saveProgress(supabase, jobId, p);
+    };
+    if (p.clientPage === 1 && p.clientOffset === 0 && !p.sweepStartedAt) {
+      p.sweepStartedAt = new Date().toISOString();
+    }
+    let sweepComplete = false;
+    for (let i = 0; i < t.clientPagesPerRun; i++) {
+      const outcome = await processClientPage(
+        supabase, tenantId, accessToken, xeroTenantId, p.clientPage, p, trusteePairs,
+        sliceStartedAt, heartbeat, jobId,
+      );
+      // Budget spent mid-page: keep the page and offset, hand over to a fresh
+      // worker rather than being killed with "CPU Time exceeded".
+      if (outcome === "partial") break;
+      if (outcome !== "processed" || p.clientPage >= t.maxClientPages) {
+        // "empty"/"repeat" means XPM has no further pages, so every active client
+        // has now been seen and absentees can safely be treated as archived.
+        sweepComplete = outcome === "empty" || outcome === "repeat";
+        p.phase = "groups";
+        break;
+      }
+      p.clientPage++;
+      await heartbeat();
+      if (Date.now() - sliceStartedAt > t.sliceBudgetMs) break;
+    }
+
+    // Corporate trustee → trust matching for this run, resolved set-based in a
+    // single call instead of one wildcard query per trustee.
+    if (trusteePairs.length > 0) {
+      const { data, error } = await rpcCall(supabase, "sync_xpm_link_trustees", {
+        _tenant_id: tenantId,
+        _pairs: trusteePairs,
+      });
+      if (error) warn(p, `Trustee matching failed: ${error.message}`);
+      else p.stats.relationshipsCreated += (data as any)?.relationshipsCreated ?? 0;
+    }
+
+    if (sweepComplete && p.sweepStartedAt) {
+      const { error } = await rpcCall(supabase, "sync_xpm_archive_absent_clients", {
+        _tenant_id: tenantId,
+        _since: p.sweepStartedAt,
+      });
+      if (error) warn(p, `Archived-client check failed: ${error.message}`);
+      p.sweepStartedAt = null;
+    }
+  } else if (p.phase === "groups") {
+    // Capacity is re-read each slice: it can change mid-run (a structure is
+    // archived, the plan is upgraded), and it is what the UI reports.
+    const capacity = await readCapacity(supabase, tenantId);
+    p.capacityRemaining = capacity.remaining;
+    if (!p.groupsLoaded) {
+      await loadGroupList(supabase, tenantId, accessToken, xeroTenantId, p);
+      p.updated_at = new Date().toISOString();
+      await saveProgress(supabase, jobId, p);
+    }
+    // Catalogue-only: the list is what was asked for, so stop before touching
+    // clients, diagrams or staff.
+    if (p.catalogueOnly) {
+      p.phase = "done";
+      p.stats.wallMs += Date.now() - sliceStartedAt;
+      p.updated_at = new Date().toISOString();
+      return p;
+    }
+    const slice = await fetchGroupSlice(supabase, tenantId, p.groupCursor, t.groupsPerRun);
+    if (slice.length === 0) {
+      p.phase = "staff";
+    } else {
+      // Bounded concurrency: a few groups in flight, never all of them, and the
+      // cursor advances batch by batch so a worker killed for CPU time never
+      // reprocesses (or loses) a group.
+      let processed = 0;
+      // Groups read recently enough are left alone: their membership is already
+      // in the database and re-reading them would only spend XPM quota.
+      const freshBefore = Date.now() - t.groupFreshnessMinutes * 60_000;
+      const dueGroups = p.fullSync
+        ? slice
+        : slice.filter((g) => !g.lastSyncedAt || new Date(g.lastSyncedAt).getTime() < freshBefore);
+      const skippedFresh = slice.length - dueGroups.length;
+      if (skippedFresh > 0) {
+        p.stats.groupsSkippedUnchanged += skippedFresh;
+        p.stats.groupsProcessed += skippedFresh;
+      }
+      if (dueGroups.length === 0) {
+        p.groupCursor = slice[slice.length - 1].uuid;
+        processed = slice.length;
+        p.updated_at = new Date().toISOString();
+        await saveProgress(supabase, jobId, p);
+      }
+      for (const batch of chunk(dueGroups, t.groupBatchSize)) {
+        const batchStartedAt = Date.now();
+        const fetched = await mapLimit(batch, t.groupConcurrency, (group) =>
+          fetchGroupMembers(accessToken, xeroTenantId!, group, p)
+        );
+        await linkGroupBatch(
+          supabase,
+          tenantId,
+          fetched.filter((g): g is NonNullable<typeof g> => g !== null),
+          p,
+        );
+        console.log(`[sync-xpm] linked ${batch.length} groups in ${Date.now() - batchStartedAt}ms (slice ${Date.now() - sliceStartedAt}ms)`);
+        processed += batch.length;
+        p.stats.groupsProcessed += batch.length;
+        p.groupCursor = batch[batch.length - 1].uuid;
+        p.updated_at = new Date().toISOString();
+        await saveProgress(supabase, jobId, p);
+        if (Date.now() - sliceStartedAt > t.sliceBudgetMs) break;
+      }
+      if (processed >= dueGroups.length && slice.length < t.groupsPerRun) p.phase = "staff";
+    }
+  } else if (p.phase === "staff") {
+    await processStaff(supabase, tenantId, accessToken, xeroTenantId, p);
+    await ensureFallbackStructure(supabase, tenantId, p);
+    p.phase = "done";
+  }
+
+
+  p.stats.xpmRequests += counters.xpmRequests - c0.xpmRequests;
+  p.stats.xpmMs += counters.xpmMs - c0.xpmMs;
+  p.stats.dbCalls += counters.dbCalls - c0.dbCalls;
+  p.stats.dbMs += counters.dbMs - c0.dbMs;
+  p.stats.wallMs += Date.now() - sliceStartedAt;
+  p.updated_at = new Date().toISOString();
+  return p;
+}
+
+/**
+ * Raised when the job row is no longer `processing` — the user cancelled it, or
+ * a watchdog reaped it. The worker stops immediately instead of resurrecting a
+ * cancelled run by writing progress back.
+ */
+class JobCancelledError extends Error {}
+
+async function saveProgress(
+  supabase: any,
+  jobId: string,
+  p: Progress,
+  opts?: { releaseLease?: boolean },
+): Promise<void> {
+  const done = p.phase === "done";
+  // Hold the lease while this worker is making progress, and hand it over when
+  // the slice ends so the next worker in the chain can claim the job.
+  p.leaseUntil = done || opts?.releaseLease
+    ? ""
+    : new Date(Date.now() + LEASE_SECONDS * 1000).toISOString();
+  const { data } = await supabase
+    .from("import_logs")
+    .update({
+      status: done ? "completed" : "processing",
+      result: {
+        success: done,
+        dataSource: "practicemanager_3.1_xml",
+        phase: p.phase,
+        progress: {
+          clientPage: p.clientPage,
+          clientOffset: p.clientOffset,
+          groupCursor: p.groupCursor,
+          groupsLoaded: p.groupsLoaded,
+          lastPageKey: p.lastPageKey,
+          sweepStartedAt: p.sweepStartedAt,
+          fullSync: p.fullSync,
+          catalogueOnly: p.catalogueOnly,
+          leaseUntil: p.leaseUntil,
+          groupsProcessed: p.stats.groupsProcessed,
+          groupsTotal: p.stats.groupsFound,
+          runs: p.runs,
+        },
+        ...p.stats,
+        // The cap is reported as its own terminal condition, not as a warning,
+        // so the UI can finish the run as "completed with limits reached".
+        limitReached: p.limitReached,
+        limitCode: p.limitCode || null,
+        blockedGroups: p.blockedGroups.slice(0, 20),
+        capacityRemaining: p.capacityRemaining,
+        // Keep the row bounded: only the most recent warnings are retained.
+        warnings: p.warnings.slice(-50),
+        started_at: p.started_at,
+        updated_at: p.updated_at,
+      },
+    })
+    .eq("id", jobId)
+    // Only a job that is still running may be written to: a cancelled or reaped
+    // job stays terminal.
+    .eq("status", "processing")
+    .select("id");
+  if (!data?.length) throw new JobCancelledError("Sync job is no longer running");
+}
+
+
+
+/**
+ * Kick a fresh worker to continue the same job. The next worker still has to
+ * claim the job lease before doing anything, so a duplicate chain stands down
+ * instead of double-calling XPM (which trips Xero's rate limit).
+ */
+async function continueJob(jobId: string, expectRuns: number) {
+  const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/sync-xpm`;
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      apikey: key,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ continue_job: jobId, expect_runs: expectRuns }),
+  }).catch((e) => console.error("[sync-xpm] continuation failed:", e));
+}
+
+function loadProgress(result: any): Progress {
+  const base = emptyProgress();
+  if (!result || typeof result !== "object") return base;
+  return {
+    ...base,
+    phase: (result.phase as Phase) ?? base.phase,
+    clientPage: result.progress?.clientPage ?? base.clientPage,
+    clientOffset: result.progress?.clientOffset ?? base.clientOffset,
+    groupCursor: result.progress?.groupCursor ?? base.groupCursor,
+    groupsLoaded: result.progress?.groupsLoaded ?? base.groupsLoaded,
+    lastPageKey: result.progress?.lastPageKey ?? base.lastPageKey,
+    sweepStartedAt: result.progress?.sweepStartedAt ?? base.sweepStartedAt,
+    fullSync: result.progress?.fullSync ?? base.fullSync,
+    catalogueOnly: result.progress?.catalogueOnly ?? base.catalogueOnly,
+    leaseUntil: result.progress?.leaseUntil ?? base.leaseUntil,
+
+    runs: result.progress?.runs ?? 0,
+    started_at: result.started_at ?? base.started_at,
+    stats: {
+      ...base.stats,
+      clientsFetched: result.clientsFetched ?? 0,
+      entitiesCreated: result.entitiesCreated ?? 0,
+      entitiesUpdated: result.entitiesUpdated ?? 0,
+      relationshipsCreated: result.relationshipsCreated ?? 0,
+      relationshipsSkipped: result.relationshipsSkipped ?? 0,
+      groupsFound: result.groupsFound ?? 0,
+      groupsCatalogued: result.groupsCatalogued ?? 0,
+      groupsCreated: result.groupsCreated ?? 0,
+      groupsProcessed: result.groupsProcessed ?? result.progress?.groupsProcessed ?? 0,
+      groupsSkippedUnchanged: result.groupsSkippedUnchanged ?? 0,
+      trusteesDetected: result.trusteesDetected ?? 0,
+
+      staffFetched: result.staffFetched ?? 0,
+      groupsBlockedByLimit: result.groupsBlockedByLimit ?? 0,
+      xpmRequests: result.xpmRequests ?? 0,
+      xpmMs: result.xpmMs ?? 0,
+      dbCalls: result.dbCalls ?? 0,
+      dbMs: result.dbMs ?? 0,
+      wallMs: result.wallMs ?? 0,
+      typeCounts: result.typeCounts ?? {},
+    },
+    warnings: Array.isArray(result.warnings) ? result.warnings.slice(0, 200) : [],
+    limitReached: result.limitReached === true,
+    limitCode: result.limitCode ?? "",
+    blockedGroups: Array.isArray(result.blockedGroups) ? result.blockedGroups.slice(0, 20) : [],
+    capacityRemaining: result.capacityRemaining ?? null,
+  };
+}
+
+/** Runs a slice in the background, persists progress, and chains the next run. */
+function scheduleSlice(supabase: any, jobId: string, tenantId: string, progress: Progress) {
+  const task = (async () => {
+    try {
+      const next = await runSlice(supabase, jobId, tenantId, progress);
+      await saveProgress(supabase, jobId, next, { releaseLease: true });
+      if (next.phase !== "done") await continueJob(jobId, next.runs);
+      else console.log(`[sync-xpm] job ${jobId} completed in ${next.runs} runs`);
+    } catch (e) {
+      if (e instanceof JobCancelledError) {
+        // Stopped from the dashboard (or reaped): leave the terminal row alone.
+        console.log(`[sync-xpm] job ${jobId} stopped: ${e.message}`);
+        return;
+      }
+      const reauth = e instanceof XeroReauthRequiredError;
+      const fatal = e instanceof FatalXpmError || reauth;
+      console.error(`[sync-xpm] slice error${fatal ? " (fatal)" : ""}:`, e);
+
+      // Remember a broken connection on the record itself, so every user and
+      // device sees the reconnect prompt instead of a healthy-looking link.
+      const { data: conn } = await supabase
+        .from("xero_connections")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .order("connected_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      const message = e instanceof Error ? e.message : String(e);
+      if (conn && fatal) {
+        await markXeroConnectionInvalid(supabase, conn.id, message);
+      } else if (conn && !(e instanceof DatabaseStepError)) {
+        // Not fatal, but it did fail: stamping the failure time starts the
+        // cooling-off period so the next click can't fire straight into it.
+        await supabase
+          .from("xero_connections")
+          .update({
+            last_error: message.slice(0, 500),
+            last_error_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conn.id);
+      }
+      await supabase
+        .from("import_logs")
+        .update({
+          status: "failed",
+          result: {
+            success: false,
+            phase: progress.phase,
+            requiresReconnect: fatal,
+            error: e instanceof DatabaseStepError
+              ? "The sync failed while saving to strukcha (not a Xero problem). Please contact support@strukcha.app."
+              : e instanceof Error ? e.message : String(e),
+            internalError: e instanceof DatabaseStepError ? message.slice(0, 500) : undefined,
+            ...progress.stats,
+            progress: {
+              clientPage: progress.clientPage,
+              clientOffset: progress.clientOffset,
+              groupCursor: progress.groupCursor,
+              groupsLoaded: progress.groupsLoaded,
+              groupsProcessed: progress.stats.groupsProcessed,
+              groupsTotal: progress.stats.groupsFound,
+              runs: progress.runs,
+            },
+            limitReached: progress.limitReached,
+            limitCode: progress.limitCode || null,
+            blockedGroups: progress.blockedGroups.slice(0, 20),
+            capacityRemaining: progress.capacityRemaining,
+            warnings: progress.warnings.slice(-50),
+          },
+        })
+        .eq("id", jobId)
+        .eq("status", "processing");
+
+    }
+
+  })();
+  // @ts-ignore EdgeRuntime is provided by the Supabase edge runtime
+  EdgeRuntime.waitUntil(task);
+}
+
+// ── HTTP entrypoint ────────────────────────────────────────────────
+Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
   try {
-    const authHeader = req.headers.get("authorization") ?? "";
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Verify caller
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const authHeader = req.headers.get("authorization") ?? "";
+
+    // ── Internal continuation (service-role only) ──────────────────
+    if (body.continue_job) {
+      if (!isServiceRoleRequest(req)) return json({ error: "Unauthorized" }, 401);
+
+      const { data: job } = await supabase
+        .from("import_logs")
+        .select("id, tenant_id, status, result")
+        .eq("id", body.continue_job)
+        .maybeSingle();
+      if (!job) return json({ error: "Job not found" }, 404);
+      if (job.status !== "processing") return json({ skipped: true, status: job.status });
+
+      // Exactly one worker may hold the job at a time: the claim is atomic and
+      // its lease expires on its own if a worker is killed mid-slice.
+      const { data: claimed } = await supabase.rpc("claim_sync_job", {
+        _job_id: job.id,
+        _lease_seconds: LEASE_SECONDS,
+      });
+      if (!claimed) {
+        console.log(`[sync-xpm] ${job.id} is already held by another worker; standing down`);
+        return json({ skipped: true, leased: true });
+      }
+      const { data: fresh } = await supabase
+        .from("import_logs").select("result").eq("id", job.id).maybeSingle();
+      const progress = loadProgress(fresh?.result ?? job.result);
+
+      scheduleSlice(supabase, job.id, job.tenant_id, progress);
+      return json({ continued: true, jobId: job.id }, 202);
+
+    }
+
+    // ── User-initiated sync ───────────────────────────────────────
     const anonClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: authErr } = await anonClient.auth.getUser();
-    if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
-    // Get tenant
     const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
-    if (!tenantId) {
-      return new Response(JSON.stringify({ error: "No tenant found" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!tenantId) return json({ error: "No tenant found" }, 400);
 
-    // Require owner/admin role for destructive sync (overwrites tenant data)
     const { data: callerRole } = await supabase
       .from("tenant_users")
       .select("role")
@@ -237,675 +1298,208 @@ Deno.serve(async (req) => {
       .eq("auth_user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
-
     if (!callerRole || !["owner", "admin"].includes(callerRole.role)) {
-      return new Response(JSON.stringify({ error: "Admin access required" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return json({ error: "Admin access required" }, 403);
+    }
+
+    // ── Stop a running sync ───────────────────────────────────────
+    // The job row is the single source of truth: flipping it out of
+    // `processing` makes the live worker stand down on its next write and stops
+    // the continuation chain, so "Stop sync" really stops.
+    if (body.cancel_job === true || body.cancel_job === "true") {
+      const { data: cancelled } = await supabase
+        .from("import_logs")
+        .update({
+          status: "failed",
+          result: {
+            success: false,
+            cancelled: true,
+            error: "Sync was stopped.",
+          },
+        })
+        .eq("tenant_id", tenantId)
+        .eq("file_name", JOB_FILE_NAME)
+        .eq("status", "processing")
+        .select("id");
+      return json({
+        cancelled: (cancelled?.length ?? 0) > 0,
+        stoppedJobs: cancelled?.length ?? 0,
+        message:
+          (cancelled?.length ?? 0) > 0
+            ? "The XPM sync was stopped."
+            : "No XPM sync was running.",
       });
     }
 
-    // Load Xero connection
+
     const { data: connections } = await supabase
       .from("xero_connections")
-      .select("*")
+      .select("id, status, connection_type, last_error, last_error_at")
       .eq("tenant_id", tenantId)
-      .order("connected_at", { ascending: false })
+      .order("connected_at", { ascending: false, nullsFirst: false })
       .limit(1);
-
-    if (!connections || connections.length === 0) {
-      return new Response(JSON.stringify({ error: "No Xero connection found. Please connect to Xero first." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!connections?.length) {
+      return json({ error: "No Xero connection found. Please connect to Xero first." }, 400);
     }
 
-    const connection = connections[0];
-    const accessToken = await refreshAccessToken(supabase, connection);
-
-    // Discover PRACTICEMANAGER tenant ID
-    const xeroTenantId = await discoverPmTenantId(accessToken, connection.xero_tenant_id);
-    if (!xeroTenantId) {
-      return new Response(JSON.stringify({ error: "Xero tenant ID not set on connection" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // A connection Xero has already rejected can only be fixed by reconnecting.
+    // Refuse up front instead of piling up identical failed runs.
+    if (connections[0].status === "needs_reauth") {
+      return json({
+        error:
+          "Your Xero connection is no longer authorised. Please reconnect Xero Practice Manager and try again.",
+        code: "xero_reauthorization_required",
+      }, 409);
+    }
+    if (connections[0].connection_type === "standard") {
+      return json({
+        error:
+          "The connected Xero organisation doesn't include Practice Manager, so client groups can't be read. Please reconnect using the Practice Manager option.",
+        code: "xero_practice_manager_required",
+      }, 409);
     }
 
-    // Insert a "processing" import_logs row so the UI can track it
-    const { data: jobRow } = await supabase
+    // Cooling-off: after an authorisation failure, an immediate retry only
+    // produces an identical failure and burns Xero's rate limit.
+    const lastErrorAt = connections[0].last_error_at
+      ? new Date(connections[0].last_error_at as string).getTime()
+      : 0;
+    const cooldownLeftMs = lastErrorAt + AUTH_FAILURE_COOLDOWN_MS - Date.now();
+    if (body.full_sync !== true && cooldownLeftMs > 0) {
+      const seconds = Math.ceil(cooldownLeftMs / 1000);
+      return json({
+        error:
+          `The last sync failed while talking to Xero. Please wait ${seconds > 60 ? `${Math.ceil(seconds / 60)} minute(s)` : `${seconds} seconds`} before trying again.`,
+        code: "xero_cooldown",
+        retryAfterSeconds: seconds,
+      }, 429);
+    }
+
+    // Clean up long-dead jobs across the project so nothing sits in
+    // "processing" for ever after a worker was killed mid-slice.
+    await supabase.rpc("fail_stale_import_jobs", { _max_idle_minutes: 30 });
+
+    // A worker heartbeats on every page/batch and its lease lasts 90s, so a job
+    // that hasn't written for STALE_JOB_MS lost its worker.
+    const { data: running } = await supabase
+      .from("import_logs")
+      .select("id, updated_at, result")
+      .eq("tenant_id", tenantId)
+      .eq("file_name", JOB_FILE_NAME)
+      .eq("status", "processing")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (running) {
+      const idleMs = Date.now() - new Date(running.updated_at as string).getTime();
+      if (idleMs < STALE_JOB_MS) {
+        return json({
+          started: true,
+          alreadyRunning: true,
+          jobId: running.id,
+          message: "An XPM sync is already running. Refresh the dashboard shortly to see progress.",
+        }, 202);
+      }
+      // Stalled: take over the abandoned job and carry on from its saved
+      // cursor rather than throwing away the work already done.
+      const { data: claimed } = await supabase.rpc("claim_sync_job", {
+        _job_id: running.id,
+        _lease_seconds: LEASE_SECONDS,
+      });
+      if (claimed) {
+        scheduleSlice(supabase, running.id, tenantId, loadProgress(running.result));
+        return json({
+          started: true,
+          resumed: true,
+          jobId: running.id,
+          message: "The previous sync had stopped responding — it has been resumed where it left off.",
+        }, 202);
+      }
+      return json({
+        started: true,
+        alreadyRunning: true,
+        jobId: running.id,
+        message: "An XPM sync is already running. Refresh the dashboard shortly to see progress.",
+      }, 202);
+    }
+
+
+    // Pre-flight capacity: refuse outright when the subscription cannot create
+    // structures at all, and flag a full workspace so the caller can warn the
+    // user before a long run that will not produce new diagrams.
+    // A catalogue-only run just refreshes the list of client groups, so plan
+    // capacity and the current selection are irrelevant to it.
+    const catalogueOnly = body.catalogue_only === true;
+    const capacity = await readCapacity(supabase, tenantId);
+    if (!catalogueOnly && capacity.enforced && !capacity.accessEnabled) {
+      return json({
+        error:
+          "Your subscription is not active, so client groups cannot be turned into diagrams. Please reactivate your plan and try again.",
+        code: "subscription_inactive",
+      }, 402);
+    }
+    const noCapacity = capacity.enforced && !capacity.unlimited && capacity.remaining === 0;
+
+    // Only the client groups the user picked become diagrams. Report an empty
+    // selection up front instead of finishing a long run with nothing to show.
+    const { count: selectedCount } = await supabase
+      .from("xpm_groups")
+      .select("xpm_uuid", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("is_selected", true);
+    const nothingSelected = (selectedCount ?? 0) === 0;
+
+    const progress = emptyProgress();
+    // `full_sync` forces every group to be re-read from XPM, bypassing the
+    // freshness window. Routine syncs leave recently read groups alone.
+    progress.fullSync = body.full_sync === true;
+    progress.capacityRemaining = capacity.remaining;
+    if (catalogueOnly) {
+      progress.catalogueOnly = true;
+      // Skip straight to the group list: no clients, diagrams or staff.
+      progress.phase = "groups";
+    }
+    const { data: jobRow, error: jobErr } = await supabase
       .from("import_logs")
       .insert({
         tenant_id: tenantId,
         user_id: user.id,
-        file_name: "xpm-sync-3.1",
+        file_name: JOB_FILE_NAME,
         status: "processing",
-        result: { started_at: new Date().toISOString() },
+        result: {
+          phase: progress.phase,
+          started_at: progress.started_at,
+          capacityRemaining: capacity.remaining,
+          ...progress.stats,
+        },
       })
       .select("id")
       .single();
-    const jobId = jobRow?.id ?? null;
-
-    // Run the heavy sync in the background so the request returns immediately
-    // (avoids WORKER_RESOURCE_LIMIT on the request/response cycle).
-    const runSync = async () => {
-      const warnings: string[] = [];
-      let entitiesCreated = 0;
-      let entitiesUpdated = 0;
-      let relationshipsCreated = 0;
-      let relationshipsSkipped = 0;
-      let groupsCreated = 0;
-      let staffFetched = 0;
-      let trusteesDetected = 0;
-      const typeCounts: Record<string, number> = {};
-      const xeroUuidToEntityId = new Map<string, string>();
-      const trusteePairs: { trusteeEntityId: string; trustName: string }[] = [];
-
-    // ════════════════════════════════════════════════════════════════
-    // STEP 1: Fetch /client.api/list?detailed=true — all clients with full details (XML)
-    // This avoids needing individual GET /client.api/get/{uuid} calls
-    // and includes BusinessStructure for entity type classification.
-    // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 1: Fetching detailed client list...");
-    const clientListXml = await xpmGetXml("/client.api/list?detailed=true", accessToken, xeroTenantId);
-
-    if (!clientListXml) {
-      return new Response(JSON.stringify({
-        success: true,
-        message: "No data returned from XPM client list",
-        entitiesCreated: 0,
-        entitiesUpdated: 0,
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Parse XML: Response > Clients > Client
-    const clientsContainer = clientListXml?.Response?.Clients;
-    const clients = xmlArray(clientsContainer, "Client");
-    console.log(`[sync-xpm] Found ${clients.length} clients`);
-
-    // ════════════════════════════════════════════════════════════════
-    // STEP 2: Extract client details from the detailed list response
-    // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 2: Extracting client details from list...");
-
-    interface ClientDetail {
-      uuid: string;
-      name: string;
-      businessStructure: string;
-      companyNumber: string | null;
-      taxNumber: string | null;
-    }
-
-    const clientDetails: ClientDetail[] = [];
-
-    for (let i = 0; i < clients.length; i++) {
-      const c = clients[i];
-      const uuid = xmlText(c, "UUID");
-      if (!uuid) continue;
-
-      // Log first client's keys for diagnostics
-      if (i === 0) {
-        console.log(`[sync-xpm] Sample client keys: ${Object.keys(c || {}).join(", ")}`);
-        console.log(`[sync-xpm] Sample BusinessStructure=${xmlText(c, "BusinessStructure")}`);
-        // Type is billing info (Name, CostMarkup, PaymentTerm) — NOT entity type
-        const typeObj = c?.Type;
-        console.log(`[sync-xpm] Sample Type object keys: ${typeObj ? Object.keys(typeObj).join(", ") : "null"}`);
-      }
-
-      const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
-      if (!name) continue;
-
-      // BusinessStructure is the actual entity type (Individual, Company, Trust, etc.)
-      // Type is billing/payment info — do NOT use for entity classification
-      clientDetails.push({
-        uuid,
-        name,
-        businessStructure: xmlText(c, "BusinessStructure"),
-        companyNumber: xmlText(c, "CompanyNumber") || xmlText(c, "ACN") || null,
-        taxNumber: xmlText(c, "TaxNumber") || xmlText(c, "ABN") || null,
-      });
-    }
-
-    console.log(`[sync-xpm] Extracted details for ${clientDetails.length} clients`);
-
-    // Upsert entities from client details
-    for (const cd of clientDetails) {
-      const entityType = resolveEntityType(cd.businessStructure);
-      const isTrustee = isCorporateTrustee(cd.name, entityType);
-
-      typeCounts[entityType] = (typeCounts[entityType] || 0) + 1;
-      if (isTrustee) trusteesDetected++;
-
-      let existing: { id: string; entity_type: string; xpm_uuid: string | null; abn: string | null; acn: string | null; is_trustee_company: boolean } | null = null;
-
-      const { data: byUuid } = await supabase
-        .from("entities")
-        .select("id, entity_type, xpm_uuid, abn, acn, is_trustee_company")
-        .eq("tenant_id", tenantId)
-        .eq("xpm_uuid", cd.uuid)
-        .is("deleted_at", null)
-        .maybeSingle();
-      existing = byUuid;
-
-      if (!existing) {
-        const { data: byName } = await supabase
-          .from("entities")
-          .select("id, entity_type, xpm_uuid, abn, acn, is_trustee_company")
-          .eq("tenant_id", tenantId)
-          .eq("name", cd.name)
-          .is("deleted_at", null)
-          .maybeSingle();
-        existing = byName;
-      }
-
-      if (existing) {
-        const updates: Record<string, any> = {};
-        if (entityType !== "Unclassified" && existing.entity_type === "Unclassified") updates.entity_type = entityType;
-        if (!existing.xpm_uuid) updates.xpm_uuid = cd.uuid;
-        if (cd.taxNumber && !existing.abn) updates.abn = cd.taxNumber;
-        if (cd.companyNumber && !existing.acn) updates.acn = cd.companyNumber;
-        if (isTrustee && !existing.is_trustee_company) updates.is_trustee_company = true;
-        if (Object.keys(updates).length > 0) {
-          updates.source = "imported";
-          await supabase.from("entities").update(updates).eq("id", existing.id);
-          entitiesUpdated++;
-        }
-        xeroUuidToEntityId.set(cd.uuid, existing.id);
-      } else {
-        const { data, error } = await supabase
-          .from("entities")
-          .insert({
-            tenant_id: tenantId,
-            name: cd.name,
-            xpm_uuid: cd.uuid,
-            entity_type: entityType,
-            abn: cd.taxNumber,
-            acn: cd.companyNumber,
-            is_trustee_company: isTrustee,
-            source: "imported",
-          })
-          .select("id")
-          .single();
-
-        if (error) {
-          warnings.push(`Failed to create entity "${cd.name}": ${error.message}`);
-          continue;
-        }
-        xeroUuidToEntityId.set(cd.uuid, data.id);
-        entitiesCreated++;
-      }
-
-      // Track trustee→trust pairings
-      if (isTrustee) {
-        const trustName = extractTrustName(cd.name);
-        if (trustName) {
-          trusteePairs.push({ trusteeEntityId: xeroUuidToEntityId.get(cd.uuid)!, trustName });
-        }
-      }
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // STEP 3: Extract relationships from detailed list data
-    // The ?detailed=true response includes Relationships per client.
-    // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 3: Extracting client relationships from list data...");
-
-    const relDedupeSet = new Set<string>();
-
-    for (let ci = 0; ci < clients.length; ci++) {
-      const c = clients[ci];
-      const uuid = xmlText(c, "UUID");
-      if (!uuid) continue;
-
-      const relContainer = c?.Relationships;
-      const relList = xmlArray(relContainer, "Relationship");
-      if (relList.length === 0) continue;
-
-      if (ci === 0) {
-        console.log(`[sync-xpm] First client with relationships: ${xmlText(c, "Name")}, ${relList.length} relationships`);
-        console.log(`[sync-xpm] Sample relationship keys: ${Object.keys(relList[0] || {}).join(", ")}`);
-      }
-
-      for (const rel of relList) {
-        // XPM detailed response uses <Type>Shareholder</Type> for relationship type
-        // and <RelatedClient><UUID>...</UUID><Name>...</Name></RelatedClient>
-        const relTypeRaw = (xmlText(rel, "Type") || xmlText(rel, "RelationshipType")).trim().toLowerCase();
-        const relatedClient = rel?.RelatedClient;
-        const relatedUuid = xmlText(relatedClient, "UUID") || xmlText(rel, "RelatedClientUUID") || xmlText(rel, "RelatedClient");
-        const relatedName = xmlText(relatedClient, "Name") || xmlText(rel, "RelatedClientName");
-
-        if (!relTypeRaw || !relatedUuid) continue;
-
-        const relType = REL_TYPE_MAP[relTypeRaw];
-        if (!relType) {
-          warnings.push(`Unknown relationship type "${relTypeRaw}" on client ${xmlText(c, "Name")}`);
-          relationshipsSkipped++;
-          continue;
-        }
-
-        // Ensure the related entity exists
-        let relatedEntityId = xeroUuidToEntityId.get(relatedUuid);
-        if (!relatedEntityId && relatedName) {
-          const { data: existingRel } = await supabase
-            .from("entities")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .or(`xpm_uuid.eq.${relatedUuid},name.eq.${relatedName}`)
-            .is("deleted_at", null)
-            .maybeSingle();
-
-          if (existingRel) {
-            relatedEntityId = existingRel.id;
-            xeroUuidToEntityId.set(relatedUuid, existingRel.id);
-          } else {
-            const { data: newEnt, error: newErr } = await supabase
-              .from("entities")
-              .insert({
-                tenant_id: tenantId,
-                name: relatedName,
-                xpm_uuid: relatedUuid,
-                entity_type: "Unclassified",
-                source: "imported",
-              })
-              .select("id")
-              .single();
-
-            if (newErr) {
-              warnings.push(`Failed to create related entity "${relatedName}": ${newErr.message}`);
-              relationshipsSkipped++;
-              continue;
-            }
-            relatedEntityId = newEnt.id;
-            xeroUuidToEntityId.set(relatedUuid, newEnt.id);
-            entitiesCreated++;
-          }
-        }
-
-        if (!relatedEntityId) {
-          relationshipsSkipped++;
-          continue;
-        }
-
-        const fromEntityId = xeroUuidToEntityId.get(uuid);
-        if (!fromEntityId) {
-          relationshipsSkipped++;
-          continue;
-        }
-
-        let fromId = fromEntityId;
-        let toId = relatedEntityId;
-
-        // Symmetric relationships: normalize by sorting IDs
-        if (relType === "spouse" || relType === "partner") {
-          if (fromId > toId) [fromId, toId] = [toId, fromId];
-        }
-
-        const dedupeKey = `${relType}:${fromId}:${toId}`;
-        if (relDedupeSet.has(dedupeKey)) continue;
-        relDedupeSet.add(dedupeKey);
-
-        // Check existing
-        const { data: existingRelRow } = await supabase
-          .from("relationships")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .eq("from_entity_id", fromId)
-          .eq("to_entity_id", toId)
-          .eq("relationship_type", relType)
-          .is("deleted_at", null)
-          .maybeSingle();
-
-        if (existingRelRow) continue;
-
-        const { error: relErr } = await supabase
-          .from("relationships")
-          .insert({
-            tenant_id: tenantId,
-            from_entity_id: fromId,
-            to_entity_id: toId,
-            relationship_type: relType,
-            source: "imported",
-            confidence: "imported",
-          });
-
-        if (relErr) {
-          warnings.push(`Failed to create ${relType} relationship: ${xmlText(c, "Name")} → ${relatedName}: ${relErr.message}`);
-          relationshipsSkipped++;
-        } else {
-          relationshipsCreated++;
-        }
-      }
-    }
-
-    // Auto-create trustee relationships from naming patterns
-    for (const pair of trusteePairs) {
-      const { data: trustEntity } = await supabase
-        .from("entities")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .ilike("name", `%${pair.trustName}%`)
-        .is("deleted_at", null)
-        .maybeSingle();
-
-      if (trustEntity) {
-        const dedupeKey = `trustee:${pair.trusteeEntityId}:${trustEntity.id}`;
-        if (!relDedupeSet.has(dedupeKey)) {
-          relDedupeSet.add(dedupeKey);
-          const { data: existingRel } = await supabase
-            .from("relationships")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .eq("from_entity_id", pair.trusteeEntityId)
-            .eq("to_entity_id", trustEntity.id)
-            .eq("relationship_type", "trustee")
-            .is("deleted_at", null)
-            .maybeSingle();
-
-          if (!existingRel) {
-            const { error: relErr } = await supabase
-              .from("relationships")
-              .insert({
-                tenant_id: tenantId,
-                from_entity_id: pair.trusteeEntityId,
-                to_entity_id: trustEntity.id,
-                relationship_type: "trustee",
-                source: "imported",
-                confidence: "imported",
-              });
-            if (!relErr) relationshipsCreated++;
-            else warnings.push(`Failed to create trustee rel for "${pair.trustName}": ${relErr.message}`);
-          }
-        }
-      }
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // STEP 4: Fetch /clientgroup.api/list — corporate groups (XML)
-    // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 4: Fetching client groups...");
-
-    const groupXml = await xpmGetXml("/clientgroup.api/list", accessToken, xeroTenantId);
-    const groupsContainer = groupXml?.Response?.Groups;
-    const groups = xmlArray(groupsContainer, "Group");
-    console.log(`[sync-xpm] Found ${groups.length} client groups`);
-
-    for (const group of groups) {
-      const groupName = xmlText(group, "Name");
-      if (!groupName) continue;
-
-      const groupUuid = xmlText(group, "UUID");
-      if (!groupUuid) continue;
-
-      // Save/update group in xpm_groups table
-      await supabase
-        .from("xpm_groups")
-        .upsert(
-          { tenant_id: tenantId, xpm_uuid: groupUuid, name: groupName, updated_at: new Date().toISOString() },
-          { onConflict: "tenant_id,xpm_uuid" },
-        );
-
-      // Fetch group details to get members
-      let members: any[] = [];
-      const groupDetailXml = await xpmGetXml(`/clientgroup.api/get/${groupUuid}`, accessToken, xeroTenantId);
-      const groupDetail = groupDetailXml?.Response?.Group;
-      const clientsInGroup = groupDetail?.Clients;
-      members = xmlArray(clientsInGroup, "Client");
-
-      // Create or find structure for this group
-      const { data: existingStruct } = await supabase
-        .from("structures")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("name", groupName)
-        .is("deleted_at", null)
-        .maybeSingle();
-
-      let structureId: string;
-      if (existingStruct) {
-        structureId = existingStruct.id;
-      } else {
-        const { data: newStruct, error: structErr } = await supabase
-          .from("structures")
-          .insert({ tenant_id: tenantId, name: groupName })
-          .select("id")
-          .single();
-        if (structErr) {
-          warnings.push(`Failed to create structure for group "${groupName}": ${structErr.message}`);
-          continue;
-        }
-        structureId = newStruct.id;
-        groupsCreated++;
-      }
-
-      // Link members to the structure
-      for (const member of members) {
-        const memberUuid = xmlText(member, "UUID");
-        if (!memberUuid) continue;
-
-        const entityId = xeroUuidToEntityId.get(memberUuid);
-        if (!entityId) continue;
-
-        await supabase
-          .from("structure_entities")
-          .upsert(
-            { structure_id: structureId, entity_id: entityId },
-            { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
-          );
-      }
-
-      // Link relationships belonging to group members to the structure
-      const memberEntityIds = members
-        .map((m: any) => xeroUuidToEntityId.get(xmlText(m, "UUID")))
-        .filter(Boolean);
-
-      if (memberEntityIds.length > 0) {
-        const { data: groupRels } = await supabase
-          .from("relationships")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .in("from_entity_id", memberEntityIds)
-          .is("deleted_at", null);
-
-        if (groupRels) {
-          for (const rel of groupRels) {
-            await supabase
-              .from("structure_relationships")
-              .upsert(
-                { structure_id: structureId, relationship_id: rel.id },
-                { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
-              );
-          }
-        }
-      }
-    }
-
-    // Step 5 (custom fields for ownership) skipped to avoid timeout with large client lists.
-    // Ownership data can be enriched in a future incremental sync.
-
-    // ════════════════════════════════════════════════════════════════
-    // STEP 6: Fetch staff list (may 401 if scope missing)
-    // ════════════════════════════════════════════════════════════════
-    console.log("[sync-xpm] Step 6: Fetching staff...");
-    const staffXml = await xpmGetXml("/staff.api/list", accessToken, xeroTenantId);
-    const staffList: { id: string; name: string; email: string | null; role: string | null }[] = [];
-
-    if (staffXml) {
-      const staffContainer = staffXml?.Response?.StaffList;
-      const staffArray = xmlArray(staffContainer, "Staff");
-      staffFetched = staffArray.length;
-
-      for (const staff of staffArray) {
-        const staffName = xmlText(staff, "Name") || `${xmlText(staff, "FirstName")} ${xmlText(staff, "LastName")}`.trim();
-        const staffEmail = xmlText(staff, "Email") || null;
-        if (!staffName) continue;
-
-        staffList.push({
-          id: xmlText(staff, "UUID") || xmlText(staff, "ID") || crypto.randomUUID(),
-          name: staffName,
-          email: staffEmail,
-          role: xmlText(staff, "Role") || xmlText(staff, "Position") || null,
-        });
-
-        // Create staff as Individual entities
-        const { data: existingStaff } = await supabase
-          .from("entities")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .eq("name", staffName)
-          .eq("entity_type", "Individual")
-          .is("deleted_at", null)
-          .maybeSingle();
-
-        if (!existingStaff) {
-          const { data: newStaff, error: staffErr } = await supabase
-            .from("entities")
-            .insert({
-              tenant_id: tenantId,
-              name: staffName,
-              entity_type: "Individual",
-              source: "imported",
-            })
-            .select("id")
-            .single();
-
-          if (staffErr) {
-            warnings.push(`Failed to create staff entity "${staffName}": ${staffErr.message}`);
-          } else if (newStaff) {
-            entitiesCreated++;
-          }
-        }
-      }
-    } else {
-      warnings.push("Staff endpoint returned no data (may require practicemanager.staff.read scope)");
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // Fallback: create "XPM Import" structure if no groups exist
-    // ════════════════════════════════════════════════════════════════
-    if (groups.length === 0 && (entitiesCreated > 0 || entitiesUpdated > 0)) {
-      const { data: fallbackStruct } = await supabase
-        .from("structures")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("name", "XPM Import")
-        .is("deleted_at", null)
-        .maybeSingle();
-
-      let structureId: string | null = fallbackStruct?.id || null;
-      if (!structureId) {
-        const { data: newStruct } = await supabase
-          .from("structures")
-          .insert({ tenant_id: tenantId, name: "XPM Import" })
-          .select("id")
-          .single();
-        if (newStruct) structureId = newStruct.id;
-      }
-
-      if (structureId) {
-        const entityIds = Array.from(xeroUuidToEntityId.values());
-        for (const entityId of entityIds) {
-          await supabase
-            .from("structure_entities")
-            .upsert(
-              { structure_id: structureId, entity_id: entityId },
-              { onConflict: "structure_id,entity_id", ignoreDuplicates: true },
-            );
-        }
-
-        const { data: allRels } = await supabase
-          .from("relationships")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .eq("source", "imported")
-          .is("deleted_at", null);
-
-        if (allRels) {
-          for (const rel of allRels) {
-            await supabase
-              .from("structure_relationships")
-              .upsert(
-                { structure_id: structureId, relationship_id: rel.id },
-                { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
-              );
-          }
-        }
-      }
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // Import log
-    // ════════════════════════════════════════════════════════════════
-      const result = {
-        success: true,
-        dataSource: "practicemanager_3.1_xml",
-        pmTenantId: xeroTenantId,
-        clientsFetched: clientDetails.length,
-        entitiesCreated,
-        entitiesUpdated,
-        relationshipsCreated,
-        relationshipsSkipped,
-        groupsFound: groups.length,
-        groupsCreated,
-        trusteesDetected,
-        staffFetched,
-        staffList,
-        typeCounts,
-        warnings,
-      };
-
-      if (jobId) {
-        await supabase
-          .from("import_logs")
-          .update({ status: "completed", result })
-          .eq("id", jobId);
-      } else {
-        await supabase.from("import_logs").insert({
-          tenant_id: tenantId,
-          user_id: user.id,
-          file_name: "xpm-sync-3.1",
-          status: "completed",
-          result,
-        });
-      }
-
-      console.log("[sync-xpm] Result:", JSON.stringify({ ...result, staffList: `${staffList.length} items` }));
-    };
-
-    // Fire background task and return immediately.
-    // @ts-ignore EdgeRuntime is provided by Supabase edge runtime
-    EdgeRuntime.waitUntil(
-      runSync().catch(async (e) => {
-        console.error("[sync-xpm] background error:", e);
-        if (jobId) {
-          await supabase
-            .from("import_logs")
-            .update({
-              status: "failed",
-              result: { error: e instanceof Error ? e.message : String(e) },
-            })
-            .eq("id", jobId);
-        }
-      }),
-    );
-
-    return new Response(
-      JSON.stringify({
-        started: true,
-        jobId,
-        message: "XPM sync started in background. This can take a couple of minutes for large practices — refresh the dashboard shortly to see updated entities.",
-      }),
-      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    if (jobErr || !jobRow) return json({ error: jobErr?.message ?? "Failed to start sync" }, 500);
+
+    // Take the lease immediately so a stray continuation can't join in.
+    await supabase.rpc("claim_sync_job", { _job_id: jobRow.id, _lease_seconds: LEASE_SECONDS });
+    scheduleSlice(supabase, jobRow.id, tenantId, progress);
+
+    return json({
+      started: true,
+      jobId: jobRow.id,
+      capacityRemaining: capacity.remaining,
+      atCapacity: noCapacity,
+      selectedGroups: selectedCount ?? 0,
+      nothingSelected,
+      catalogueOnly,
+      message: catalogueOnly
+        ? "Loading your client group list from Xero Practice Manager. This only reads the list — nothing is created yet."
+        : nothingSelected
+        ? "Sync started, but no client groups are selected yet. Choose the client groups you want as diagrams, then run the sync again."
+        : noCapacity
+        ? `Sync started, but your workspace is full (${capacity.used} of ${capacity.limit} structures). Existing diagrams will be refreshed; new client groups can't be added until you archive a structure or upgrade.`
+        : "XPM sync started. It runs in batches across multiple background executions — refresh the dashboard shortly to see progress.",
+    }, 202);
   } catch (err) {
     console.error("[sync-xpm] Error:", err);
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });

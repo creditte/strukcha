@@ -1,7 +1,7 @@
 import * as React from 'npm:react@18.3.1'
 import { Body, Button, Container, Head, Heading, Html, Preview, Text } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
-import { SITE_NAME, SITE_URL, emailStyles, formatPlanName } from './styles.ts'
+import { SUPPORT_EMAIL, SITE_NAME, SITE_URL, emailStyles, formatPlanName } from './styles.ts'
 
 interface PaymentFailedProps {
   name?: string
@@ -38,6 +38,7 @@ const PaymentFailedEmail = ({ name, plan, firmName }: PaymentFailedProps) => (
 
 export const template = {
   component: PaymentFailedEmail,
+  replyTo: SUPPORT_EMAIL,
   subject: 'Action required: strukcha payment failed',
   displayName: 'Payment failed',
   previewData: { name: 'Sarah', plan: 'pro' },

@@ -1,32 +1,37 @@
+import { corsHeadersFor } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
+import { PLAN_DIAGRAM_LIMITS } from "../_shared/stripe-plans.ts";
+import {
+  LEGACY_SUBSCRIPTION_MESSAGE,
+  quarantineLegacyStripeRefs,
+  tenantStripeRefs,
+} from "../_shared/stripe-tenant.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
-    month: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+    month: stripeVar("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    year: stripeVar("STRIPE_STARTER_ANNUAL_PRICE_ID"),
   },
   pro: {
-    month: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+    month: stripeVar("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    year: stripeVar("STRIPE_PRO_ANNUAL_PRICE_ID"),
   },
 };
 
-const PLAN_LIMITS: Record<string, number> = {
-  starter: 15,
-  pro: 50,
-};
+// Structure allowances come from the shared plan table so a plan change is
+// edited in exactly one place.
+const PLAN_LIMITS = PLAN_DIAGRAM_LIMITS;
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not set");
 
     const supabaseAdmin = createClient(
@@ -56,24 +61,38 @@ Deno.serve(async (req) => {
       .single();
     if (!profile) throw new Error("No profile found");
 
-    // Owner-only check
+    // Owner, or admin explicitly granted billing access
     const { data: tenantUser } = await supabaseAdmin
       .from("tenant_users")
-      .select("role")
+      .select("role, can_manage_billing")
       .eq("tenant_id", profile.tenant_id)
       .eq("auth_user_id", userData.user.id)
       .eq("status", "active")
       .single();
-    if (!tenantUser || tenantUser.role !== "owner") {
-      throw new Error("Only the firm owner can change the billing plan");
+    if (!tenantUser || !(tenantUser.role === "owner" || (tenantUser.role === "admin" && tenantUser.can_manage_billing === true))) {
+      throw new Error("Only the firm owner, or an admin with billing access, can change the billing plan");
     }
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_subscription_id, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, selected_plan, diagram_count, current_period_end, last_plan_switch_at, unlimited_structures, billing_exempt")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+    if (tenant.billing_exempt === true) {
+      return new Response(JSON.stringify({ error: "This firm is not billed — no subscription or payment is required." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Never modify a subscription that belongs to another Stripe mode.
+    const refs = tenantStripeRefs(tenant);
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "change-plan");
+      throw new Error(LEGACY_SUBSCRIPTION_MESSAGE);
+    }
+
 
     // 24-hour cooldown check
     if (tenant.last_plan_switch_at) {
@@ -84,8 +103,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (tenant.subscription_status !== "active") {
-      throw new Error("Plan can only be changed on active subscriptions");
+    // Plans can be changed on active subscriptions and during the Stripe-managed
+    // trial (the subscription already exists, so swapping the item is free).
+    const isTrialing = tenant.subscription_status === "trialing";
+    if (!["active", "trialing"].includes(tenant.subscription_status ?? "")) {
+      throw new Error("Plan can only be changed while your subscription is active or on trial");
     }
     if (!tenant.stripe_subscription_id) {
       throw new Error("No Stripe subscription found");
@@ -106,7 +128,7 @@ Deno.serve(async (req) => {
       throw new Error("A downgrade to Starter is already scheduled for the end of your billing period.");
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
     if (isUpgrade) {
       // ── UPGRADE: starter → pro (or cancel pending downgrade) ──
@@ -142,26 +164,24 @@ Deno.serve(async (req) => {
 
       const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
         items: [{ id: currentItem.id, price: targetPriceId }],
-        proration_behavior: "create_prorations",
+        proration_behavior: isTrialing ? "none" : "create_prorations",
       });
-
-      const toISO = (val: any): string | null => {
-        if (!val) return null;
-        if (typeof val === "number") return new Date(val * 1000).toISOString();
-        if (typeof val === "string") return new Date(val).toISOString();
-        return null;
-      };
 
       const updatePayload: Record<string, any> = {
         subscription_plan: "pro",
         selected_plan: "pro",
-        diagram_limit: PLAN_LIMITS.pro,
         cancel_at_period_end: false,
         canceled_at: null,
         last_plan_switch_at: new Date().toISOString(),
       };
-      const periodEnd = toISO(updatedSub.current_period_end);
+      // Trials stay capped at the trial group allowance; paid plans get the plan limit.
+      if (!isTrialing) updatePayload.diagram_limit = PLAN_LIMITS.pro;
+
+      const updatedLife = getSubscriptionLifecycle(updatedSub);
+      const periodEnd = updatedLife.currentPeriodEnd;
+      if (updatedLife.currentPeriodStart) updatePayload.current_period_start = updatedLife.currentPeriodStart;
       if (periodEnd) updatePayload.current_period_end = periodEnd;
+      if (updatedLife.trialEnd) updatePayload.trial_ends_at = updatedLife.trialEnd;
 
       await supabaseAdmin.from("tenants").update(updatePayload).eq("id", tenant.id);
 
@@ -174,11 +194,14 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } else {
-      // ── DOWNGRADE: pro → starter (scheduled at period end) ──
+      // ── DOWNGRADE: pro → starter ──
+      // During a trial nothing has been billed, so apply it immediately in Stripe.
+      // On a paid period, schedule it for period end so the firm keeps what it paid for.
 
       // Check if current usage exceeds target limit
       const targetLimit = PLAN_LIMITS.starter;
-      if ((tenant.diagram_count || 0) > targetLimit) {
+      // Tenants with the permanent unlimited-structures override are never capped.
+      if (tenant.unlimited_structures !== true && (tenant.diagram_count || 0) > targetLimit) {
         throw new Error(
           `Cannot downgrade to Starter. You have ${tenant.diagram_count} active structures, but Starter allows a maximum of ${targetLimit}. Please archive or delete some structures first.`
         );
@@ -186,13 +209,45 @@ Deno.serve(async (req) => {
 
       // Fetch current_period_end from Stripe (DB may be stale/null)
       let periodEnd = tenant.current_period_end;
+      let subscription: any = null;
       try {
-        const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
-        if (subscription.current_period_end) {
-          periodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
+        const life = getSubscriptionLifecycle(subscription);
+        if (life.currentPeriodEnd) {
+          periodEnd = life.currentPeriodEnd;
         }
       } catch (e) {
         console.error("Failed to fetch Stripe subscription for period_end:", e);
+      }
+
+      if (isTrialing) {
+        const currentItem = subscription?.items?.data?.[0];
+        if (!currentItem) throw new Error("No subscription item found");
+        const currentInterval = currentItem.price.recurring?.interval || "month";
+        const targetPriceId = PRICE_MAP.starter?.[currentInterval];
+        if (!targetPriceId) {
+          throw new Error(`No price configured for plan: starter, interval: ${currentInterval}`);
+        }
+
+        await stripe.subscriptions.update(tenant.stripe_subscription_id, {
+          items: [{ id: currentItem.id, price: targetPriceId }],
+          proration_behavior: "none",
+        });
+
+        await supabaseAdmin.from("tenants").update({
+          subscription_plan: "starter",
+          selected_plan: "starter",
+          last_plan_switch_at: new Date().toISOString(),
+        }).eq("id", tenant.id);
+
+        return new Response(JSON.stringify({
+          success: true,
+          new_plan: "starter",
+          effective: "immediate",
+          new_limit: PLAN_LIMITS.starter,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       // Do NOT touch Stripe subscription — just record intent in DB

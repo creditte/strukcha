@@ -59,7 +59,8 @@ async function loadLiveData(structureId: string): Promise<{ entities: RawEntity[
       .from("entities")
       .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
       .in("id", entityIds)
-      .is("deleted_at", null),
+      .is("deleted_at", null)
+      .eq("is_archived", false),
     relIds.length > 0
       ? supabase
           .from("relationships")

@@ -2,45 +2,44 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { invokeTransactionalEmail } from "../_shared/invoke-transactional-email.ts";
 import { getTenantBillingRecipients } from "../_shared/tenant-recipients.ts";
+import {
+  STRIPE_API_VERSION,
+  getInvoicePeriodEnd,
+  getInvoiceSubscriptionId,
+  getSubscriptionLifecycle,
+  getTrialEndSeconds,
+  toISO,
+} from "../_shared/stripe-subscription.ts";
+import {
+  buildPlanConfig,
+  buildPriceMap,
+  resolvePlanFromSubscription as sharedResolvePlan,
+  TRIAL_GROUP_LIMIT,
+} from "../_shared/stripe-plans.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Plan configuration mapped by Stripe Product ID
+// Plan configuration mapped by Stripe Product ID — single source of truth in _shared/stripe-plans.ts
+// Trials always get the capped trial allowance (full Pro features, 3 structure groups);
+// plan limits apply once the subscription is paying.
 const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
 
-const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
-  starter: {
-    month: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
-  },
-  pro: {
-    month: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
-  },
-};
+const PRICE_MAP = buildPriceMap();
 
 function initPlanConfig() {
-  const starterProductId = Deno.env.get("STRIPE_STARTER_PRODUCT_ID");
-  const proProductId = Deno.env.get("STRIPE_PRO_PRODUCT_ID");
-
-  if (starterProductId) {
-    PLAN_CONFIG[starterProductId] = { plan: "starter", diagramLimit: 15 };
-  }
-  if (proProductId) {
-    PLAN_CONFIG[proProductId] = { plan: "pro", diagramLimit: 50 };
+  for (const [id, cfg] of Object.entries(buildPlanConfig())) {
+    PLAN_CONFIG[id] = cfg;
   }
 }
 
-function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
-  const productId = subscription.items?.data?.[0]?.price?.product as string;
-  if (productId && PLAN_CONFIG[productId]) {
-    return PLAN_CONFIG[productId];
-  }
-  console.warn(`Unknown product ID: ${productId}, defaulting to pro`);
-  return { plan: "pro", diagramLimit: 50 };
+function resolvePlanFromSubscription(
+  subscription: Stripe.Subscription,
+): { plan: string; diagramLimit: number } {
+  return sharedResolvePlan(subscription, "stripe-webhooks");
 }
 
 async function findTenantByCustomer(supabaseAdmin: any, customerId: string): Promise<string | null> {
@@ -81,18 +80,11 @@ async function notifyTenantBilling(
   }
 }
 
-const toISO = (val: any): string | null => {
-  if (!val) return null;
-  if (typeof val === "number") return new Date(val * 1000).toISOString();
-  if (typeof val === "string") return new Date(val).toISOString();
-  return null;
-};
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-  const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
+  const stripeKey = stripeVar("STRIPE_SECRET_KEY");
+  const webhookSecret = stripeVar("STRIPE_WEBHOOK_SECRET");
   if (!stripeKey || !webhookSecret) {
     console.error("Missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET");
     return new Response("Server misconfigured", { status: 500 });
@@ -100,7 +92,7 @@ Deno.serve(async (req) => {
 
   initPlanConfig();
 
-  const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+  const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
   const supabaseAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -118,26 +110,57 @@ Deno.serve(async (req) => {
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
-  // Idempotency check
+  // Mode guard: a webhook from the other Stripe environment must never mutate
+  // tenant billing state in this one (test events cannot be trusted in live mode).
+  const activeModeIsLive = stripeMode() === "live";
+  if (event.livemode !== activeModeIsLive) {
+    console.warn(
+      `[stripe-webhooks] Ignoring ${event.type} (${event.id}): event livemode=${event.livemode} but active mode=${activeModeIsLive ? "live" : "test"}`,
+    );
+    return new Response(JSON.stringify({ received: true, ignored: "mode_mismatch" }), { status: 200 });
+  }
+
+
+
+  // Idempotency: only events that fully completed are skipped. Rows left in
+  // 'processing'/'failed' state are re-processed on Stripe's retry.
   const { data: existing } = await supabaseAdmin
     .from("stripe_webhook_events")
-    .select("id")
+    .select("id, status, attempts")
     .eq("id", event.id)
     .maybeSingle();
 
-  if (existing) {
+  if (existing?.status === "completed") {
     console.log(`Event ${event.id} already processed, skipping`);
     return new Response(JSON.stringify({ received: true }), { status: 200 });
   }
 
-  // Record event
-  await supabaseAdmin.from("stripe_webhook_events").insert({
-    id: event.id,
-    event_type: event.type,
-    payload: event.data.object as any,
-  });
+  const attempts = (existing?.attempts ?? 0) + 1;
 
-  console.log(`Processing webhook: ${event.type} (${event.id})`);
+  // Claim the event: insert on first delivery, or re-claim a previously failed one.
+  const { error: claimError } = await supabaseAdmin
+    .from("stripe_webhook_events")
+    .upsert({
+      id: event.id,
+      event_type: event.type,
+      payload: event.data.object as any,
+      status: "processing",
+      attempts,
+      last_error: null,
+      completed_at: null,
+      processed_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+
+  if (claimError) {
+    console.error(`[stripe-webhooks] Failed to claim event ${event.id}:`, claimError.message);
+    return new Response(
+      JSON.stringify({ error: "Failed to record webhook event" }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  console.log(`Processing webhook: ${event.type} (${event.id}) attempt=${attempts}`);
+
 
   try {
     switch (event.type) {
@@ -146,38 +169,57 @@ Deno.serve(async (req) => {
         const workspaceId = session.metadata?.workspace_id;
         if (!workspaceId) break;
 
-        let plan = "pro";
-        let diagramLimit = 100;
-        let periodStart: string | null = null;
-        let periodEnd: string | null = null;
-        if (session.subscription) {
-          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
-          const resolved = resolvePlanFromSubscription(sub);
-          plan = resolved.plan;
-          diagramLimit = resolved.diagramLimit;
-          periodStart = toISO(sub.current_period_start);
-          periodEnd = toISO(sub.current_period_end);
+        if (!session.subscription) {
+          console.error(
+            `[stripe-webhooks] checkout.session.completed without subscription for workspace=${workspaceId} session=${session.id} — refusing to activate.`,
+          );
+          throw new Error("Checkout session has no subscription; cannot activate plan without a mapped product.");
         }
+
+        const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+        const { plan, diagramLimit } = resolvePlanFromSubscription(sub);
+        const life = getSubscriptionLifecycle(sub);
+        const periodStart = life.currentPeriodStart;
+        const periodEnd = life.currentPeriodEnd;
+        const status = life.status;
+        const accessEnabled = status === "active" || status === "trialing";
+
+        const updateData: Record<string, any> = {
+          stripe_subscription_id: sub.id,
+          stripe_customer_id: session.customer as string,
+          stripe_mode: stripeMode(),
+          payment_method_captured: true,
+          payment_setup_completed_at: new Date().toISOString(),
+          trial_used_at: new Date().toISOString(),
+          subscription_status: status,
+          subscription_plan: plan,
+          selected_plan: plan,
+          access_enabled: accessEnabled,
+          access_locked_reason: accessEnabled
+            ? null
+            : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
+          diagram_limit: status === "trialing" ? TRIAL_GROUP_LIMIT : diagramLimit,
+          current_period_start: periodStart,
+          current_period_end: periodEnd,
+          cancel_at_period_end: life.cancelAtPeriodEnd,
+          canceled_at: life.canceledAt,
+          trial_ends_at: life.trialEnd,
+        };
 
         await supabaseAdmin
           .from("tenants")
-          .update({
-            stripe_subscription_id: session.subscription as string,
-            stripe_customer_id: session.customer as string,
-            trial_used_at: new Date().toISOString(),
-            subscription_status: "active",
-            subscription_plan: plan,
-            selected_plan: plan,
-            access_enabled: true,
-            access_locked_reason: null,
-            diagram_limit: diagramLimit,
-            current_period_start: periodStart,
-            current_period_end: periodEnd,
-          })
+          .update(updateData)
           .eq("id", workspaceId);
-        console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, limit=${diagramLimit}, period_end=${periodEnd}`);
+        console.log(`Tenant ${workspaceId} checkout completed: plan=${plan}, status=${status}, limit=${diagramLimit}, period_end=${periodEnd}`);
+
+        // The welcome email is deliberately NOT sent here. It is sent once the firm has
+        // connected Xero Practice Manager (see xero-callback / xero-finalise-connection),
+        // because that is when the product is actually usable.
+
         break;
       }
+
+
 
       case "customer.subscription.created":
       case "customer.subscription.updated": {
@@ -194,7 +236,8 @@ Deno.serve(async (req) => {
         }
 
         const { plan, diagramLimit } = resolvePlanFromSubscription(subscription);
-        const status = subscription.status;
+        const life = getSubscriptionLifecycle(subscription);
+        const status = life.status;
         const accessEnabled = status === "active" || status === "trialing";
 
         const updateData: Record<string, any> = {
@@ -202,23 +245,24 @@ Deno.serve(async (req) => {
           subscription_plan: plan,
           selected_plan: plan, // Sync selected_plan to actual plan on Stripe changes
           stripe_subscription_id: subscription.id,
-          current_period_start: toISO(subscription.current_period_start),
-          current_period_end: toISO(subscription.current_period_end),
-          cancel_at_period_end: subscription.cancel_at_period_end,
-          canceled_at: subscription.canceled_at
-            ? toISO(subscription.canceled_at)
-            : null,
+          stripe_mode: stripeMode(),
+          current_period_start: life.currentPeriodStart,
+          current_period_end: life.currentPeriodEnd,
+          cancel_at_period_end: life.cancelAtPeriodEnd,
+          canceled_at: life.canceledAt,
           access_enabled: accessEnabled,
           access_locked_reason: accessEnabled ? null : (status === "canceled" ? "subscription_canceled" : `subscription_${status}`),
-          diagram_limit: accessEnabled ? diagramLimit : 50,
+          diagram_limit: status === "trialing" ? TRIAL_GROUP_LIMIT : diagramLimit,
+          payment_method_captured: true,
         };
 
-        if (subscription.trial_end) {
-          updateData.trial_ends_at = new Date(subscription.trial_end * 1000).toISOString();
+        if (life.trialEnd) {
+          updateData.trial_ends_at = life.trialEnd;
+          updateData.trial_used_at = updateData.trial_used_at ?? new Date().toISOString();
         }
 
         await supabaseAdmin.from("tenants").update(updateData).eq("id", tenantId);
-        console.log(`Updated tenant ${tenantId}: plan=${plan}, status=${status}, limit=${accessEnabled ? diagramLimit : 3}`);
+        console.log(`Updated tenant ${tenantId}: plan=${plan}, status=${status}, limit=${diagramLimit}`);
         break;
       }
 
@@ -241,7 +285,10 @@ Deno.serve(async (req) => {
               subscription_status: "canceled",
               access_enabled: false,
               access_locked_reason: "subscription_canceled",
-              canceled_at: new Date().toISOString(),
+              canceled_at: getSubscriptionLifecycle(subscription).canceledAt ??
+                getSubscriptionLifecycle(subscription).endedAt ??
+                new Date().toISOString(),
+              cancel_at_period_end: false,
             })
             .eq("id", tenantId);
           console.log(`Tenant ${tenantId} subscription deleted, access locked`);
@@ -298,24 +345,50 @@ Deno.serve(async (req) => {
                 const targetPriceId = PRICE_MAP[tenant.selected_plan]?.[currentInterval];
 
                 if (targetPriceId) {
-                  await stripe.subscriptions.update(tenant.stripe_subscription_id, {
+                  const updatedSub = await stripe.subscriptions.update(tenant.stripe_subscription_id, {
                     items: [{ id: currentItem.id, price: targetPriceId }],
                     proration_behavior: "none",
                   });
 
-                  const newLimit = tenant.selected_plan === "starter" ? 15 : 50;
-                  await supabaseAdmin.from("tenants").update({
-                    subscription_plan: tenant.selected_plan,
+                  // Resolve the new limit strictly from the updated Stripe subscription's product mapping.
+                  const { plan: resolvedPlan, diagramLimit: newLimit } = resolvePlanFromSubscription(updatedSub);
+                  const updatedLife = getSubscriptionLifecycle(updatedSub);
+                  const deferredUpdate: Record<string, any> = {
+                    subscription_plan: resolvedPlan,
+                    selected_plan: resolvedPlan,
                     diagram_limit: newLimit,
-                  }).eq("id", tenantId);
+                  };
+                  if (updatedLife.currentPeriodStart) deferredUpdate.current_period_start = updatedLife.currentPeriodStart;
+                  if (updatedLife.currentPeriodEnd) deferredUpdate.current_period_end = updatedLife.currentPeriodEnd;
+                  await supabaseAdmin.from("tenants").update(deferredUpdate).eq("id", tenantId);
 
-                  console.log(`Tenant ${tenantId}: deferred plan change applied to ${tenant.selected_plan}`);
+                  console.log(`Tenant ${tenantId}: deferred plan change applied to ${resolvedPlan} (limit=${newLimit})`);
                 } else {
-                  console.error(`No price ID for plan=${tenant.selected_plan}, interval=${currentInterval}`);
+                  console.error(`No price ID for plan=${tenant.selected_plan}, interval=${currentInterval} — deferred plan change aborted, no benefits granted.`);
                 }
               }
             } catch (e: any) {
               console.error(`Failed to apply deferred plan change for tenant ${tenantId}:`, e.message);
+            }
+          }
+
+          // Re-sync billing period bounds from the subscription (invoice payloads
+          // no longer carry them at the top level in recent API versions).
+          const invoiceSubId = getInvoiceSubscriptionId(invoice) ?? tenant?.stripe_subscription_id;
+          if (invoiceSubId) {
+            try {
+              const paidSub = await stripe.subscriptions.retrieve(invoiceSubId);
+              const paidLife = getSubscriptionLifecycle(paidSub);
+              const periodUpdate: Record<string, any> = {
+                subscription_status: paidLife.status,
+                cancel_at_period_end: paidLife.cancelAtPeriodEnd,
+              };
+              if (paidLife.currentPeriodStart) periodUpdate.current_period_start = paidLife.currentPeriodStart;
+              if (paidLife.currentPeriodEnd) periodUpdate.current_period_end = paidLife.currentPeriodEnd;
+              if (paidLife.trialEnd) periodUpdate.trial_ends_at = paidLife.trialEnd;
+              await supabaseAdmin.from("tenants").update(periodUpdate).eq("id", tenantId);
+            } catch (e: any) {
+              console.error(`[stripe-webhooks] invoice.paid period sync failed for tenant ${tenantId}:`, e.message);
             }
           }
 
@@ -334,6 +407,7 @@ Deno.serve(async (req) => {
             .update({
               access_enabled: false,
               access_locked_reason: "payment_failed",
+              subscription_status: "past_due",
             })
             .eq("id", tenantId);
           console.log(`Tenant ${tenantId} payment failed, access locked`);
@@ -355,20 +429,80 @@ Deno.serve(async (req) => {
         if (!tenantId) {
           tenantId = await findTenantByCustomer(supabaseAdmin, subscription.customer as string) ?? undefined;
         }
-        if (tenantId && subscription.trial_end) {
-          const trialEndIso = new Date(subscription.trial_end * 1000).toISOString();
-          const daysRemaining = Math.max(
-            1,
-            Math.ceil((subscription.trial_end * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
+        const trialEndSeconds = getTrialEndSeconds(subscription);
+        if (!tenantId) {
+          console.warn(
+            `[stripe-webhooks] trial_will_end: no tenant resolved for subscription=${subscription.id} customer=${subscription.customer}`,
           );
-          await notifyTenantBilling(
-            supabaseAdmin,
-            tenantId,
-            "trial-ending",
-            { trialEndsAt: trialEndIso, daysRemaining },
-            `stripe:${event.id}:trial-ending`,
-          );
+          break;
         }
+        if (!trialEndSeconds) {
+          console.warn(
+            `[stripe-webhooks] trial_will_end: no trial_end on subscription=${subscription.id} (tenant=${tenantId})`,
+          );
+          break;
+        }
+        const trialEndIso = toISO(trialEndSeconds)!;
+        const daysRemaining = Math.max(
+          1,
+          Math.ceil((trialEndSeconds * 1000 - Date.now()) / (24 * 60 * 60 * 1000)),
+        );
+
+        const { error: trialUpdateError } = await supabaseAdmin
+          .from("tenants")
+          .update({ trial_ends_at: trialEndIso })
+          .eq("id", tenantId);
+        if (trialUpdateError) {
+          throw new Error(`Failed to update trial_ends_at for tenant ${tenantId}: ${trialUpdateError.message}`);
+        }
+
+        await notifyTenantBilling(
+          supabaseAdmin,
+          tenantId,
+          "trial-ending",
+          { trialEndsAt: trialEndIso, daysRemaining },
+          `stripe:${event.id}:trial-ending`,
+        );
+        console.log(
+          `[stripe-webhooks] trial_will_end handled: tenant=${tenantId} subscription=${subscription.id} trial_ends_at=${trialEndIso} days_remaining=${daysRemaining}`,
+        );
+        break;
+      }
+
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        let tenantId = session.metadata?.workspace_id as string | undefined;
+        if (!tenantId && session.customer) {
+          tenantId = await findTenantByCustomer(supabaseAdmin, session.customer as string) ?? undefined;
+        }
+        if (!tenantId) {
+          console.warn(
+            `[stripe-webhooks] async_payment_failed: no tenant resolved for session=${session.id} customer=${session.customer}`,
+          );
+          break;
+        }
+
+        const { error: lockError } = await supabaseAdmin
+          .from("tenants")
+          .update({
+            access_enabled: false,
+            access_locked_reason: "payment_failed",
+          })
+          .eq("id", tenantId);
+        if (lockError) {
+          throw new Error(`Failed to lock tenant ${tenantId} after async payment failure: ${lockError.message}`);
+        }
+
+        await notifyTenantBilling(
+          supabaseAdmin,
+          tenantId,
+          "payment-failed",
+          {},
+          `stripe:${event.id}:payment-failed`,
+        );
+        console.log(
+          `[stripe-webhooks] async_payment_failed handled: tenant=${tenantId} session=${session.id}, access locked`,
+        );
         break;
       }
 
@@ -376,9 +510,7 @@ Deno.serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         const tenantId = await findTenantByCustomer(supabaseAdmin, invoice.customer as string);
         if (tenantId) {
-          const renewalDate = invoice.period_end
-            ? new Date(invoice.period_end * 1000).toISOString()
-            : undefined;
+          const renewalDate = getInvoicePeriodEnd(invoice) ?? undefined;
           const amount = invoice.amount_due != null
             ? new Intl.NumberFormat("en-AU", {
               style: "currency",
@@ -392,12 +524,48 @@ Deno.serve(async (req) => {
             { renewalDate, amount },
             `stripe:${event.id}:renewal-reminder`,
           );
+          console.log(`[stripe-webhooks] invoice.upcoming handled: tenant=${tenantId} renewal=${renewalDate}`);
+        } else {
+          console.warn(`[stripe-webhooks] invoice.upcoming: no tenant for customer=${invoice.customer}`);
         }
         break;
       }
+
+      default: {
+        console.log(`[stripe-webhooks] Unhandled event type ${event.type} (${event.id}) — acknowledged`);
+        break;
+      }
+    }
+
+    // Only now is the event truly handled — mark it completed so retries skip it.
+    const { error: completeError } = await supabaseAdmin
+      .from("stripe_webhook_events")
+      .update({ status: "completed", completed_at: new Date().toISOString(), last_error: null })
+      .eq("id", event.id);
+    if (completeError) {
+      console.error(`[stripe-webhooks] Failed to mark event ${event.id} completed:`, completeError.message);
+      // Ask Stripe to retry: the handler succeeded but the marker did not persist,
+      // and every handler above is idempotent (state is mirrored, not incremented).
+      return new Response(
+        JSON.stringify({ error: "Failed to persist webhook completion" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
     }
   } catch (err: any) {
-    console.error(`Error processing ${event.type}:`, err);
+    console.error(`Error processing ${event.type} (${event.id}):`, err);
+    // Keep the row for observability but leave it un-completed so Stripe's retry reprocesses it.
+    await supabaseAdmin
+      .from("stripe_webhook_events")
+      .update({
+        status: "failed",
+        completed_at: null,
+        last_error: String(err?.message ?? err).slice(0, 2000),
+      })
+      .eq("id", event.id);
+    return new Response(
+      JSON.stringify({ error: err?.message ?? "Webhook handler failed" }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   return new Response(JSON.stringify({ received: true }), {
@@ -405,3 +573,4 @@ Deno.serve(async (req) => {
     headers: { "Content-Type": "application/json" },
   });
 });
+

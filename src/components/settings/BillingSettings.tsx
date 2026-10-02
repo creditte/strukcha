@@ -5,8 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { CreditCard, Network, ArrowRightLeft, Loader2, ArrowUpCircle, ArrowDownCircle, Clock } from "lucide-react";
 import { useBilling } from "@/hooks/useBilling";
 import { useToast } from "@/hooks/use-toast";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
+import { PLANS, TRIAL, planDisplayName, priceLabel, renewalLabel } from "@/lib/pricing";
 import PlanSwitchDialog from "./PlanSwitchDialog";
+import PlanComparison from "./PlanComparison";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -27,6 +29,7 @@ export default function BillingSettings() {
   const [switching, setSwitching] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const [planSwitching, setPlanSwitching] = useState(false);
+  const [pendingTarget, setPendingTarget] = useState<"starter" | "pro">("pro");
 
   const isBusy = switching || planSwitching;
 
@@ -72,7 +75,8 @@ export default function BillingSettings() {
     }
   };
 
-  const currentPlan = billing?.subscription_plan || "pro";
+  // Never assume a plan — show exactly what Stripe reports.
+  const currentPlan = billing?.subscription_plan ?? billing?.selected_plan ?? null;
   const hasPendingDowngrade = !!billing?.pending_downgrade;
 
   const cooldownUntil = billing?.last_plan_switch_at
@@ -80,9 +84,10 @@ export default function BillingSettings() {
     : null;
   const isOnCooldown = cooldownUntil ? new Date() < cooldownUntil : false;
 
-  // If downgrade is pending, the only action is to cancel it (upgrade back to pro)
-  const targetPlan = hasPendingDowngrade ? "pro" : (currentPlan === "starter" ? "pro" : "starter");
-  const isUpgrade = targetPlan === "pro";
+  // Plans can be switched while active or on the Stripe-managed trial.
+  const isTrialing = billing?.subscription_status === "trialing";
+  const canManagePlan = billing?.subscription_status === "active" || isTrialing;
+
 
   if (loading) {
     return (
@@ -100,12 +105,56 @@ export default function BillingSettings() {
     );
   }
 
+  // Owner firm: no subscription, no limits, no payment actions.
+  if (billing?.billing_exempt === true) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              Subscription
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium">Owner account — no billing applies</p>
+              <Badge className="bg-success/10 text-success border-0">Exempt</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This firm is not billed. No payment method, plan or renewal is required, and structures are unlimited.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Network className="h-5 w-5" />
+              Usage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm font-medium">Active Structures</p>
+            <p className="text-xs text-muted-foreground">
+              {(billing?.diagram_count ?? 0)} used — unlimited
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+
+
   const statusLabels: Record<string, string> = {
+    trialing: "Free Trial",
     active: "Active",
     past_due: "Past Due",
     canceled: "Cancelled",
     incomplete: "Incomplete",
     trial_expired: "Trial Expired",
+    free: "No Subscription",
   };
 
   const statusColors: Record<string, string> = {
@@ -121,32 +170,26 @@ export default function BillingSettings() {
   const label = statusLabels[status] || status;
   const colorClass = statusColors[status] || "bg-muted text-muted-foreground border-0";
 
-  const planName = billing?.subscription_plan === "starter" ? "strukcha Starter" : "strukcha Pro";
+  // Never assume Pro: show exactly the plan Stripe reports.
+  const resolvedPlan = billing?.subscription_plan ?? billing?.selected_plan ?? null;
+  const planName = planDisplayName(resolvedPlan);
   const isAnnual = billing?.billing_interval === "year";
 
-  const priceDisplay = (() => {
-    if (billing?.price_amount) {
-      const amount = billing.price_amount / 100;
-      return isAnnual ? `A$${amount.toLocaleString()}/year` : `A$${amount}/month`;
-    }
-    if (billing?.subscription_plan === "starter") {
-      return isAnnual ? "A$990/year" : "A$99/month";
-    }
-    return isAnnual ? "A$2,490/year" : "A$249/month";
-  })();
+  const priceDisplay = renewalLabel(resolvedPlan, billing?.billing_interval, billing?.price_amount);
 
   const targetIntervalLabel = isAnnual ? "Monthly" : "Annual";
   const targetPriceDisplay = (() => {
-    if (billing?.subscription_plan === "starter") {
-      return isAnnual ? "A$99/month" : "A$990/year";
-    }
-    return isAnnual ? "A$249/month" : "A$2,490/year";
+    const plan = resolvedPlan === "starter" ? PLANS.starter : resolvedPlan === "pro" ? PLANS.pro : null;
+    if (!plan) return "the other billing interval";
+    return priceLabel(plan, isAnnual ? "monthly" : "annual");
   })();
 
   const diagramCount = billing?.diagram_count ?? 0;
-  const diagramLimit = billing?.diagram_limit ?? 15;
+  const unlimitedStructures = billing?.unlimited_structures === true;
+  const diagramLimit = billing?.diagram_limit ?? TRIAL.groupLimit;
 
-  const trialEnd = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : addDays(new Date(), 5);
+  const trialEnd = billing?.trial_ends_at ? new Date(billing.trial_ends_at) : null;
+
 
   const isActive = billing?.subscription_status === "active";
 
@@ -234,31 +277,37 @@ export default function BillingSettings() {
             </div>
           )}
 
-          {/* Plan switch button — only show if no pending downgrade and not cancelling */}
-          {isActive && !billing?.cancel_at_period_end && !hasPendingDowngrade && (
-            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
-              <div>
-                <p className="text-sm font-medium">Current Plan: {currentPlan === "starter" ? "Starter" : "Pro"}</p>
-                <p className="text-xs text-muted-foreground">
-                  {isOnCooldown
-                    ? "Plan switching is temporarily unavailable"
-                    : isUpgrade ? "Upgrade to Pro for more structures and features" : " "}
-                </p>
-              </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanDialog(true)} disabled={isBusy || isOnCooldown}>
-                {isUpgrade ? <ArrowUpCircle className="h-4 w-4" /> : <ArrowDownCircle className="h-4 w-4" />}
-                {isUpgrade ? "Upgrade to Pro" : "Switch to Starter"}
-              </Button>
-            </div>
+          {canManagePlan && !billing?.cancel_at_period_end && (
+            <PlanComparison
+              currentPlan={currentPlan}
+              scheduledPlan={hasPendingDowngrade ? "starter" : null}
+              interval={isAnnual ? "annual" : "monthly"}
+              canSwitch={!isBusy && !isOnCooldown}
+              disabledReason={
+                isOnCooldown
+                  ? `You recently switched plans. You can switch again after ${
+                      cooldownUntil ? format(cooldownUntil, "d MMM yyyy 'at' h:mm a") : "24 hours"
+                    }.`
+                  : null
+              }
+              onSelectPlan={(plan) => {
+                setPendingTarget(plan);
+                setShowPlanDialog(true);
+              }}
+            />
           )}
+
 
           {billing?.subscription_status === "trialing" && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
               <p className="text-sm text-primary font-medium">
-                Trial ends {format(trialEnd, "d MMM yyyy 'at' h:mm a")}
+                {trialEnd
+                  ? `Trial ends ${format(trialEnd, "dd/MM/yyyy 'at' h:mm a")}`
+                  : "Free trial in progress"}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                After your trial, you'll be charged {priceDisplay}.
+                You can create up to {TRIAL.groupLimit} structure groups during your trial. After your
+                trial, you'll be charged {priceDisplay}.
               </p>
             </div>
           )}
@@ -314,17 +363,21 @@ export default function BillingSettings() {
             <div>
               <p className="text-sm font-medium">Active Structures</p>
               <p className="text-xs text-muted-foreground">
-                {diagramCount} of {diagramLimit} used
+                {unlimitedStructures
+                  ? `${diagramCount} used — unlimited`
+                  : `${diagramCount} of ${diagramLimit} used`}
               </p>
             </div>
-            <div className="h-2 w-32 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all"
-                style={{
-                  width: `${Math.min(100, (diagramCount / diagramLimit) * 100)}%`,
-                }}
-              />
-            </div>
+            {!unlimitedStructures && (
+              <div className="h-2 w-32 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, (diagramCount / diagramLimit) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -358,10 +411,12 @@ export default function BillingSettings() {
         open={showPlanDialog}
         onOpenChange={setShowPlanDialog}
         currentPlan={currentPlan as "starter" | "pro"}
+        targetPlan={pendingTarget}
+        isTrialing={isTrialing}
         isAnnual={isAnnual}
         diagramCount={diagramCount}
         currentPeriodEnd={billing?.current_period_end || null}
-        onConfirm={() => changePlan(targetPlan as "starter" | "pro")}
+        onConfirm={() => changePlan(pendingTarget)}
       />
     </div>
   );

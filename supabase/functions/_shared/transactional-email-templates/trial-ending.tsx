@@ -1,7 +1,7 @@
 import * as React from 'npm:react@18.3.1'
 import { Body, Button, Container, Head, Heading, Html, Preview, Text } from 'npm:@react-email/components@0.0.22'
 import type { TemplateEntry } from './registry.ts'
-import { SITE_NAME, SITE_URL, emailStyles, formatEmailDate, formatPlanName } from './styles.ts'
+import { SUPPORT_EMAIL, SITE_NAME, SITE_URL, emailStyles, formatEmailDate, formatPlanName } from './styles.ts'
 
 interface TrialEndingProps {
   name?: string
@@ -45,6 +45,7 @@ const TrialEndingEmail = ({ name, trialEndsAt, daysRemaining, plan, firmName }: 
 
 export const template = {
   component: TrialEndingEmail,
+  replyTo: SUPPORT_EMAIL,
   subject: (data: Record<string, unknown>) => {
     const days = (data.daysRemaining as number) ?? 3
     return days <= 1

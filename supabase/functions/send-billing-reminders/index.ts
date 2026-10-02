@@ -5,6 +5,7 @@ import {
   wasTenantNotificationSent,
 } from '../_shared/invoke-transactional-email.ts'
 import { getTenantBillingRecipients } from '../_shared/tenant-recipients.ts'
+import { isServiceRoleRequest } from '../_shared/cron-auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -61,9 +62,7 @@ Deno.serve(async (req) => {
   }
 
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const authHeader = req.headers.get('Authorization')
-  const token = authHeader?.replace(/^Bearer\s+/i, '')
-  if (!serviceKey || token !== serviceKey) {
+  if (!serviceKey || !isServiceRoleRequest(req)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -82,6 +81,7 @@ Deno.serve(async (req) => {
     .from('tenants')
     .select('id, firm_name, subscription_plan, trial_ends_at, subscription_status')
     .eq('subscription_status', 'trialing')
+    .eq('billing_exempt', false)
     .not('trial_ends_at', 'is', null)
 
   if (trialErr) {
@@ -107,6 +107,7 @@ Deno.serve(async (req) => {
     .from('tenants')
     .select('id, firm_name, subscription_plan, current_period_end, subscription_status')
     .eq('subscription_status', 'active')
+    .eq('billing_exempt', false)
     .not('current_period_end', 'is', null)
 
   if (renewalErr) {

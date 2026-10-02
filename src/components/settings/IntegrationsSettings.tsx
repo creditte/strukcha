@@ -1,15 +1,20 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, RefreshCw, Unplug, CheckCircle2, AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ListChecks, Loader2, RefreshCw, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import XeroLogo from "@/components/XeroLogo";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
+import XeroConnectButton, { type XeroConnectionType } from "@/components/xero/XeroConnectButton";
+import XpmSyncProgressCard from "@/components/xero/XpmSyncProgressCard";
+import XpmSyncLimitNotice from "@/components/xero/XpmSyncLimitNotice";
+import XpmGroupSelectionDialog from "@/components/structure/XpmGroupSelectionDialog";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
+import { useXpmSyncJob } from "@/hooks/useXpmSyncJob";
 
 interface XeroConnection {
   id: string;
@@ -19,31 +24,38 @@ interface XeroConnection {
 }
 
 export default function IntegrationsSettings() {
-  const [loading, setLoading] = useState(true);
-  const [connection, setConnection] = useState<XeroConnection | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
   const [xeroError, setXeroError] = useState<unknown>(null);
   const {
+    connection: sharedConnection,
+    loading,
     invalid: xeroInvalid,
     reportError: reportXeroError,
     reload: reloadXeroConnection,
     clearInvalid: clearXeroInvalid,
   } = useXeroConnection();
 
-  async function load() {
-    setLoading(true);
-    const { data } = await supabase.rpc("get_xero_connection_info");
-    setConnection(data && data !== "null" ? (data as any) : null);
-    setLoading(false);
-  }
+  // Reuse the shared connection record — no separate fetch on tab open.
+  const connection = sharedConnection as XeroConnection | null;
 
-  useEffect(() => {
-    load();
-  }, []);
+  // The same background-job tracking the dashboard uses, so a sync started in
+  // either place shows identical progress and wording.
+  const {
+    job: syncJob,
+    running: syncing,
+    stalled: syncStalled,
+    stopping: syncStopping,
+    label: syncLabel,
+    percent: syncPercent,
+    limitMessage: syncLimitMessage,
+    start: startXpmSync,
+    stop: stopXpmSync,
+    refreshCatalogue: refreshXpmCatalogue,
+  } = useXpmSyncJob();
 
-  const handleConnect = async () => {
+  const handleConnect = async (connectionType: XeroConnectionType = "practice_manager") => {
     setConnecting(true);
     setXeroError(null);
     try {
@@ -59,7 +71,7 @@ export default function IntegrationsSettings() {
         },
         body: JSON.stringify({
           origin: window.location.origin,
-          connection_type: "practice_manager",
+          connection_type: connectionType,
         }),
       });
       let data: any = null;
@@ -82,27 +94,12 @@ export default function IntegrationsSettings() {
   };
 
   const handleSync = async () => {
-    setSyncing(true);
     setXeroError(null);
     try {
-      const { data, error } = await supabase.functions.invoke("sync-xpm");
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      if (data?.started) {
-        toast.success(
-          data.message ||
-            "XPM sync started. Refresh the dashboard in a minute or two to see updated entities.",
-        );
-      } else {
-        toast.success("XPM sync complete.");
-      }
+      await startXpmSync();
     } catch (err: unknown) {
       setXeroError(err);
       reportXeroError(err);
-      const payload = xeroToastPayload(err);
-      toast.error(payload.title, { description: payload.description });
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -115,7 +112,7 @@ export default function IntegrationsSettings() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setConnection(null);
+      // The shared cache is refreshed below, which clears the connection.
       setXeroError(null);
       clearXeroInvalid();
       await reloadXeroConnection();
@@ -150,7 +147,7 @@ export default function IntegrationsSettings() {
             <div className="flex items-center gap-2 flex-wrap">
               <CardTitle className="text-base">Xero Practice Manager</CardTitle>
               {connection && xeroInvalid ? (
-                <Badge variant="outline" className="gap-1 border-amber-400 bg-amber-50 text-amber-800">
+                <Badge variant="outline" className="gap-1 border-warning/40 bg-warning/10 text-warning">
                   <AlertTriangle className="h-3 w-3" /> Connection lost
                 </Badge>
               ) : connection ? (
@@ -178,7 +175,7 @@ export default function IntegrationsSettings() {
           )}
           {connection ? (
             <>
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+              <div className="rounded-xl border bg-muted/30 p-3 text-sm">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Organisation</p>
@@ -191,73 +188,91 @@ export default function IntegrationsSettings() {
                   </p>
                 </div>
               </div>
+
               {xeroInvalid && (
-                <div className="rounded-lg border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-900">
-                  <p className="font-medium">Reconnect Xero to keep syncing</p>
-                  <p className="mt-0.5 text-amber-800">
-                    Your Xero sign-in is no longer valid, so syncing is paused. Click{" "}
-                    <span className="font-medium">Reconnect to Xero</span> below to restore access.
+                <div className="rounded-xl border border-warning/40 bg-warning/5 p-3 text-sm">
+                  <p className="font-medium text-foreground">Reconnect Xero to keep syncing</p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    Your Xero sign-in is no longer valid, so syncing is paused. Reconnect below to
+                    restore access.
                   </p>
                 </div>
               )}
+
+              {(syncing || syncStalled) && (
+                <XpmSyncProgressCard
+                  job={syncJob}
+                  label={syncLabel}
+                  percent={syncPercent}
+                  stalled={syncStalled}
+                  stopping={syncStopping}
+                  onStop={() => stopXpmSync()}
+                  onResume={handleSync}
+                  className="w-full sm:w-1/2"
+                />
+              )}
+
+              {syncLimitMessage && <XpmSyncLimitNotice message={syncLimitMessage} job={syncJob} />}
+
               <div className="flex flex-wrap items-center gap-2">
                 {xeroInvalid ? (
-                  <Button
-                    onClick={handleConnect}
-                    disabled={connecting}
-                    className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
-                  >
-                    {connecting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <XeroLogo className="h-4 w-4" />
-                    )}
-                    {connecting ? "Redirecting to Xero…" : "Reconnect to Xero"}
-                  </Button>
+                  <XeroConnectButton onConnect={handleConnect} loading={connecting} reconnect />
                 ) : (
                   <Button
                     onClick={handleSync}
-                    disabled={syncing || xeroInvalid}
+                    disabled={syncing}
                     variant="outline"
-                    className="gap-2"
+                    className="h-10 gap-2 rounded-xl px-5 text-sm font-medium"
                   >
                     {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     {syncing ? "Syncing XPM…" : "Sync XPM"}
                   </Button>
                 )}
                 <Button
+                  onClick={() => setShowGroupPicker(true)}
+                  variant="outline"
+                  className="h-10 gap-2 rounded-xl px-5 text-sm font-medium"
+                >
+                  <ListChecks className="h-4 w-4" />
+                  Choose client groups
+                </Button>
+                <Button
                   onClick={handleDisconnect}
                   disabled={disconnecting}
                   variant="ghost"
-                  className="gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  className="h-10 gap-2 rounded-xl px-4 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 >
                   {disconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
-                  {disconnecting ? "Disconnecting…" : "Disconnect Xero"}
+                  {disconnecting ? "Disconnecting…" : "Disconnect"}
                 </Button>
               </div>
             </>
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                Sign in with your Xero account to link your Practice Manager organisation. You will
-                be redirected to Xero to authorise the connection and returned here when done.
+                Sign in with your Xero account to link it to strukcha. Choose Practice Manager if
+                your firm uses XPM, or connect a standard Xero organisation — that option works for
+                any Xero account. You will be redirected to Xero and returned here when done.
               </p>
-              <Button
-                onClick={handleConnect}
-                disabled={connecting}
-                className="gap-2 bg-[#13B5EA] text-white hover:bg-[#0f9dcc]"
-              >
-                {connecting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <XeroLogo className="h-4 w-4" />
-                )}
-                {connecting ? "Redirecting to Xero…" : "Connect to Xero"}
-              </Button>
+              <XeroConnectButton onConnect={handleConnect} loading={connecting} />
             </>
           )}
         </CardContent>
       </Card>
+
+      <XpmGroupSelectionDialog
+        open={showGroupPicker}
+        onOpenChange={setShowGroupPicker}
+        syncing={syncing}
+        onRefreshCatalogue={refreshXpmCatalogue}
+        onSaved={(count) => {
+          if (count > 0 && !syncing && !xeroInvalid) {
+            toast.success("Selection saved", {
+              description: "Run Sync XPM to build the diagrams for the groups you picked.",
+            });
+          }
+        }}
+      />
     </div>
   );
 }

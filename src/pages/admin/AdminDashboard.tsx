@@ -24,6 +24,9 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import BillingReconciliationPanel from "@/components/admin/BillingReconciliationPanel";
+import StripeConfigPanel from "@/components/admin/StripeConfigPanel";
+import OperationsHealthPanel from "@/components/admin/OperationsHealthPanel";
 
 interface TenantRow {
   id: string;
@@ -459,6 +462,14 @@ export default function AdminDashboard() {
             </Card>
           ))}
         </div>
+
+        <StripeConfigPanel />
+
+        <BillingReconciliationPanel />
+
+        <OperationsHealthPanel />
+
+
 
         {/* Search & Filters */}
         <div className="flex flex-col sm:flex-row gap-3">

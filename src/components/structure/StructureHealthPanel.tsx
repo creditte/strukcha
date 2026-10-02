@@ -18,22 +18,21 @@ const STATUS_COLORS: Record<StructureHealth["status"], string> = {
 };
 
 const STATUS_LABELS: Record<StructureHealth["status"], string> = {
-  good: "Good",
-  warning: "Warning",
-  critical: "Critical",
+  good: "Complete",
+  warning: "Review recommended",
+  critical: "Conflicting data",
 };
 
 const WHY_IT_MATTERS: Record<string, string> = {
-  ownership_exceeds: "Total ownership over 100% indicates data entry errors that could affect reporting accuracy.",
-  ownership_under: "Ownership below 100% may mean missing shareholders or incomplete records.",
-  ownership_incomplete: "Mixed filled/blank percentages make it impossible to validate ownership totals.",
-  ownership_no_percent: "No ownership percentages recorded — consider adding them for a complete picture.",
-  missing_trustee: "Trusts require a trustee to be legally valid. This must be resolved before export.",
-  missing_member: "SMSFs must have at least one member under superannuation law.",
-  missing_shareholder: "Companies typically have shareholders. Verify this is intentional or add them.",
-  circular_ownership: "Circular ownership chains create legal and tax complications and are usually data errors.",
-  unclassified: "Unclassified entities can't be validated properly. Classify them to improve data quality.",
-  duplicates_detected: "Duplicate entities can cause incorrect relationship mapping and inflated counts. Merge them to keep data clean.",
+  ownership_exceeds: "Recorded ownership totals more than 100%, so the recorded facts contradict each other.",
+  ownership_under: "Recorded ownership totals less than 100%. Confirm whether the structure data is complete.",
+  ownership_incomplete: "Some ownership percentages are blank. Confirm whether the structure data is complete.",
+  ownership_no_percent: "Optional: no ownership percentages are recorded.",
+  missing_trustee: "No trustee is recorded in strukcha. Confirm whether the structure data is complete.",
+  missing_member: "No member is recorded in strukcha. Confirm whether the structure data is complete.",
+  missing_shareholder: "No shareholder is recorded in strukcha. Confirm whether the structure data is complete.",
+  circular_ownership: "The recorded ownership forms a loop, which is usually a data-entry error.",
+  unclassified: "No entity type is recorded. Classify it to complete the structure data.",
 };
 
 function IssueRow({ issue, onSelect }: { issue: ValidationIssue; onSelect?: (id: string) => void }) {
@@ -86,9 +85,9 @@ export default function StructureHealthPanel({ health, onSelectEntity }: Props) 
         </Badge>
         {totalIssues > 0 && (
           <span className="text-muted-foreground ml-1">
-            {health.errors.length > 0 && <span className="text-destructive font-semibold">{health.errors.length} error{health.errors.length !== 1 ? "s" : ""}</span>}
+            {health.errors.length > 0 && <span className="text-destructive font-semibold">{health.errors.length} conflicting</span>}
             {health.errors.length > 0 && health.warnings.length > 0 && ", "}
-            {health.warnings.length > 0 && <span>{health.warnings.length} warning{health.warnings.length !== 1 ? "s" : ""}</span>}
+            {health.warnings.length > 0 && <span>{health.warnings.length} to review</span>}
           </span>
         )}
         {expanded ? <ChevronDown className="ml-auto h-3.5 w-3.5" /> : <ChevronRight className="ml-auto h-3.5 w-3.5" />}
@@ -125,13 +124,13 @@ export default function StructureHealthPanel({ health, onSelectEntity }: Props) 
           <Tabs defaultValue={health.errors.length > 0 ? "errors" : "warnings"}>
             <TabsList className="h-7 w-full">
               <TabsTrigger value="errors" className="text-[10px] gap-1 flex-1" disabled={health.errors.length === 0}>
-                Errors ({health.errors.length})
+                Conflicting ({health.errors.length})
               </TabsTrigger>
               <TabsTrigger value="warnings" className="text-[10px] gap-1 flex-1" disabled={health.warnings.length === 0}>
-                Warnings ({health.warnings.length})
+                Review ({health.warnings.length})
               </TabsTrigger>
               <TabsTrigger value="info" className="text-[10px] gap-1 flex-1" disabled={health.info.length === 0}>
-                Info ({health.info.length})
+                Information ({health.info.length})
               </TabsTrigger>
             </TabsList>
             <TabsContent value="errors" className="mt-1 max-h-40 overflow-y-auto space-y-0.5">

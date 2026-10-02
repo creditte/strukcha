@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import AppSidebar from "@/components/AppSidebar";
 import GlobalSearch from "@/components/GlobalSearch";
+import UserMenu from "@/components/UserMenu";
 import XeroReconnectBanner from "@/components/XeroReconnectBanner";
 import XeroOrgPickerDialog from "@/components/XeroOrgPickerDialog";
 import { TenantSettingsProvider } from "@/contexts/TenantSettingsContext";
@@ -51,8 +52,13 @@ export default function AppLayout() {
                 })}
               </nav>
             </div>
-            <header className="flex items-center justify-end px-3 py-2 sm:px-6 border-b border-border/40 bg-card/30 shrink-0">
-              <GlobalSearch />
+            <header className="relative flex items-center gap-3 px-3 py-2 sm:px-6 border-b border-border/40 bg-card/30 shrink-0">
+              <div className="min-w-0 flex-1 lg:absolute lg:left-1/2 lg:w-full lg:max-w-md lg:-translate-x-1/2 lg:flex-none">
+                <GlobalSearch />
+              </div>
+              <div className="ml-auto shrink-0">
+                <UserMenu />
+              </div>
             </header>
             <XeroReconnectBanner />
             <XeroOrgPickerBridge />

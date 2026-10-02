@@ -1,12 +1,26 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatAbn, formatAcn } from "@/components/structure/EntityInfoFields";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useTenantId } from "@/hooks/useSharedQueries";
+import { qk, staleTimes } from "@/lib/queryKeys";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import {
@@ -25,7 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CheckCircle, Merge, Loader2, AlertTriangle, Shield, Building2, Undo2, X } from "lucide-react";
+import { CheckCircle, Merge, Loader2, AlertTriangle, AlertCircle, Shield, Building2, Undo2, X, Search, SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { getEntityLabel } from "@/lib/entityTypes";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -58,6 +72,10 @@ interface MergePreview {
   potential_collisions: number;
   entities_to_delete: number;
 }
+
+const DUPLICATE_PAGE_SIZE = 10;
+
+type DuplicateSort = "similarity" | "size" | "name";
 
 function computeConfidence(entities: DuplicateEntity[], similarity: number): ConfidenceLevel {
   // Check for exact identifier matches across any pair
@@ -96,25 +114,45 @@ const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; variant: "defa
   medium: { label: "Medium similarity", variant: "outline", helper: "Names are 85–89% similar. Check carefully." },
 };
 
-const DISMISSED_KEY = "dismissed-duplicate-groups";
-
-function getDismissedGroups(): Set<string> {
-  try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch { return new Set(); }
-}
-
 function buildGroupKey(entities: DuplicateEntity[]): string {
   return entities.map(e => e.id).sort().join("|");
+}
+
+/** Chunked `in()` lookup — replaces the old unbounded `.or(...)` filter string. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+async function fetchRelationshipsFor(ids: string[]) {
+  const rows: { id: string; from_entity_id: string; to_entity_id: string; relationship_type: string }[] = [];
+  const seen = new Set<string>();
+  for (const part of chunk(ids, 150)) {
+    for (const column of ["from_entity_id", "to_entity_id"] as const) {
+      const { data, error } = await supabase
+        .from("relationships")
+        .select("id, from_entity_id, to_entity_id, relationship_type")
+        .is("deleted_at", null)
+        .in(column, part)
+        .order("id");
+      if (error) throw error;
+      for (const r of data ?? []) {
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        rows.push(r as any);
+      }
+    }
+  }
+  return rows;
 }
 
 export default function DuplicatesTab() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [groups, setGroups] = useState<DuplicateGroup[]>([]);
-  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(getDismissedGroups);
-  const [loading, setLoading] = useState(true);
+  const tenantId = useTenantId();
+  const queryClient = useQueryClient();
+
 
   // Merge dialog state
   const [mergeGroup, setMergeGroup] = useState<DuplicateGroup | null>(null);
@@ -122,40 +160,30 @@ export default function DuplicatesTab() {
   const [mergePreview, setMergePreview] = useState<MergePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [search, setSearch] = useState("");
+  const [confidence, setConfidence] = useState<"all" | ConfidenceLevel>("all");
+  const [sort, setSort] = useState<DuplicateSort>("similarity");
+  const [page, setPage] = useState(1);
 
-  const loadDuplicates = useCallback(async () => {
-    setLoading(true);
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("tenant_id")
-      .eq("user_id", user?.id ?? "")
-      .single();
-
-    if (!profile) {
-      setLoading(false);
-      return;
-    }
+  const loadDuplicates = useCallback(async (): Promise<DuplicateGroup[]> => {
+    if (!tenantId) return [];
 
     // Try fuzzy matching first, fall back to exact matching
     const { data: fuzzyData, error: fuzzyError } = await supabase.rpc(
       "find_fuzzy_duplicate_entities" as any,
-      { _tenant_id: profile.tenant_id, _threshold: 0.85 }
+      { _tenant_id: tenantId, _threshold: 0.85 }
     );
 
     let rows: any[] = [];
     if (fuzzyError) {
       console.warn("Fuzzy matching unavailable, falling back to exact:", fuzzyError.message);
       const { data: exactData, error: exactError } = await supabase.rpc("find_duplicate_entities", {
-        _tenant_id: profile.tenant_id,
+        _tenant_id: tenantId,
       });
-      if (exactError) {
-        toast({ title: "Failed to find duplicates", description: exactError.message, variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+      if (exactError) throw exactError;
       rows = (exactData ?? []).map((r: any) => ({ ...r, similarity: 1.0 }));
     } else {
-      rows = fuzzyData ?? [];
+      rows = (fuzzyData as any[]) ?? [];
     }
 
     // Collect all entity IDs for enrichment
@@ -168,26 +196,19 @@ export default function DuplicatesTab() {
     // Fetch full entity details
     let entityDetails = new Map<string, any>();
     if (allEntityIds.size > 0) {
-      const { data: entities } = await supabase
-        .from("entities")
-      .select("id, name, entity_type, abn, acn, xpm_uuid, is_trustee_company, is_operating_entity, updated_at, created_at")
-      .in("id", Array.from(allEntityIds))
-      .is("deleted_at", null);
-
-      for (const e of entities ?? []) {
-        entityDetails.set(e.id, e);
+      const ids = Array.from(allEntityIds);
+      for (const part of chunk(ids, 150)) {
+        const { data: entities, error: entErr } = await supabase
+          .from("entities")
+          .select("id, name, entity_type, abn, acn, xpm_uuid, is_trustee_company, is_operating_entity, updated_at, created_at")
+          .in("id", part)
+          .is("deleted_at", null);
+        if (entErr) throw entErr;
+        for (const e of entities ?? []) entityDetails.set(e.id, e);
       }
 
-      // Fetch relationship counts
-      const { data: rels } = await supabase
-        .from("relationships")
-        .select("id, from_entity_id, to_entity_id")
-        .is("deleted_at", null)
-        .or(
-          Array.from(allEntityIds).map((id) => `from_entity_id.eq.${id}`).join(",") +
-          "," +
-          Array.from(allEntityIds).map((id) => `to_entity_id.eq.${id}`).join(",")
-        );
+      // Fetch relationship counts in bounded chunks
+      const rels = await fetchRelationshipsFor(ids);
 
       const outboundCounts = new Map<string, number>();
       const inboundCounts = new Map<string, number>();
@@ -206,8 +227,10 @@ export default function DuplicatesTab() {
     const parent = new Map<string, string>();
     function find(x: string): string {
       if (!parent.has(x)) parent.set(x, x);
-      if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!));
-      return parent.get(x)!;
+      const current = parent.get(x);
+      if (!current) return x;
+      if (current !== x) parent.set(x, find(current));
+      return parent.get(x) ?? x;
     }
     function union(a: string, b: string) {
       const pa = find(a), pb = find(b);
@@ -238,7 +261,8 @@ export default function DuplicatesTab() {
       if (!clusterMap.has(root)) {
         clusterMap.set(root, { entityIds: new Set(), maxSimilarity: 0 });
       }
-      const cluster = clusterMap.get(root)!;
+      const cluster = clusterMap.get(root);
+      if (!cluster) continue;
       cluster.entityIds.add(row.entity_id_a);
       cluster.entityIds.add(row.entity_id_b);
       cluster.maxSimilarity = Math.max(cluster.maxSimilarity, row.similarity ?? 1.0);
@@ -279,31 +303,100 @@ export default function DuplicatesTab() {
     }
 
     result.sort((a, b) => b.similarity - a.similarity);
-    setGroups(result);
-    setLoading(false);
-  }, [user?.id, toast]);
+    return result;
+  }, [tenantId]);
 
-  useEffect(() => {
-    if (user?.id) loadDuplicates();
-  }, [user?.id, loadDuplicates]);
+  const {
+    data: groups = [],
+    isLoading: groupsLoading,
+    error: groupsError,
+    refetch: refetchGroups,
+  } = useQuery({
+    queryKey: qk.duplicateGroups(tenantId),
+    queryFn: loadDuplicates,
+    enabled: !!tenantId,
+    staleTime: staleTimes.stats,
+    retry: false,
+  });
 
-  const dismissGroup = (group: DuplicateGroup) => {
+  const { data: dismissedKeyList = [], isLoading: dismissalsLoading } = useQuery({
+    queryKey: qk.duplicateDismissals(tenantId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("duplicate_dismissals")
+        .select("group_key")
+        .order("group_key");
+      if (error) throw error;
+      return (data ?? []).map((r) => r.group_key);
+    },
+    enabled: !!tenantId,
+    staleTime: staleTimes.stats,
+    retry: false,
+  });
+
+  const dismissedKeys = new Set(dismissedKeyList);
+  const loading = groupsLoading || dismissalsLoading;
+
+  const invalidateDismissals = () =>
+    queryClient.invalidateQueries({ queryKey: qk.duplicateDismissals(tenantId) });
+
+  const dismissGroup = async (group: DuplicateGroup) => {
+    if (!tenantId) return;
     const key = buildGroupKey(group.entities);
-    const next = new Set(dismissedKeys);
-    next.add(key);
-    setDismissedKeys(next);
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+    const { error } = await supabase
+      .from("duplicate_dismissals")
+      .upsert(
+        { tenant_id: tenantId, group_key: key, created_by: user?.id ?? null },
+        { onConflict: "tenant_id,group_key" },
+      );
+    if (error) {
+      toast({ title: "Couldn't dismiss", description: error.message, variant: "destructive" });
+      return;
+    }
+    await invalidateDismissals();
     toast({ title: "Dismissed", description: `"${group.normalizedName}" marked as not a duplicate.` });
   };
 
-  const restoreDismissed = () => {
-    setDismissedKeys(new Set());
-    localStorage.removeItem(DISMISSED_KEY);
+  const restoreDismissed = async () => {
+    if (!tenantId) return;
+    const { error } = await supabase
+      .from("duplicate_dismissals")
+      .delete()
+      .eq("tenant_id", tenantId);
+    if (error) {
+      toast({ title: "Couldn't restore", description: error.message, variant: "destructive" });
+      return;
+    }
+    await invalidateDismissals();
     toast({ title: "Restored", description: "All dismissed groups are visible again." });
   };
 
   const visibleGroups = groups.filter(g => !dismissedKeys.has(buildGroupKey(g.entities)));
   const dismissedCount = groups.length - visibleGroups.length;
+  const filteredGroups = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const list = visibleGroups.filter((group) => {
+      if (confidence !== "all" && group.confidence !== confidence) return false;
+      if (!needle) return true;
+      return group.entities.some((entity) =>
+        [entity.name, entity.abn, entity.acn].some((value) => value?.toLowerCase().includes(needle)),
+      );
+    });
+    return [...list].sort((a, b) => {
+      if (sort === "name") return a.normalizedName.localeCompare(b.normalizedName);
+      if (sort === "size")
+        return b.entities.length - a.entities.length || b.similarity - a.similarity;
+      return b.similarity - a.similarity || b.entities.length - a.entities.length;
+    });
+  }, [visibleGroups, search, confidence, sort]);
+  const pageCount = Math.max(1, Math.ceil(filteredGroups.length / DUPLICATE_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * DUPLICATE_PAGE_SIZE;
+  const pageGroups = filteredGroups.slice(pageStart, pageStart + DUPLICATE_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, confidence, sort]);
 
   const openMergeDialog = (group: DuplicateGroup) => {
     const types = new Set(group.entities.map((e) => e.type));
@@ -332,16 +425,8 @@ export default function DuplicatesTab() {
       return;
     }
 
-    // Fetch relationships for duplicates
-    const { data: dupRels } = await supabase
-      .from("relationships")
-      .select("id, from_entity_id, to_entity_id, relationship_type")
-      .is("deleted_at", null)
-      .or(
-        duplicateIds.map((id) => `from_entity_id.eq.${id}`).join(",") +
-        "," +
-        duplicateIds.map((id) => `to_entity_id.eq.${id}`).join(",")
-      );
+    // Fetch relationships for duplicates (chunked, no unbounded filter string)
+    const dupRels = await fetchRelationshipsFor(duplicateIds);
 
     // Fetch relationships for primary
     const { data: primaryRels } = await supabase
@@ -419,7 +504,7 @@ export default function DuplicatesTab() {
         ),
       });
       setMergeGroup(null);
-      loadDuplicates();
+      refetchGroups();
     } catch (err: any) {
       console.error("Merge failed:", err);
       toast({ title: "Merge failed", description: err.message, variant: "destructive" });
@@ -445,6 +530,21 @@ export default function DuplicatesTab() {
     );
   }
 
+  if (groupsError) {
+    return (
+      <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="flex-1 space-y-2">
+          <p className="text-sm font-medium text-foreground">We couldn't check for duplicates</p>
+          <p className="text-xs text-muted-foreground">{(groupsError as any)?.message ?? "Please try again."}</p>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => refetchGroups()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (visibleGroups.length === 0 && groups.length === 0) {
     return (
       <Card className="max-w-lg">
@@ -465,7 +565,7 @@ export default function DuplicatesTab() {
     <TooltipProvider>
       <>
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               {visibleGroups.length} potential duplicate {visibleGroups.length === 1 ? "group" : "groups"} detected.
               Review and merge to keep your data clean.
@@ -477,6 +577,61 @@ export default function DuplicatesTab() {
               </Button>
             )}
           </div>
+
+          {visibleGroups.length > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name, ABN or ACN…"
+                  className="h-10 pl-9 text-sm sm:h-9"
+                />
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-10 shrink-0 gap-2 text-sm sm:h-9">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    <span className="hidden sm:inline">Filter</span>
+                    {confidence !== "all" && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="text-xs">Match confidence</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={confidence}
+                    onValueChange={(value) => setConfidence(value as "all" | ConfidenceLevel)}
+                  >
+                    <DropdownMenuRadioItem value="all">All confidence</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="exact">Exact matches</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="high">High similarity</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="medium">Medium similarity</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={sort} onValueChange={(value) => setSort(value as DuplicateSort)}>
+                    <DropdownMenuRadioItem value="similarity">Closest match first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="size">Most entities first</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  {(confidence !== "all" || search) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSearch("");
+                          setConfidence("all");
+                        }}
+                      >
+                        Clear filters
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
 
           {visibleGroups.length === 0 && dismissedCount > 0 && (
             <Card className="max-w-lg">
@@ -492,13 +647,25 @@ export default function DuplicatesTab() {
             </Card>
           )}
 
-          {visibleGroups.map((group, idx) => {
+          {visibleGroups.length > 0 && filteredGroups.length === 0 && (
+            <Card>
+              <CardContent className="space-y-2 p-8 text-center">
+                <p className="text-sm font-medium text-foreground">No duplicate groups match</p>
+                <p className="text-xs text-muted-foreground">Change the search or confidence filter.</p>
+                <Button size="sm" variant="outline" onClick={() => { setSearch(""); setConfidence("all"); }}>
+                  Clear filters
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {pageGroups.map((group, idx) => {
             const types = new Set(group.entities.map((e) => e.type));
             const crossType = types.size > 1;
             const conf = CONFIDENCE_CONFIG[group.confidence];
 
             return (
-              <Card key={idx}>
+              <Card key={buildGroupKey(group.entities)}>
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -591,6 +758,25 @@ export default function DuplicatesTab() {
               </Card>
             );
           })}
+
+          {filteredGroups.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <p className="text-xs text-muted-foreground">
+                Showing {pageStart + 1}–{Math.min(pageStart + DUPLICATE_PAGE_SIZE, filteredGroups.length)} of {filteredGroups.length} groups
+              </p>
+              {pageCount > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                    <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                  </Button>
+                  <span className="text-xs tabular-nums text-muted-foreground">Page {currentPage} of {pageCount}</span>
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
+                    Next <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
       {/* Merge Dialog */}

@@ -1,14 +1,12 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
 
 // Register this redirect URI on your Xero app: {SUPABASE_URL}/functions/v1/xero-login-callback
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -23,15 +21,17 @@ Deno.serve(async (req) => {
     }
 
     let callerOrigin: string | undefined;
-    let connectionType = "accounting";
+    // Sign-in always uses basic Xero access so every Xero user can sign in.
+    // Practice Manager is connected separately from onboarding or Settings.
+    const connectionType: "practice_manager" | "standard" = "standard";
 
     try {
       const body = await req.json();
       callerOrigin = typeof body.origin === "string" ? body.origin : undefined;
-      if (body.connection_type === "practice_manager") connectionType = "practice_manager";
     } catch {
       /* no body */
     }
+
 
     const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/xero-login-callback`;
     const csrfToken = crypto.randomUUID();
@@ -59,12 +59,14 @@ Deno.serve(async (req) => {
 
     const state = btoa(JSON.stringify({
       csrf: csrfToken,
-      origin: frontendOrigin,
+      origin: safeFrontend(frontendOrigin),
       flow: "login",
+      connection_type: connectionType,
     }));
 
     const scopes = connectionType === "practice_manager"
       ? "openid profile email offline_access practicemanager.client.read"
+
       : "openid profile email offline_access accounting.contacts.read";
 
     const authUrl =
@@ -74,7 +76,7 @@ Deno.serve(async (req) => {
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scopes)}&` +
       `state=${encodeURIComponent(state)}&` +
-      `prompt=${encodeURIComponent("consent select_account")}`;
+      `prompt=consent`;
 
     return new Response(JSON.stringify({ url: authUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

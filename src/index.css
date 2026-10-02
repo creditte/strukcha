@@ -189,9 +189,9 @@
   opacity: 0.85 !important;
 }
 
-/* Hide edge labels by default, show on hover */
+/* Relationship labels are always visible so a diagram reads standalone */
 .react-flow__edge .react-flow__edge-textwrapper {
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.15s ease-in-out;
   pointer-events: auto;
 }

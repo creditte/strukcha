@@ -1,10 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { qk, staleTimes } from "@/lib/queryKeys";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   Plus,
@@ -26,6 +38,12 @@ import {
   Briefcase,
   Shield,
   Copy,
+  ListChecks,
+  X,
+  ChevronDown,
+  Settings2,
+
+
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantUsers } from "@/hooks/useTenantUsers";
@@ -39,43 +57,20 @@ import BillingBanner from "@/components/BillingBanner";
 import DiagramLimitDialog from "@/components/DiagramLimitDialog";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import XeroLogo from "@/components/XeroLogo";
+import XeroConnectButton from "@/components/xero/XeroConnectButton";
+import XeroStatusPill from "@/components/xero/XeroStatusPill";
+import XpmSyncProgressCard from "@/components/xero/XpmSyncProgressCard";
+import XpmSyncLimitNotice from "@/components/xero/XpmSyncLimitNotice";
+import XpmGroupSelectionDialog from "@/components/structure/XpmGroupSelectionDialog";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
+import { useXpmSyncJob } from "@/hooks/useXpmSyncJob";
+
 
 export default function Dashboard() {
-  const [recentStructures, setRecentStructures] = useState<{ id: string; name: string; updated_at: string }[]>([]);
-  const [structureCount, setStructureCount] = useState(0);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [importCount, setImportCount] = useState(0);
-  const [entityStats, setEntityStats] = useState<{ type: string; count: number }[]>([]);
-  const [totalEntities, setTotalEntities] = useState(0);
-  const [trusteeCount, setTrusteeCount] = useState(0);
-  const [weeklyTrends, setWeeklyTrends] = useState<{ structures: number; entities: number; imports: number }>({
-    structures: 0,
-    entities: 0,
-    imports: 0,
-  });
-  const [recentEntities, setRecentEntities] = useState<
-    {
-      id: string;
-      name: string;
-      entity_type: string;
-      is_trustee_company: boolean;
-      abn: string | null;
-      created_at: string;
-    }[]
-  >([]);
-  const [xeroConnection, setXeroConnection] = useState<{
-    id: string;
-    connected_at: string | null;
-    expires_at: string;
-    xero_tenant_id: string | null;
-    xero_org_name: string | null;
-    connected_by_email: string | null;
-  } | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [xeroLoading, setXeroLoading] = useState(false);
+
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -85,14 +80,62 @@ export default function Dashboard() {
   const { duplicateCount } = useDuplicateCount();
   const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [xeroConnectionType, setXeroConnectionType] = useState<"accounting" | "practice_manager">("practice_manager");
-  const { review, loading: healthLoading, runReview } = useClientHealthReview();
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
+  const [xeroConnectionType, setXeroConnectionType] = useState<"standard" | "practice_manager">("practice_manager");
+  const { review, loading: healthLoading } = useClientHealthReview();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  /** True while a "read the group list only" run is in flight. */
+  const catalogueRun = useRef(false);
+  // The sync runs as a resumable background job; the UI follows the job row so
+  // it never claims success before the database work has actually finished.
   const {
+    // Shared Xero record — the Dashboard no longer fetches it separately.
+    connection: xeroConnection,
+
     invalid: xeroInvalid,
     reportError: reportXeroError,
     reload: reloadXeroConnection,
     clearInvalid: clearXeroInvalid,
   } = useXeroConnection();
+  const {
+    job: syncJob,
+    running: syncing,
+    stalled: syncStalled,
+    stopping: syncStopping,
+    label: syncLabel,
+    percent: syncPercent,
+    limitMessage: syncLimitMessage,
+    start: startXpmSync,
+    stop: stopXpmSync,
+    refreshCatalogue: refreshXpmCatalogue,
+  } = useXpmSyncJob({
+    onFinished: (finished) => {
+      // Loading just the group list happens while the picker is open — a page
+      // reload there would throw away what the user is doing.
+      if (catalogueRun.current) {
+        catalogueRun.current = false;
+        if (finished.error) reportXeroError(finished.error);
+        return;
+      }
+      // A successful sync refreshes the dashboard data in place — no page
+      // reload, which would blank the screen and lose scroll position. A
+      // failure keeps its message and raises the reconnect banner when Xero
+      // asked for re-authorisation.
+      if (finished.status === "completed") {
+        queryClient.invalidateQueries({ queryKey: qk.dashboardStats(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.recentStructures(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.manualStructures(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.favouriteGroups(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.duplicateCount(user?.id) });
+        queryClient.invalidateQueries({ queryKey: qk.xpmGroupsCached() });
+        queryClient.invalidateQueries({ queryKey: qk.billing(user?.id) });
+        reloadXeroConnection();
+        return;
+      }
+      if (finished.error) reportXeroError(finished.error);
+    },
+  });
 
   const handleCreateNew = () => {
     if (atDiagramLimit) {
@@ -120,19 +163,31 @@ export default function Dashboard() {
       setSearchParams({}, { replace: true });
     } else if (xeroStatus === "error") {
       const reason = searchParams.get("reason") || "unknown";
+      const reasonMessages: Record<string, string> = {
+        no_practice_manager:
+          "That Xero organisation doesn't include Practice Manager, so client groups can't be read. Ask whoever manages your Xero account to authorise Practice Manager, or connect a standard Xero organisation instead.",
+        no_organisations: "No Xero organisation was available on that sign-in. Please try again.",
+        token_exchange_failed: "Xero didn't complete the sign-in. Please try connecting again.",
+        expired_csrf: "The connection request timed out. Please try connecting again.",
+        invalid_csrf: "The connection request couldn't be verified. Please try connecting again.",
+      };
       toast({
         title: "Xero Connection Failed",
-        description: `Error: ${reason}`,
+        description: reasonMessages[reason] ?? `Couldn't connect to Xero (${reason}).`,
         variant: "destructive",
       });
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams, toast]);
 
-  useEffect(() => {
-    async function load() {
-      setDashboardLoading(true);
-      const [sCount, recent, xeroData, entitiesData, recentEnts, impCount] = await Promise.all([
+  // Dashboard metrics live in the shared cache: revisiting the Dashboard shows
+  // the previous data instantly and only revalidates once it goes stale.
+  const { data: dash, isLoading: dashInitialLoading } = useQuery({
+    queryKey: qk.dashboardStats(user?.id ?? null),
+    enabled: !!user?.id,
+    staleTime: staleTimes.stats,
+    queryFn: async () => {
+      const [sCount, recent, entitiesData, recentEnts, impCount] = await Promise.all([
         supabase.from("structures").select("id", { count: "exact", head: true }).is("deleted_at", null),
         supabase
           .from("structures")
@@ -141,7 +196,6 @@ export default function Dashboard() {
           .eq("is_scenario", false)
           .order("updated_at", { ascending: false })
           .limit(5),
-        supabase.rpc("get_xero_connection_info"),
         supabase.from("entities").select("entity_type, is_trustee_company").is("deleted_at", null),
         supabase
           .from("entities")
@@ -151,15 +205,8 @@ export default function Dashboard() {
           .limit(8),
         supabase.from("import_logs").select("id", { count: "exact", head: true }),
       ]);
-      setStructureCount(sCount.count ?? 0);
-      setRecentStructures((recent.data as any) ?? []);
-      setXeroConnection(xeroData.data && xeroData.data !== "null" ? (xeroData.data as any) : null);
-      setImportCount(impCount.count ?? 0);
 
-      // Process entity stats
       const entities = entitiesData.data ?? [];
-      setTotalEntities(entities.length);
-      setTrusteeCount(entities.filter((e: any) => e.is_trustee_company).length);
       const typeCounts: Record<string, number> = {};
       entities.forEach((e: any) => {
         const t = e.entity_type || "Unclassified";
@@ -168,10 +215,7 @@ export default function Dashboard() {
       const stats = Object.entries(typeCounts)
         .map(([type, count]) => ({ type, count }))
         .sort((a, b) => b.count - a.count);
-      setEntityStats(stats);
-      setRecentEntities((recentEnts.data as any) ?? []);
 
-      // Fetch weekly trends
       const oneWeekAgo = subDays(new Date(), 7).toISOString();
       const [weekStructures, weekEntities, weekImports] = await Promise.all([
         supabase
@@ -186,18 +230,41 @@ export default function Dashboard() {
           .gte("created_at", oneWeekAgo),
         supabase.from("import_logs").select("id", { count: "exact", head: true }).gte("created_at", oneWeekAgo),
       ]);
-      setWeeklyTrends({
-        structures: weekStructures.count ?? 0,
-        entities: weekEntities.count ?? 0,
-        imports: weekImports.count ?? 0,
-      });
 
-      setDashboardLoading(false);
-    }
-    load();
-  }, []);
+      return {
+        structureCount: sCount.count ?? 0,
+        recentStructures: (recent.data as any) ?? [],
+        importCount: impCount.count ?? 0,
+        totalEntities: entities.length,
+        trusteeCount: entities.filter((e: any) => e.is_trustee_company).length,
+        entityStats: stats,
+        recentEntities: (recentEnts.data as any) ?? [],
+        weeklyTrends: {
+          structures: weekStructures.count ?? 0,
+          entities: weekEntities.count ?? 0,
+          imports: weekImports.count ?? 0,
+        },
+      };
+    },
+  });
 
-  const handleConnectXero = async () => {
+  const structureCount = dash?.structureCount ?? 0;
+  const recentStructures = dash?.recentStructures ?? [];
+  const importCount = dash?.importCount ?? 0;
+  const totalEntities = dash?.totalEntities ?? 0;
+  const trusteeCount = dash?.trusteeCount ?? 0;
+  const entityStats = dash?.entityStats ?? [];
+  const recentEntities = dash?.recentEntities ?? [];
+  const weeklyTrends = dash?.weeklyTrends ?? { structures: 0, entities: 0, imports: 0 };
+  // Only show skeletons on the very first load, never on a background refresh.
+  const dashboardLoading = dashInitialLoading && !dash;
+
+
+
+  const handleConnectXero = async (
+    connectionType: "standard" | "practice_manager" = xeroConnectionType,
+  ) => {
+    setXeroConnectionType(connectionType);
     setXeroLoading(true);
     try {
       const {
@@ -214,7 +281,7 @@ export default function Dashboard() {
           Authorization: `Bearer ${session.access_token}`,
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ origin: window.location.origin, connection_type: xeroConnectionType }),
+        body: JSON.stringify({ origin: window.location.origin, connection_type: connectionType }),
       });
       let data: any = null;
       try {
@@ -236,36 +303,10 @@ export default function Dashboard() {
   };
 
   const handleSyncXpm = async () => {
-    setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("sync-xpm");
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      if (data?.started) {
-        toast({
-          title: "XPM Sync Started",
-          description:
-            data.message ||
-            "Running in background. Refresh the dashboard in a minute or two to see updated entities.",
-        });
-      } else {
-        const parts = [
-          `${data.clientsFetched ?? data.contactsFetched ?? 0} clients fetched`,
-          `${data.entitiesCreated ?? 0} created`,
-          `${data.entitiesUpdated ?? 0} updated`,
-        ];
-        if (data.relationshipsCreated > 0) parts.push(`${data.relationshipsCreated} relationships created`);
-        if (data.groupsCreated > 0) parts.push(`${data.groupsCreated} groups created`);
-        if (data.staffFetched > 0) parts.push(`${data.staffFetched} staff fetched`);
-        if (data.trusteesDetected > 0) parts.push(`${data.trusteesDetected} corporate trustees detected`);
-        toast({ title: "XPM Sync Complete", description: parts.join(", ") + "." });
-      }
+      await startXpmSync();
     } catch (err) {
       reportXeroError(err);
-      const payload = xeroToastPayload(err);
-      toast({ title: payload.title, description: payload.description, variant: "destructive" });
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -278,7 +319,6 @@ export default function Dashboard() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setXeroConnection(null);
       clearXeroInvalid();
       await reloadXeroConnection();
       toast({ title: "Xero Disconnected", description: "You can reconnect at any time." });
@@ -292,12 +332,8 @@ export default function Dashboard() {
 
   const hasStructures = structureCount > 0;
 
-  // Auto-run health review when structures are loaded
-  useEffect(() => {
-    if (!dashboardLoading && hasStructures && !review && !healthLoading) {
-      runReview();
-    }
-  }, [dashboardLoading, hasStructures, review, healthLoading, runReview]);
+  // The health review is a cached React Query — it loads itself once per firm
+  // and is shared with Health Check / Review & Improve. No manual kick-off here.
 
   const getEntityIcon = (type: string) => {
     switch (type) {
@@ -357,7 +393,7 @@ export default function Dashboard() {
   const isStale = (updatedAt: string) => differenceInDays(new Date(), new Date(updatedAt)) > 14;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-1 py-6 sm:px-2 sm:py-10 lg:py-14 space-y-10 sm:space-y-14">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8 space-y-8 sm:space-y-10">
       {/* ── Hero Section ── */}
       <section className="space-y-5">
         {dashboardLoading ? (
@@ -382,60 +418,28 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {isOwnerOrAdmin && (
-                <Button variant="outline" className="gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
+                <Button variant="outline" className="h-10 gap-2 rounded-xl px-5 text-sm font-medium" onClick={handleCreateNew}>
                   <Plus className="h-4 w-4" />
                   Create New Structure
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <Button
-                  variant="outline"
-                  className="gap-2 rounded-xl px-5 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
-                  onClick={handleConnectXero}
-                  disabled={xeroLoading}
-                >
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <XeroLogo className="h-4 w-4" />
-                  )}
-                  Connect to Xero
-                </Button>
+                <XeroConnectButton onConnect={handleConnectXero} loading={xeroLoading} />
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-2 rounded-xl border border-[#13B5EA]/30 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
-                  <XeroLogo className="h-4 w-4 shrink-0" />
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">Connected to Xero</span>
-                    {xeroConnection.xero_org_name && (
-                      <span className="max-w-[180px] truncate text-xs font-medium text-foreground sm:max-w-[240px]">
-                        {xeroConnection.xero_org_name}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mx-1 h-6 w-px bg-[#13B5EA]/20" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
-                    onClick={handleSyncXpm}
-                    disabled={syncing || xeroInvalid}
-                  >
-                    {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {syncing ? "Syncing XPM…" : "Sync XPM"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
-                    onClick={handleDisconnectXero}
-                    disabled={disconnecting}
-                  >
-                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                    {disconnecting ? "Disconnecting…" : "Disconnect"}
-                  </Button>
-                </div>
+                <XeroStatusPill
+                  orgName={xeroConnection.xero_org_name}
+                  syncing={syncing}
+                  disconnecting={disconnecting}
+                  invalid={xeroInvalid}
+                  onSync={handleSyncXpm}
+                  onChooseGroups={() => setShowGroupPicker(true)}
+                  onDisconnect={handleDisconnectXero}
+                  onReconnect={() => handleConnectXero("practice_manager")}
+                />
               )}
+
+
             </div>
           </>
         ) : (
@@ -451,7 +455,7 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="lg"
-                  className="gap-2 rounded-xl px-6 text-sm font-medium"
+                  className="h-11 gap-2 rounded-xl px-6 text-sm font-medium"
                   onClick={handleCreateNew}
                 >
                   <Plus className="h-4 w-4" />
@@ -459,79 +463,51 @@ export default function Dashboard() {
                 </Button>
               )}
               {canManageIntegrations && !xeroConnection && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="gap-2 rounded-xl px-6 text-sm font-medium border-[#13B5EA]/40 hover:bg-[#13B5EA]/5 hover:border-[#13B5EA]"
-                  onClick={handleConnectXero}
-                  disabled={xeroLoading}
-                >
-                  {xeroLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <XeroLogo className="h-4 w-4" />
-                  )}
-                  Connect to Xero
-                </Button>
+                <XeroConnectButton onConnect={handleConnectXero} loading={xeroLoading} className="h-11 rounded-xl px-6" />
               )}
               {canManageIntegrations && xeroConnection && (
-                <div className="flex items-center gap-2 rounded-xl border border-[#13B5EA]/30 bg-[#13B5EA]/5 pl-3 pr-1.5 py-1.5">
-                  <XeroLogo className="h-4 w-4 shrink-0" />
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[#0d8ab8]">Connected to Xero</span>
-                    {xeroConnection.xero_org_name && (
-                      <span className="max-w-[180px] truncate text-xs font-medium text-foreground sm:max-w-[240px]">
-                        {xeroConnection.xero_org_name}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mx-1 h-6 w-px bg-[#13B5EA]/20" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-[#13B5EA]/10 px-2.5"
-                    onClick={handleSyncXpm}
-                    disabled={syncing || xeroInvalid}
-                  >
-                    {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    {syncing ? "Syncing XPM…" : "Sync XPM"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2.5"
-                    onClick={handleDisconnectXero}
-                    disabled={disconnecting}
-                  >
-                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                    {disconnecting ? "Disconnecting…" : "Disconnect"}
-                  </Button>
-                </div>
+                <XeroStatusPill
+                  orgName={xeroConnection.xero_org_name}
+                  syncing={syncing}
+                  disconnecting={disconnecting}
+                  invalid={xeroInvalid}
+                  onSync={handleSyncXpm}
+                  onChooseGroups={() => setShowGroupPicker(true)}
+                  onDisconnect={handleDisconnectXero}
+                  onReconnect={() => handleConnectXero("practice_manager")}
+                  className="h-11"
+                />
               )}
+
+
             </div>
           </>
         )}
+        {/* Live XPM sync progress — sits with the controls that started it */}
+        {(syncing || syncStalled) && (
+          <XpmSyncProgressCard
+            job={syncJob}
+            label={syncLabel}
+            percent={syncPercent}
+            stalled={syncStalled}
+            stopping={syncStopping}
+            onStop={() => stopXpmSync()}
+            onResume={handleSyncXpm}
+            className="w-full sm:w-1/2"
+          />
+        )}
       </section>
 
-      {/* ── Billing Banner ── */}
-      <BillingBanner />
+      {/* ── Notices ── */}
+      <div className="space-y-3">
+        {/* Sync ran out of structure space */}
+        {syncLimitMessage && <XpmSyncLimitNotice message={syncLimitMessage} job={syncJob} />}
 
-      {/* ── Duplicate Entities Callout ── */}
-      {duplicateCount > 0 && (
-        <Link
-          to="/review?tab=duplicates"
-          className="group flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-5 py-3.5 transition-all hover:border-warning/50 hover:shadow-sm"
-        >
-          <Copy className="h-4 w-4 text-warning shrink-0" />
-          <span className="flex-1 text-sm text-foreground">
-            <span className="font-semibold">
-              {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
-            </span>{" "}
-            detected — review and merge to keep data clean.
-          </span>
-          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-        </Link>
-      )}
+
+        {/* Billing */}
+        <BillingBanner />
+
+      </div>
 
       {/* ── Metric Cards ── */}
       <section className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
@@ -583,11 +559,12 @@ export default function Dashboard() {
       </section>
 
       {/* ── Workflow Insight Cards ── */}
-      <section className="grid gap-5 sm:grid-cols-2">
+      <section className={`grid gap-5 sm:grid-cols-2 ${duplicateCount > 0 ? "lg:grid-cols-3" : ""}`}>
         {dashboardLoading ? (
           <>
             <Skeleton className="h-[200px] rounded-2xl" />
             <Skeleton className="h-[200px] rounded-2xl" />
+            {duplicateCount > 0 && <Skeleton className="h-[200px] rounded-2xl" />}
           </>
         ) : structureCount === 0 ? (
           <>
@@ -653,15 +630,15 @@ export default function Dashboard() {
                   <p className="text-sm text-muted-foreground">
                     {review.criticalStructures > 0 ? (
                       <>
-                        <span className="font-medium text-destructive">{review.criticalStructures} critical</span>
+                        <span className="font-medium text-destructive">{review.criticalStructures} with conflicting data</span>
                         {review.needsAttention > 0 && (
-                          <>, {review.needsAttention} need{review.needsAttention !== 1 ? "" : "s"} attention</>
+                          <>, {review.needsAttention} to review</>
                         )}
                       </>
                     ) : review.needsAttention > 0 ? (
-                      <span className="font-medium text-warning">{review.needsAttention} structure{review.needsAttention !== 1 ? "s" : ""} need{review.needsAttention === 1 ? "s" : ""} attention</span>
+                      <span className="font-medium text-warning">{review.needsAttention} structure{review.needsAttention !== 1 ? "s" : ""} to review</span>
                     ) : (
-                      <span className="text-success font-medium">All structures healthy</span>
+                      <span className="text-success font-medium">All structures complete</span>
                     )}
                   </p>
                   <p className="text-[11px] text-muted-foreground/70">
@@ -708,11 +685,11 @@ export default function Dashboard() {
                 <div className="mt-1.5 space-y-1">
                   {review.allIssues.length > 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">{review.allIssues.filter(i => i.severity === "critical").length} critical</span>
+                      <span className="font-medium text-foreground">{review.allIssues.filter(i => i.severity === "critical").length} conflicting</span>
                       {review.allIssues.filter(i => i.severity === "gap").length > 0 && (
-                        <>, {review.allIssues.filter(i => i.severity === "gap").length} gaps</>
+                        <>, {review.allIssues.filter(i => i.severity === "gap").length} to review</>
                       )}
-                      {" "}across {review.structures.filter(s => s.issues.length > 0).length} structure{review.structures.filter(s => s.issues.length > 0).length !== 1 ? "s" : ""}
+                      {" "}across {review.structures.filter(s => s.status !== "good").length} structure{review.structures.filter(s => s.status !== "good").length !== 1 ? "s" : ""}
                     </p>
                   ) : (
                     <p className="text-sm text-success font-medium">No issues found — all clear!</p>
@@ -728,10 +705,44 @@ export default function Dashboard() {
               )}
               <Button size="sm" className="mt-4 gap-1.5 text-xs" asChild>
                 <span>
-                  {review && review.allIssues.length > 0 ? "Fix Issues" : "Review Issues"} <ArrowRight className="h-3 w-3" />
+                  {review && review.allIssues.length > 0 ? "Review items" : "Review items"} <ArrowRight className="h-3 w-3" />
                 </span>
               </Button>
             </Link>
+
+            {/* Duplicates — grouped with the other quality cards */}
+            {duplicateCount > 0 && (
+              <Link
+                to="/review?tab=duplicates"
+                className="group rounded-2xl border border-warning/30 bg-warning/5 p-6 transition-all hover:border-warning/50 hover:shadow-sm"
+              >
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-warning/10">
+                    <AlertTriangle className="h-5 w-5 text-warning" />
+                  </div>
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 font-medium border-warning/40 text-warning">
+                    {duplicateCount} to review
+                  </Badge>
+                </div>
+                <h3 className="text-[15px] font-semibold text-foreground">Duplicates</h3>
+                <div className="mt-1.5 space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    <span className="font-medium text-warning">
+                      {duplicateCount} potential duplicate{duplicateCount !== 1 ? "s" : ""}
+                    </span>{" "}
+                    detected.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/70">
+                    Review and merge to keep data clean.
+                  </p>
+                </div>
+                <Button variant="secondary" size="sm" className="mt-4 gap-1.5 text-xs" asChild>
+                  <span>
+                    Review Duplicates <ArrowRight className="h-3 w-3" />
+                  </span>
+                </Button>
+              </Link>
+            )}
           </>
         )}
       </section>
@@ -867,6 +878,28 @@ export default function Dashboard() {
       )}
 
       <DiagramLimitDialog open={showLimitDialog} onOpenChange={setShowLimitDialog} />
+      <XpmGroupSelectionDialog
+        open={showGroupPicker}
+        onOpenChange={setShowGroupPicker}
+        syncing={syncing}
+        onRefreshCatalogue={async () => {
+          catalogueRun.current = true;
+          try {
+            await refreshXpmCatalogue();
+          } catch (err) {
+            catalogueRun.current = false;
+            throw err;
+          }
+        }}
+        onSaved={(count) => {
+          if (count > 0 && !syncing && !xeroInvalid) {
+            toast({
+              title: "Selection saved",
+              description: "Run Sync XPM to build the diagrams for the groups you picked.",
+            });
+          }
+        }}
+      />
       <CreateStructureModal
         open={showCreateModal}
         onOpenChange={setShowCreateModal}

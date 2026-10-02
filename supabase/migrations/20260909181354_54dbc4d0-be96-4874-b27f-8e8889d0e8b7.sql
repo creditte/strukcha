@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.tenant_structure_capacity(uuid) FROM authenticated;

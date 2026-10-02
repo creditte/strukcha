@@ -1,27 +1,87 @@
+import { corsHeadersFor } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION, getSubscriptionLifecycle } from "../_shared/stripe-subscription.ts";
+import { stripeVar } from "../_shared/stripe-env.ts";
+import { PLAN_DIAGRAM_LIMITS } from "../_shared/stripe-plans.ts";
+import {
+  LEGACY_SUBSCRIPTION_MESSAGE,
+  quarantineLegacyStripeRefs,
+  tenantStripeRefs,
+} from "../_shared/stripe-tenant.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
-    month: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+    month: stripeVar("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    year: stripeVar("STRIPE_STARTER_ANNUAL_PRICE_ID"),
   },
   pro: {
-    month: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-    year: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+    month: stripeVar("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    year: stripeVar("STRIPE_PRO_ANNUAL_PRICE_ID"),
   },
 };
 
+// Same source of truth as stripe-webhooks: resolve plan + diagram limit from Stripe product ID.
+const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
+
+function parseIdList(name: string): string[] {
+  return (Deno.env.get(name) ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function legacyPriceIds(): string[] {
+  return parseIdList("STRIPE_LEGACY_PRICE_IDS");
+}
+
+function initPlanConfig() {
+  const add = (id: string | undefined, plan: string, diagramLimit: number) => {
+    if (!id || PLAN_CONFIG[id]) return; // never create a duplicate mapping
+    PLAN_CONFIG[id] = { plan, diagramLimit };
+  };
+  add(stripeVar("STRIPE_STARTER_PRODUCT_ID"), "starter", PLAN_DIAGRAM_LIMITS.starter);
+  add(stripeVar("STRIPE_PRO_PRODUCT_ID"), "pro", PLAN_DIAGRAM_LIMITS.pro);
+  for (const id of parseIdList("STRIPE_STARTER_LEGACY_PRODUCT_IDS")) add(id, "starter", PLAN_DIAGRAM_LIMITS.starter);
+  for (const id of parseIdList("STRIPE_PRO_LEGACY_PRODUCT_IDS")) add(id, "pro", PLAN_DIAGRAM_LIMITS.pro);
+}
+
+function resolvePlanFromSubscription(subscription: Stripe.Subscription): { plan: string; diagramLimit: number } {
+  const productId = subscription.items?.data?.[0]?.price?.product as string | undefined;
+  const priceId = subscription.items?.data?.[0]?.price?.id as string | undefined;
+  if (!productId || !PLAN_CONFIG[productId]) {
+    const configuredProducts = Object.keys(PLAN_CONFIG);
+    console.error(
+      `[switch-billing-interval] Unknown Stripe product mapping. subscription_id=${subscription.id} product_id=${productId} price_id=${priceId} configured_products=${JSON.stringify(configuredProducts)}`,
+    );
+    throw new Error(
+      `Unmapped Stripe product ID "${productId}". Configure STRIPE_STARTER_PRODUCT_ID / STRIPE_PRO_PRODUCT_ID to match this product before switching billing intervals.`,
+    );
+  }
+  const knownPriceIds = new Set([
+    ...(Object.values(PRICE_MAP).flatMap((m) => Object.values(m)).filter(Boolean) as string[]),
+    ...legacyPriceIds(),
+  ]);
+  if (priceId && knownPriceIds.size > 0 && !knownPriceIds.has(priceId)) {
+    console.error(
+      `[switch-billing-interval] Unknown Stripe price ID on subscription ${subscription.id}: price_id=${priceId} known_prices=${JSON.stringify([...knownPriceIds])}`,
+    );
+    throw new Error(
+      `Unmapped Stripe price ID "${priceId}". Configure STRIPE_*_PRICE_ID env vars to match this price before switching billing intervals.`,
+    );
+  }
+  return PLAN_CONFIG[productId];
+}
+
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    initPlanConfig();
+
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not set");
 
     const supabaseAdmin = createClient(
@@ -43,24 +103,38 @@ Deno.serve(async (req) => {
       .single();
     if (!profile) throw new Error("No profile found");
 
-    // Owner-only check
+    // Owner, or admin explicitly granted billing access
     const { data: tenantUser } = await supabaseAdmin
       .from("tenant_users")
-      .select("role")
+      .select("role, can_manage_billing")
       .eq("tenant_id", profile.tenant_id)
       .eq("auth_user_id", userData.user.id)
       .eq("status", "active")
       .single();
-    if (!tenantUser || tenantUser.role !== "owner") {
-      throw new Error("Only the firm owner can change billing settings");
+    if (!tenantUser || !(tenantUser.role === "owner" || (tenantUser.role === "admin" && tenantUser.can_manage_billing === true))) {
+      throw new Error("Only the firm owner, or an admin with billing access, can change billing settings");
     }
 
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_subscription_id, subscription_status, subscription_plan")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, subscription_plan, billing_exempt")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+    if (tenant.billing_exempt === true) {
+      return new Response(JSON.stringify({ error: "This firm is not billed — no subscription or payment is required." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Never modify a subscription that belongs to another Stripe mode.
+    const refs = tenantStripeRefs(tenant);
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "switch-billing-interval");
+      throw new Error(LEGACY_SUBSCRIPTION_MESSAGE);
+    }
+
 
     if (tenant.subscription_status !== "active") {
       throw new Error("Billing interval can only be changed on active subscriptions");
@@ -69,21 +143,29 @@ Deno.serve(async (req) => {
       throw new Error("No Stripe subscription found");
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
 
     // Retrieve current subscription
     const subscription = await stripe.subscriptions.retrieve(tenant.stripe_subscription_id);
     const currentItem = subscription.items.data[0];
     if (!currentItem) throw new Error("No subscription item found");
 
-    const currentInterval = currentItem.price.recurring?.interval;
-    const targetInterval = currentInterval === "month" ? "year" : "month";
+    // Resolve the current plan from the Stripe subscription itself — no fallback to the tenant column or "pro".
+    const { plan: currentPlan } = resolvePlanFromSubscription(subscription);
 
-    // Find the target price ID
-    const plan = tenant.subscription_plan || "pro";
-    const targetPriceId = PRICE_MAP[plan]?.[targetInterval];
+    const currentInterval = currentItem.price.recurring?.interval;
+    if (currentInterval !== "month" && currentInterval !== "year") {
+      throw new Error(`Unsupported current billing interval: ${currentInterval}`);
+    }
+    const targetInterval: "month" | "year" = currentInterval === "month" ? "year" : "month";
+
+    // Find the target price ID — must exist in the configured mapping for this plan.
+    const targetPriceId = PRICE_MAP[currentPlan]?.[targetInterval];
     if (!targetPriceId) {
-      throw new Error(`No price configured for plan: ${plan}, interval: ${targetInterval}`);
+      console.error(
+        `[switch-billing-interval] No configured price for plan=${currentPlan} interval=${targetInterval}`,
+      );
+      throw new Error(`No Stripe price configured for plan '${currentPlan}' with interval '${targetInterval}'.`);
     }
 
     // Update subscription: replace current item with new price
@@ -94,23 +176,20 @@ Deno.serve(async (req) => {
       proration_behavior: "create_prorations",
     });
 
-    // Determine new limit based on plan
-    const newLimit = plan === "starter" ? 15 : 50;
+    // Derive plan + diagram limit strictly from the updated Stripe subscription — no hardcoded values.
+    const { plan: resolvedPlan, diagramLimit: newLimit } = resolvePlanFromSubscription(updatedSub);
 
-    // Safe date conversion: handle both Unix timestamps and ISO strings
-    const toISO = (val: any): string | null => {
-      if (!val) return null;
-      if (typeof val === "number") return new Date(val * 1000).toISOString();
-      if (typeof val === "string") return new Date(val).toISOString();
-      return null;
-    };
+    const updatedLife = getSubscriptionLifecycle(updatedSub);
 
     // Update tenant record
-    const updatePayload: Record<string, any> = { diagram_limit: newLimit };
-    const periodStart = toISO(updatedSub.current_period_start);
-    const periodEnd = toISO(updatedSub.current_period_end);
-    if (periodStart) updatePayload.current_period_start = periodStart;
-    if (periodEnd) updatePayload.current_period_end = periodEnd;
+    const updatePayload: Record<string, any> = {
+      subscription_plan: resolvedPlan,
+      diagram_limit: newLimit,
+    };
+    if (updatedLife.currentPeriodStart) updatePayload.current_period_start = updatedLife.currentPeriodStart;
+    if (updatedLife.currentPeriodEnd) updatePayload.current_period_end = updatedLife.currentPeriodEnd;
+    if (updatedLife.trialEnd) updatePayload.trial_ends_at = updatedLife.trialEnd;
+    updatePayload.cancel_at_period_end = updatedLife.cancelAtPeriodEnd;
 
     await supabaseAdmin.from("tenants").update(updatePayload).eq("id", tenant.id);
 
@@ -118,8 +197,11 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
-      new_interval: newPrice?.recurring?.interval || targetInterval,
-      new_price_amount: newPrice?.unit_amount || null,
+      plan: resolvedPlan,
+      diagram_limit: newLimit,
+      new_interval: updatedLife.interval || newPrice?.recurring?.interval || targetInterval,
+      new_price_amount: updatedLife.priceAmount ?? newPrice?.unit_amount ?? null,
+      current_period_end: updatedLife.currentPeriodEnd,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

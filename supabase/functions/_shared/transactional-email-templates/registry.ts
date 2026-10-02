@@ -5,6 +5,8 @@ export interface TemplateEntry {
   component: React.ComponentType<any>
   subject: string | ((data: Record<string, any>) => string)
   to?: string
+  /** Optional Reply-To address (e.g. support inbox) for reply-friendly emails. */
+  replyTo?: string
   displayName?: string
   previewData?: Record<string, any>
 }
@@ -19,6 +21,8 @@ import { template as subscriptionCanceled } from './subscription-canceled.tsx'
 import { template as roleChanged } from './role-changed.tsx'
 import { template as accountAccessUpdated } from './account-access-updated.tsx'
 import { template as userDeactivated } from './user-deactivated.tsx'
+import { template as feedbackReceived } from './feedback-received.tsx'
+import { template as xeroConnectionLapsed } from './xero-connection-lapsed.tsx'
 
 export const TEMPLATES: Record<string, TemplateEntry> = {
   welcome,
@@ -31,4 +35,6 @@ export const TEMPLATES: Record<string, TemplateEntry> = {
   'role-changed': roleChanged,
   'account-access-updated': accountAccessUpdated,
   'user-deactivated': userDeactivated,
+  'feedback-received': feedbackReceived,
+  'xero-connection-lapsed': xeroConnectionLapsed,
 }

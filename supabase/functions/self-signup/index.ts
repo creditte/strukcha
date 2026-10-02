@@ -1,10 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { TRIAL_GROUP_LIMIT } from "../_shared/stripe-plans.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 
 const SITE_NAME = "strukcha";
@@ -43,6 +43,7 @@ async function sendViaSmtp2go(to: string, subject: string, html: string, text?: 
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const json = (body: Record<string, unknown>, status = 200) =>
@@ -64,6 +65,52 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    const normalisedEmail = String(email).toLowerCase();
+
+    // 0. Registration is only "complete" once a Stripe trial/subscription exists.
+    // If a previous attempt stalled before that point, purge it so the user can
+    // register again instead of being blocked by "email already exists".
+    const { data: priorMembership } = await supabaseAdmin
+      .from("tenant_users")
+      .select("id, tenant_id, auth_user_id")
+      .eq("email", normalisedEmail)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (priorMembership) {
+      const { data: priorTenant } = await supabaseAdmin
+        .from("tenants")
+        .select("id, payment_method_captured, stripe_subscription_id")
+        .eq("id", priorMembership.tenant_id)
+        .maybeSingle();
+
+      const registrationComplete =
+        !!priorTenant?.stripe_subscription_id || priorTenant?.payment_method_captured === true;
+
+      if (registrationComplete) {
+        return json({ error: "An account with this email already exists. Please log in instead." }, 400);
+      }
+
+      // Incomplete registration → clean slate.
+      const staleUserId = priorMembership.auth_user_id;
+      const staleTenantId = priorMembership.tenant_id;
+      console.log(`[Signup] Purging incomplete registration tenant=${staleTenantId} user=${staleUserId}`);
+
+      await supabaseAdmin.from("signup_verifications").delete().eq("email", normalisedEmail);
+      await supabaseAdmin.from("tenant_users").delete().eq("tenant_id", staleTenantId);
+      if (staleUserId) {
+        await supabaseAdmin.from("profiles").delete().eq("user_id", staleUserId);
+        await supabaseAdmin.from("user_roles").delete().eq("user_id", staleUserId);
+      }
+      await supabaseAdmin.from("tenants").delete().eq("id", staleTenantId);
+      if (staleUserId) {
+        await supabaseAdmin.auth.admin.deleteUser(staleUserId).catch((e) =>
+          console.error("[Signup] stale auth user delete failed:", e?.message)
+        );
+      }
+    }
+
     // 1. Create the auth user (NOT confirmed)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
@@ -81,36 +128,36 @@ Deno.serve(async (req) => {
 
     const userId = authData.user.id;
 
-    // 2. Create the tenant
-    const now = new Date();
-    // 7-day free trial
-    const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    // Determine plan limits
-    const planLimits: Record<string, number> = { starter: 15, pro: 50 };
-    const diagramLimit = planLimits[plan] || 50;
+    // 2. Create the tenant — no trial yet. The 7-day trial is created and managed
+    // by Stripe once the owner attaches a payment method via Checkout.
+    const now = new Date();
 
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from("tenants")
       .insert({
         name: firmName.toLowerCase().replace(/\s+/g, "-"),
         firm_name: firmName,
-        trial_starts_at: now.toISOString(),
-        trial_ends_at: trialEnd.toISOString(),
-        subscription_status: "trialing",
+        subscription_status: "incomplete",
         subscription_plan: plan,
-        diagram_limit: diagramLimit,
+        selected_plan: plan,
+        diagram_limit: TRIAL_GROUP_LIMIT,
+        payment_method_captured: false,
+        access_enabled: false,
+        access_locked_reason: "payment_method_required",
       })
       .select("id")
       .single();
 
     if (tenantError) throw tenantError;
 
-    // 2b. Create Stripe customer only (NO subscription yet — subscription created via Checkout after trial)
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    // 2b. Create the Stripe customer only. The trialing subscription is created by
+    // Stripe Checkout (mode=subscription, trial_period_days=7) so the card is
+    // authorised and stored by Stripe without an immediate charge.
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
-        const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+        const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
         const customer = await stripe.customers.create({
           email,
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
@@ -118,10 +165,10 @@ Deno.serve(async (req) => {
 
         await supabaseAdmin.from("tenants").update({
           stripe_customer_id: customer.id,
-          trial_used_at: now.toISOString(),
+          stripe_mode: stripeMode(),
         }).eq("id", tenant.id);
 
-        console.log(`[Signup] Stripe customer ${customer.id} created (no subscription — trial only)`);
+        console.log(`[Signup] Stripe customer ${customer.id} created (awaiting payment method)`);
       } catch (stripeErr: any) {
         console.error("[Signup] Stripe setup failed:", stripeErr.message);
       }
@@ -149,6 +196,7 @@ Deno.serve(async (req) => {
         full_name: fullName,
         status: "active",
         onboarding_complete: true,
+        password_set: true,
         selected_plan: plan,
         selected_billing: billing,
       }, { onConflict: "user_id" });

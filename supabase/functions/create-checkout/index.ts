@@ -1,27 +1,29 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
+import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
+import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
+import { quarantineLegacyStripeRefs, tenantStripeRefs } from "../_shared/stripe-tenant.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+
 
 const PRICE_MAP: Record<string, Record<string, string | undefined>> = {
   starter: {
-    monthly: Deno.env.get("STRIPE_STARTER_MONTHLY_PRICE_ID"),
-    annual: Deno.env.get("STRIPE_STARTER_ANNUAL_PRICE_ID"),
+    monthly: stripeVar("STRIPE_STARTER_MONTHLY_PRICE_ID"),
+    annual: stripeVar("STRIPE_STARTER_ANNUAL_PRICE_ID"),
   },
   pro: {
-    monthly: Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-    annual: Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+    monthly: stripeVar("STRIPE_PRO_MONTHLY_PRICE_ID"),
+    annual: stripeVar("STRIPE_PRO_ANNUAL_PRICE_ID"),
   },
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not set");
 
     const supabaseAdmin = createClient(
@@ -45,53 +47,92 @@ Deno.serve(async (req) => {
        .single();
      if (!profile) throw new Error("No profile found");
 
-    // Owner-only check
+    // Owner, or admin explicitly granted billing access
     const { data: tenantUser } = await supabaseAdmin
       .from("tenant_users")
-      .select("role")
+      .select("role, can_manage_billing")
       .eq("tenant_id", profile.tenant_id)
       .eq("auth_user_id", user.id)
       .eq("status", "active")
       .single();
-    if (!tenantUser || tenantUser.role !== "owner") {
-      throw new Error("Only the firm owner can manage billing");
+    if (!tenantUser || !(tenantUser.role === "owner" || (tenantUser.role === "admin" && tenantUser.can_manage_billing === true))) {
+      throw new Error("Only the firm owner, or an admin with billing access, can manage billing");
     }
 
-     const selectedPlan = profile.selected_plan || "pro";
-     const selectedBilling = profile.selected_billing || "monthly";
-     const planPrices = PRICE_MAP[selectedPlan] || PRICE_MAP.pro;
-     const priceId = planPrices?.[selectedBilling] || planPrices?.monthly;
-     if (!priceId) throw new Error(`No Stripe price configured for plan: ${selectedPlan}, billing: ${selectedBilling}`);
+    const selectedPlan = profile.selected_plan;
+    const selectedBilling = profile.selected_billing;
+    if (!selectedPlan || !selectedBilling) {
+      console.error("[create-checkout] Missing plan/billing selection", { tenant_id: profile.tenant_id, selectedPlan, selectedBilling });
+      return new Response(JSON.stringify({ error: "No plan selected. Please choose a plan before checkout." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const planPrices = PRICE_MAP[selectedPlan];
+    if (!planPrices) {
+      console.error("[create-checkout] Unknown plan", { tenant_id: profile.tenant_id, selectedPlan });
+      return new Response(JSON.stringify({ error: `Unknown plan: ${selectedPlan}` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const priceId = planPrices[selectedBilling];
+    if (!priceId) {
+      console.error("[create-checkout] Unknown/unconfigured billing interval", { tenant_id: profile.tenant_id, selectedPlan, selectedBilling });
+      return new Response(JSON.stringify({ error: `No Stripe price configured for plan '${selectedPlan}' with billing interval '${selectedBilling}'.` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Get tenant
     const { data: tenant } = await supabaseAdmin
       .from("tenants")
-      .select("id, stripe_customer_id, stripe_subscription_id, subscription_status, trial_used_at")
+      .select("id, stripe_customer_id, stripe_subscription_id, stripe_mode, subscription_status, trial_used_at, payment_method_captured, billing_exempt")
       .eq("id", profile.tenant_id)
       .single();
     if (!tenant) throw new Error("No tenant found");
+    if (tenant.billing_exempt === true) {
+      return new Response(JSON.stringify({ error: "This firm is not billed — no subscription or payment is required." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // Only block if there's a real active Stripe subscription
-    if (tenant.stripe_subscription_id && ["active"].includes(tenant.subscription_status)) {
-      // Double-check with Stripe that the subscription is genuinely active
-      const stripe2 = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
+    const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
+
+    // ── Stripe mode safety ────────────────────────────────────────────
+    // IDs saved in another Stripe mode (e.g. sandbox data now that we run live)
+    // do not exist for the active key. Quarantine them instead of calling Stripe
+    // with them or overwriting them, then continue with a fresh customer.
+    let refs = tenantStripeRefs(tenant);
+    const legacyQuarantined = refs.isLegacy;
+    if (refs.isLegacy) {
+      await quarantineLegacyStripeRefs(supabaseAdmin, tenant, "create-checkout");
+      refs = tenantStripeRefs(tenant);
+    }
+
+    // ── Duplicate-subscription protection ─────────────────────────────
+    // 1. Check the subscription we already track (same mode only).
+    if (refs.subscriptionId) {
       try {
-        const existingSub = await stripe2.subscriptions.retrieve(tenant.stripe_subscription_id);
-        if (existingSub.status === "active" || existingSub.status === "trialing") {
-          return new Response(JSON.stringify({ error: "Workspace already has an active subscription" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+        const existingSub = await stripe.subscriptions.retrieve(refs.subscriptionId);
+        if (["active", "trialing", "past_due", "unpaid"].includes(existingSub.status)) {
+          return new Response(
+            JSON.stringify({
+              error: "Workspace already has a subscription. Manage it from the customer portal.",
+              already_subscribed: true,
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
         }
       } catch {
         // Subscription doesn't exist in Stripe, allow checkout
       }
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
-
-    // Create or retrieve Stripe customer
-    let customerId = tenant.stripe_customer_id;
+    // Create or retrieve Stripe customer (always for the ACTIVE Stripe mode)
+    let customerId = refs.customerId;
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
@@ -100,9 +141,38 @@ Deno.serve(async (req) => {
       customerId = customer.id;
       await supabaseAdmin
         .from("tenants")
-        .update({ stripe_customer_id: customerId })
+        .update({ stripe_customer_id: customerId, stripe_mode: stripeMode() })
         .eq("id", tenant.id);
     }
+
+
+    // 2. Authoritative check against Stripe: never create a second subscription
+    // for the same customer (e.g. if the DB lost the subscription id).
+    const customerSubs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 });
+    const liveSub = customerSubs.data.find((s) =>
+      ["active", "trialing", "past_due", "unpaid"].includes(s.status)
+    );
+    if (liveSub) {
+      // Re-link and refuse to create a duplicate.
+      await supabaseAdmin
+        .from("tenants")
+        .update({ stripe_subscription_id: liveSub.id, stripe_mode: stripeMode(), payment_method_captured: true })
+        .eq("id", tenant.id);
+      return new Response(
+        JSON.stringify({
+          error: "Workspace already has a subscription. Manage it from the customer portal.",
+          already_subscribed: true,
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // The 7-day free trial is granted by Stripe exactly once per workspace and per
+    // Stripe mode — a trial consumed in the old sandbox account must not block the
+    // first real (live) trial, since no live customer ever existed.
+    const trialUsedInThisMode = !!tenant.trial_used_at && !legacyQuarantined;
+    const grantTrial = !trialUsedInThisMode && customerSubs.data.length === 0;
+
 
     const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
 
@@ -110,13 +180,23 @@ Deno.serve(async (req) => {
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
+      // Always collect and store a card, even when the trial makes the first
+      // invoice A$0 — Stripe vaults it and charges it when the trial ends.
+      payment_method_collection: "always",
       success_url: `${origin}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/signup`,
+      cancel_url: `${origin}/complete-setup?checkout=cancelled`,
       metadata: { workspace_id: tenant.id, owner_user_id: user.id },
       subscription_data: {
         metadata: { workspace_id: tenant.id },
+        ...(grantTrial
+          ? {
+              trial_period_days: 7,
+              trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+            }
+          : {}),
       },
     };
+
 
     const session = await stripe.checkout.sessions.create(sessionParams);
 

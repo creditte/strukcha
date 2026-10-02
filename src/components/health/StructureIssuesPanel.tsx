@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type { StructureResult } from "@/hooks/useClientHealthReview";
 
@@ -17,28 +20,21 @@ const SEVERITY_CONFIG = {
     border: "border-l-destructive",
     bg: "bg-destructive/5",
     badge: "bg-destructive/15 text-destructive",
-    label: "Critical",
+    label: "Conflicting data",
   },
   gap: {
     icon: AlertTriangle,
     border: "border-l-warning",
     bg: "bg-warning/5",
     badge: "bg-warning/15 text-warning",
-    label: "Gap",
-  },
-  minor: {
-    icon: Info,
-    border: "border-l-primary",
-    bg: "bg-primary/5",
-    badge: "bg-primary/15 text-primary",
-    label: "Minor",
+    label: "Review",
   },
   info: {
     icon: Info,
     border: "border-l-muted-foreground",
     bg: "bg-muted/30",
     badge: "bg-muted text-muted-foreground",
-    label: "Info",
+    label: "Information",
   },
 } as const;
 
@@ -53,9 +49,16 @@ interface Props {
   onBack: () => void;
 }
 
+const ISSUE_PAGE_SIZE = 10;
+
 export default function StructureIssuesPanel({ structure, onBack }: Props) {
+  const [page, setPage] = useState(1);
   const actionableIssues = structure.issues.filter((i) => i.severity !== "info");
   const hasIssues = actionableIssues.length > 0;
+  const pageCount = Math.max(1, Math.ceil(actionableIssues.length / ISSUE_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * ISSUE_PAGE_SIZE;
+  const pageIssues = actionableIssues.slice(pageStart, pageStart + ISSUE_PAGE_SIZE);
 
   return (
     <div className="space-y-8">
@@ -106,7 +109,7 @@ export default function StructureIssuesPanel({ structure, onBack }: Props) {
           </div>
 
           <div className="space-y-2">
-            {actionableIssues.map((issue, idx) => {
+            {pageIssues.map((issue, idx) => {
               const config = SEVERITY_CONFIG[issue.severity];
               const Icon = config.icon;
               return (
@@ -136,6 +139,22 @@ export default function StructureIssuesPanel({ structure, onBack }: Props) {
               );
             })}
           </div>
+          {pageCount > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs text-muted-foreground">
+                Showing {pageStart + 1}–{Math.min(pageStart + ISSUE_PAGE_SIZE, actionableIssues.length)} of {actionableIssues.length} issues
+              </span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                  <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                </Button>
+                <span className="text-xs tabular-nums text-muted-foreground">Page {currentPage} of {pageCount}</span>
+                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
       ) : (
         <section className="text-center py-12 space-y-3">
@@ -143,7 +162,7 @@ export default function StructureIssuesPanel({ structure, onBack }: Props) {
             <CheckCircle2 className="h-6 w-6 text-success" />
           </div>
           <p className="text-sm text-muted-foreground">
-            No issues found — this structure is healthy.
+            No conflicting data or review items found — this structure is complete.
           </p>
         </section>
       )}

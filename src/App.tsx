@@ -9,6 +9,8 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Signup from "./pages/Signup";
+import Pricing from "./pages/Pricing";
+
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -29,10 +31,25 @@ import ProtectedAdminRoute from "@/components/ProtectedAdminRoute";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminTenantDetail from "./pages/admin/AdminTenantDetail";
 import BillingSuccess from "./pages/BillingSuccess";
+import PaymentSetup from "./pages/PaymentSetup";
+import SubscriptionLocked from "./pages/SubscriptionLocked";
 
 import Unsubscribe from "./pages/Unsubscribe";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Stale-while-revalidate: cached data renders instantly, and is only
+      // refetched in the background once it is older than its staleTime.
+      staleTime: 60_000,
+      gcTime: 30 * 60_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    },
+  },
+});
+
 
 const App = () => (
   <ErrorBoundary>
@@ -46,7 +63,9 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Navigate to="/login" replace />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/pricing" element={<Pricing />} />
               <Route path="/login" element={<Login />} />
+
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/mfa-setup" element={<MfaSetup />} />
@@ -54,6 +73,8 @@ const App = () => (
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/setup-password" element={<SetupPassword />} />
               <Route path="/billing/success" element={<BillingSuccess />} />
+              <Route path="/complete-setup" element={<PaymentSetup />} />
+              <Route path="/subscription-locked" element={<SubscriptionLocked />} />
               
               <Route path="/unsubscribe" element={<Unsubscribe />} />
               {/* Super Admin routes */}

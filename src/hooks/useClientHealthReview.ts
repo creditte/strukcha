@@ -1,12 +1,21 @@
 /**
  * Shared hook for computing workspace-level structure health.
- * Used by both ClientGovernance (Health Check) and Review & Improve pages
- * to ensure consistent data across the app.
+ * Used by the Dashboard, ClientGovernance (Health Check) and Review & Improve
+ * so all three surfaces show identical numbers.
+ *
+ * The whole dataset now arrives in ONE request (`health_review_dataset`),
+ * replacing ~100 sequential chunked reads that made the pages hang on a
+ * skeleton. Scoring is sliced so the browser stays responsive, and the result
+ * is cached in React Query per firm.
  */
 
-import { useState, useCallback } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { computeHealthScoreV2, getHealthStatus } from "@/lib/structureScoring";
+import { useAuth } from "@/hooks/useAuth";
+import { useTenantId } from "@/hooks/useSharedQueries";
+import { qk } from "@/lib/queryKeys";
+import { computeHealthScoreV2 } from "@/lib/structureScoring";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { ScoringIssue } from "@/lib/structureScoring";
 
@@ -36,6 +45,8 @@ export interface ClientReview {
   needsAttention: number;
   /** Flat list of all issues across all structures, with structure context */
   allIssues: StructureIssue[];
+  /** Change stamp of the underlying data at review time */
+  fingerprint: string | null;
 }
 
 export interface StructureIssue extends ScoringIssue {
@@ -43,203 +54,210 @@ export interface StructureIssue extends ScoringIssue {
   structure_name: string;
 }
 
+interface RawStructure {
+  id: string;
+  name: string;
+  entities: EntityNode[];
+  relationships: RelationshipEdge[];
+}
+
 /* ── Helpers ────────────────────────────────────────────────────── */
 
-function getFriendlyLabel(score: number): string {
-  if (score >= 90) return "Healthy";
-  if (score >= 70) return "Minor gaps";
-  if (score >= 41) return "Needs attention";
-  return "Critical";
+const SCORE_SLICE = 100;
+const REVIEW_TIMEOUT_MS = 60_000;
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+/* ── Core computation ───────────────────────────────────────────── */
+
+async function buildReview(
+  onProgress?: (scored: number, total: number) => void,
+): Promise<ClientReview> {
+  const { data, error } = await supabase.rpc("health_review_dataset" as any);
+  if (error) throw error;
+
+  const structures: RawStructure[] = ((data as any)?.structures ?? []) as RawStructure[];
+
+  if (structures.length === 0) {
+    return {
+      timestamp: new Date().toISOString(),
+      clientScore: 100,
+      structures: [],
+      crossObservations: [],
+      criticalStructures: 0,
+      needsAttention: 0,
+      allIssues: [],
+      fingerprint: null,
+    };
+  }
+
+  const results: StructureResult[] = [];
+  const allIssues: StructureIssue[] = [];
+  const circularIds: string[] = [];
+
+  for (let i = 0; i < structures.length; i++) {
+    const s = structures[i];
+    const health = computeHealthScoreV2(s.entities ?? [], s.relationships ?? []);
+
+    results.push({
+      id: s.id,
+      name: s.name,
+      score: health.score,
+      status: health.status,
+      friendlyLabel: health.label,
+      issues: health.issues,
+      criticalCount: health.criticalGaps.length,
+    });
+
+    for (const issue of health.issues) {
+      if (issue.severity === "info") continue;
+      allIssues.push({ ...issue, structure_id: s.id, structure_name: s.name });
+    }
+
+    if (health.issues.some((iss) => iss.code === "circular_ownership")) circularIds.push(s.id);
+
+    // Keep the tab responsive on large firms.
+    if ((i + 1) % SCORE_SLICE === 0) {
+      onProgress?.(i + 1, structures.length);
+      await yieldToBrowser();
+    }
+  }
+  onProgress?.(structures.length, structures.length);
+
+  const crossObservations: CrossObservation[] = [];
+  if (circularIds.length > 0)
+    crossObservations.push({
+      message: `${circularIds.length} structure${circularIds.length > 1 ? "s" : ""} with circular ownership detected`,
+      structureIds: circularIds,
+    });
+
+  const avgScore = Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length);
+  const allPerfect = results.every((r) => r.score >= 100);
+  const finalClientScore = allPerfect ? avgScore : Math.min(avgScore, 99);
+
+  allIssues.sort((a, b) => {
+    const severityOrder: Record<string, number> = { critical: 0, gap: 1, info: 2 };
+    const sa = severityOrder[a.severity] ?? 3;
+    const sb = severityOrder[b.severity] ?? 3;
+    if (sa !== sb) return sa - sb;
+    return a.structure_name.localeCompare(b.structure_name);
+  });
+
+  let fingerprint: string | null = null;
+  try {
+    const { data: fp } = await supabase.rpc("health_review_fingerprint" as any);
+    fingerprint = (fp as string) ?? null;
+  } catch {
+    fingerprint = null;
+  }
+
+  return {
+    timestamp: new Date().toISOString(),
+    clientScore: finalClientScore,
+    structures: results.sort((a, b) => a.score - b.score),
+    crossObservations,
+    criticalStructures: results.filter((r) => r.status === "critical").length,
+    needsAttention: results.filter((r) => r.status !== "good").length,
+    allIssues,
+    fingerprint,
+  };
 }
 
 /* ── Hook ───────────────────────────────────────────────────────── */
 
 export function useClientHealthReview() {
-  const [review, setReview] = useState<ClientReview | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { session } = useAuth();
+  const tenantId = useTenantId();
+  const queryClient = useQueryClient();
+  const [progress, setProgress] = useState<{ scored: number; total: number } | null>(null);
+  const inFlight = useRef<Promise<ClientReview> | null>(null);
+
+  const queryKey = useMemo(() => qk.healthReview(tenantId), [tenantId]);
+
+  const fetchReview = useCallback(async () => {
+    // Single in-flight guard: a second mount or a Re-run click joins the
+    // running request instead of starting a competing one.
+    if (inFlight.current) return inFlight.current;
+    const run = withTimeout(
+      buildReview((scored, total) => setProgress({ scored, total })),
+      REVIEW_TIMEOUT_MS,
+      "The health check took too long to finish. Please try again.",
+    ).finally(() => {
+      inFlight.current = null;
+      setProgress(null);
+    });
+    inFlight.current = run;
+    return run;
+  }, []);
+
+  const storageKey = tenantId ? `strukcha:health-review:${tenantId}` : null;
+  const saved = useMemo<ClientReview | undefined>(() => {
+    if (!storageKey) return undefined;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw ? (JSON.parse(raw) as ClientReview) : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [storageKey]);
+
+  // Show the last saved result; only run automatically when there has never
+  // been one. Users re-run the analysis explicitly via runReview().
+  const query = useQuery({
+    queryKey,
+    enabled: !!session?.user && !!tenantId,
+    initialData: saved,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+    queryFn: async () => {
+      const r = await fetchReview();
+      if (storageKey) {
+        try { localStorage.setItem(storageKey, JSON.stringify(r)); } catch { /* quota */ }
+      }
+      return r;
+    },
+  });
 
   const runReview = useCallback(async (): Promise<ClientReview | null> => {
-    setLoading(true);
     try {
-      const { data: structures } = await supabase
-        .from("structures")
-        .select("id, name")
-        .is("deleted_at", null)
-        .eq("is_scenario", false);
-
-      if (!structures || structures.length === 0) {
-        const empty: ClientReview = {
-          timestamp: new Date().toISOString(),
-          clientScore: 100,
-          structures: [],
-          crossObservations: [],
-          criticalStructures: 0,
-          needsAttention: 0,
-          allIssues: [],
-        };
-        setReview(empty);
-        setLoading(false);
-        return empty;
-      }
-
-      const structureIds = structures.map((s) => s.id);
-
-      const [seResult, srResult] = await Promise.all([
-        supabase.from("structure_entities").select("structure_id, entity_id").in("structure_id", structureIds),
-        supabase.from("structure_relationships").select("structure_id, relationship_id").in("structure_id", structureIds),
-      ]);
-
-      const seByStruct = new Map<string, string[]>();
-      for (const row of seResult.data ?? []) {
-        const arr = seByStruct.get(row.structure_id) ?? [];
-        arr.push(row.entity_id);
-        seByStruct.set(row.structure_id, arr);
-      }
-
-      const srByStruct = new Map<string, string[]>();
-      for (const row of srResult.data ?? []) {
-        const arr = srByStruct.get(row.structure_id) ?? [];
-        arr.push(row.relationship_id);
-        srByStruct.set(row.structure_id, arr);
-      }
-
-      const allEntityIds = new Set<string>();
-      const allRelIds = new Set<string>();
-      for (const ids of seByStruct.values()) ids.forEach((id) => allEntityIds.add(id));
-      for (const ids of srByStruct.values()) ids.forEach((id) => allRelIds.add(id));
-
-      const [entResult, relResult] = await Promise.all([
-        allEntityIds.size > 0
-          ? supabase.from("entities")
-              .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, created_at")
-              .in("id", Array.from(allEntityIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
-        allRelIds.size > 0
-          ? supabase.from("relationships")
-              .select("id, from_entity_id, to_entity_id, relationship_type, source, ownership_percent, ownership_units, ownership_class, created_at")
-              .in("id", Array.from(allRelIds))
-              .is("deleted_at", null)
-          : Promise.resolve({ data: [] }),
-      ]);
-
-      const entityById = new Map<string, EntityNode>();
-      for (const e of (entResult.data ?? []) as any[]) entityById.set(e.id, e as EntityNode);
-
-      const relById = new Map<string, RelationshipEdge>();
-      for (const r of (relResult.data ?? []) as any[]) {
-        relById.set(r.id, {
-          id: r.id, from_entity_id: r.from_entity_id, to_entity_id: r.to_entity_id,
-          relationship_type: r.relationship_type, source_data: r.source,
-          ownership_percent: r.ownership_percent, ownership_units: r.ownership_units,
-          ownership_class: r.ownership_class, created_at: r.created_at,
-        });
-      }
-
-      const results: StructureResult[] = [];
-      const allIssues: StructureIssue[] = [];
-      let circularCount = 0;
-
-      const trustsWithoutCorporateTrusteeIds: string[] = [];
-      const missingAppointerIds: string[] = [];
-      const circularIds: string[] = [];
-
-      for (const s of structures) {
-        const entIds = seByStruct.get(s.id) ?? [];
-        const relIds = srByStruct.get(s.id) ?? [];
-        const ents = entIds.map((id) => entityById.get(id)).filter(Boolean) as EntityNode[];
-        const rels = relIds.map((id) => relById.get(id)).filter(Boolean) as RelationshipEdge[];
-        const health = computeHealthScoreV2(ents, rels);
-
-        results.push({
-          id: s.id,
-          name: s.name,
-          score: health.score,
-          status: getHealthStatus(health.score),
-          friendlyLabel: getFriendlyLabel(health.score),
-          issues: health.issues,
-          criticalCount: health.criticalGaps.length,
-        });
-
-        // Flatten issues with structure context
-        for (const issue of health.issues) {
-          if (issue.severity === "info") continue; // skip info-level for review page
-          allIssues.push({
-            ...issue,
-            structure_id: s.id,
-            structure_name: s.name,
-          });
-        }
-
-        if (health.isCapped) {
-          trustsWithoutCorporateTrusteeIds.push(s.id);
-        }
-        const appointerIssues = health.issues.filter((i) => i.code === "missing_appointer");
-        if (appointerIssues.length > 0) {
-          missingAppointerIds.push(s.id);
-        }
-        if (health.issues.some((i) => i.code === "circular_ownership")) {
-          circularCount++;
-          circularIds.push(s.id);
-        }
-      }
-
-      const crossObservations: CrossObservation[] = [];
-      if (trustsWithoutCorporateTrusteeIds.length > 0)
-        crossObservations.push({
-          message: `${trustsWithoutCorporateTrusteeIds.length} structure${trustsWithoutCorporateTrusteeIds.length > 1 ? "s have" : " has"} trusts without corporate trustees`,
-          structureIds: trustsWithoutCorporateTrusteeIds,
-        });
-      if (missingAppointerIds.length > 0) {
-        const totalAppointerIssues = allIssues.filter((i) => i.code === "missing_appointer").length;
-        crossObservations.push({
-          message: `${totalAppointerIssues} trust${totalAppointerIssues > 1 ? "s" : ""} missing appointors across structures`,
-          structureIds: missingAppointerIds,
-        });
-      }
-      if (circularCount > 0)
-        crossObservations.push({
-          message: `${circularCount} structure${circularCount > 1 ? "s" : ""} with circular ownership detected`,
-          structureIds: circularIds,
-        });
-
-      const avgScore = results.length > 0
-        ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)
-        : 100;
-      const allPerfect = results.every((r) => r.score >= 100);
-      const finalClientScore = allPerfect ? avgScore : Math.min(avgScore, 99);
-
-      const criticalStructures = results.filter((r) => r.status === "critical").length;
-      const needsAttention = results.filter((r) => r.score < 100).length;
-
-      // Sort issues: critical first, then by structure
-      allIssues.sort((a, b) => {
-        const severityOrder = { critical: 0, gap: 1, minor: 2, info: 3 };
-        const sa = severityOrder[a.severity] ?? 3;
-        const sb = severityOrder[b.severity] ?? 3;
-        if (sa !== sb) return sa - sb;
-        return a.structure_name.localeCompare(b.structure_name);
+      const result = await queryClient.fetchQuery({
+        queryKey,
+        staleTime: 0,
+        retry: false,
+        queryFn: fetchReview,
       });
-
-      const result: ClientReview = {
-        timestamp: new Date().toISOString(),
-        clientScore: finalClientScore,
-        structures: results.sort((a, b) => a.score - b.score),
-        crossObservations,
-        criticalStructures,
-        needsAttention,
-        allIssues,
-      };
-
-      setReview(result);
-      setLoading(false);
+      if (storageKey) {
+        try { localStorage.setItem(storageKey, JSON.stringify(result)); } catch { /* quota */ }
+      }
       return result;
     } catch (e) {
       console.error("Review error:", e);
-      setLoading(false);
       return null;
     }
-  }, []);
+  }, [queryClient, queryKey, fetchReview, storageKey]);
 
-  return { review, loading, runReview };
+  return {
+    review: query.data ?? null,
+    loading: query.isLoading || query.isFetching,
+    error: query.error ? ((query.error as any).message ?? "We couldn't check your structures just now.") : null,
+    progress,
+    runReview,
+  };
 }

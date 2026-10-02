@@ -1,6 +1,8 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptToken } from "../_shared/crypto.ts";
+import { sendXpmWelcomeEmail } from "../_shared/xpm-welcome-email.ts";
 
 serve(async (req) => {
   try {
@@ -9,7 +11,7 @@ serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
-    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
 
     if (error) {
       console.error("Xero OAuth error:", error);
@@ -20,15 +22,17 @@ serve(async (req) => {
       return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=missing_params`, 302);
     }
 
-    // Decode state to get user_id, origin, and CSRF token
+    // Decode state to get user_id, origin, CSRF token and what was asked for
     let userId: string;
     let frontendUrl: string;
     let csrfToken: string;
+    let connectionType = "practice_manager";
     try {
       const state = JSON.parse(atob(decodeURIComponent(stateParam)));
       userId = state.user_id;
-      frontendUrl = state.origin || defaultFrontendUrl;
+      frontendUrl = safeFrontend(state.origin);
       csrfToken = state.csrf;
+      if (state.connection_type === "standard") connectionType = "standard";
     } catch {
       return Response.redirect(`${defaultFrontendUrl}/?xero=error&reason=invalid_state`, 302);
     }
@@ -111,6 +115,20 @@ serve(async (req) => {
       return Response.redirect(`${frontendUrl}/?xero=error&reason=no_organisations`, 302);
     }
 
+    // A Practice Manager connection must actually include Practice Manager.
+    // Saving a plain Xero organisation here is what caused every later sync to
+    // fail with "Unauthorized", so refuse it now and say what's needed.
+    if (connectionType === "practice_manager") {
+      const pmTenants = tenants.filter((t) => t.tenantType === "PRACTICEMANAGER");
+      if (pmTenants.length === 0) {
+        return Response.redirect(
+          `${frontendUrl}/?xero=error&reason=no_practice_manager`,
+          302,
+        );
+      }
+      tenants = pmTenants;
+    }
+
     // Get user's tenant_id and email
     const { data: profile } = await supabase
       .from("profiles")
@@ -152,6 +170,8 @@ serve(async (req) => {
           connected_by_email: connectedByEmail,
           tenant_id: profile.tenant_id,
           organisations: orgList,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
         },
       });
 
@@ -183,6 +203,13 @@ serve(async (req) => {
           access_token: encryptedAccessToken,
           refresh_token: encryptedRefreshToken,
           expires_at: expiresAt,
+          connection_type: connectionType,
+          scopes: tokens.scope ?? null,
+          status: "active",
+          last_error: null,
+          last_error_at: null,
+          invalidated_at: null,
+          refresh_lock_until: null,
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -200,10 +227,13 @@ serve(async (req) => {
       .delete()
       .eq("user_id", userId);
 
+    // XPM is connected — this is when the firm can actually use strukcha.
+    await sendXpmWelcomeEmail(supabase, profile.tenant_id);
+
     return Response.redirect(`${frontendUrl}/?xero=connected`, 302);
   } catch (err) {
     console.error("xero-callback error:", err);
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://link-map-insight.lovable.app";
+    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
     return Response.redirect(`${frontendUrl}/?xero=error&reason=server_error`, 302);
   }
 });

@@ -1,63 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decryptToken, encryptToken } from "../_shared/crypto.ts";
+import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
 
 const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
-
-async function refreshAccessToken(supabase: any, connection: any): Promise<string> {
-  const now = new Date();
-  const expiresAt = new Date(connection.expires_at);
-  const currentAccessToken = await decryptToken(connection.access_token);
-
-  if (expiresAt.getTime() - now.getTime() > 300_000) {
-    return currentAccessToken;
-  }
-
-  console.log("[list-xpm-groups] Token expires soon, refreshing...");
-  const clientId = Deno.env.get("XERO_CLIENT_ID")!;
-  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
-  const currentRefreshToken = await decryptToken(connection.refresh_token);
-
-  const res = await fetch("https://identity.xero.com/connect/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: currentRefreshToken,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token refresh failed: ${body}`);
-  }
-
-  const tokens = await res.json();
-  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-  const encryptedAccessToken = await encryptToken(tokens.access_token);
-  const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
-
-  await supabase
-    .from("xero_connections")
-    .update({
-      access_token: encryptedAccessToken,
-      refresh_token: encryptedRefreshToken,
-      expires_at: newExpiresAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", connection.id);
-
-  return tokens.access_token;
-}
 
 async function discoverPmTenantId(accessToken: string, storedTenantId: string | null): Promise<string | null> {
   try {
@@ -92,6 +39,7 @@ function xmlText(node: any, key: string): string {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -124,14 +72,10 @@ Deno.serve(async (req) => {
     }
 
     // Load Xero connection
-    const { data: connections } = await supabase
-      .from("xero_connections")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("connected_at", { ascending: false })
-      .limit(1);
+    const chosen = await loadXeroConnection(supabase, tenantId);
+    const connections = chosen ? [chosen] : [];
 
-    if (!connections || connections.length === 0) {
+    if (connections.length === 0) {
       return new Response(JSON.stringify({ error: "No Xero connection found. Please connect XPM first.", groups: [] }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -169,7 +113,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const accessToken = await refreshAccessToken(supabase, connection);
+    const accessToken = await getXeroAccessToken(supabase, connection);
 
     // Prefer stored PM tenant id — avoids an extra round-trip to api.xero.com/connections
     let xeroTenantId = connection.xero_tenant_id as string | null;

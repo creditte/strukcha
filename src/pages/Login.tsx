@@ -59,8 +59,22 @@ export default function Login() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get("account_deleted") !== "1") return;
+    toast({
+      title: "Account deleted",
+      description:
+        "Your account and all firm data have been permanently deleted. Any active subscription or trial was cancelled.",
+    });
+    params.delete("account_deleted");
+    const q = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${q ? `?${q}` : ""}`);
+  }, [toast]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
     const mode = params.get("xero_login");
     if (!mode) return;
+
 
     if (mode === "no_account") {
       toast({
@@ -142,9 +156,12 @@ export default function Login() {
         .maybeSingle();
 
       if (cancelled) return;
+      const meta = user.user_metadata;
       const needsInvitePassword =
         profile?.onboarding_complete === false &&
-        user.user_metadata?.signup_source !== "self_service";
+        meta?.signup_source !== "self_service" &&
+        meta?.signup_source !== "xero" &&
+        meta?.auth_method !== "xero";
       if (needsInvitePassword) {
         navigate("/setup-password", { replace: true });
       } else {
@@ -187,13 +204,15 @@ export default function Login() {
     }
   };
 
-  const handleXeroLogin = async () => {
+  const handleXeroLogin = async (
+    connectionType: "practice_manager" | "standard" = "practice_manager",
+  ) => {
     setXeroLoginLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke(
         "xero-login-auth",
         {
-          body: { origin: window.location.origin },
+          body: { origin: window.location.origin, connection_type: connectionType },
         },
       );
       if (error) throw error;
@@ -231,10 +250,10 @@ export default function Login() {
         <Card className="border-border/50 shadow-lg">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl font-bold tracking-tight">
-              Strukcha
+              strukcha
             </CardTitle>
             <CardDescription>
-              Log in to access your strukcha workspace Production.
+              Log in to access your strukcha workspace.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -280,6 +299,14 @@ export default function Login() {
                     )}
                   </button>
                 </div>
+                <div className="flex justify-end">
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
               <Button
                 type="submit"
@@ -310,7 +337,7 @@ export default function Login() {
                 variant="default"
                 className="w-full h-11 border-0 bg-[#14B5EA] text-base font-semibold text-white hover:bg-[#14B5EA]/90 focus-visible:ring-white/40"
                 disabled={xeroLoginLoading || submitting}
-                onClick={handleXeroLogin}
+                onClick={() => handleXeroLogin("standard")}
               >
                 {xeroLoginLoading ? (
                   <>
@@ -325,26 +352,23 @@ export default function Login() {
                 )}
               </Button>
               <p className="text-xs text-center text-muted-foreground">
-                Only for accounts originally created with Xero. Others should
-                use email and password.
+                For accounts created with Xero. New to strukcha? Sign up first.
               </p>
             </form>
-
-            <div className="mt-5 flex items-center justify-between text-sm">
-              <Link
-                to="/forgot-password"
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Forgot password?
-              </Link>
-            </div>
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          Don't have an account?{" "}
+          <Link to="/signup" className="font-medium text-primary hover:underline">
+            Sign up
+          </Link>
+        </p>
+
+        <p className="mt-3 text-center text-xs text-muted-foreground">
           Need help?{" "}
-          <a href="mailto:hello@strukcha.app" className="hover:underline">
-            hello@strukcha.app
+          <a href="mailto:support@strukcha.app" className="hover:underline">
+            support@strukcha.app
           </a>
         </p>
       </div>

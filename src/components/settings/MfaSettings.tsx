@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useMfa } from "@/hooks/useMfa";
+import { usePasswordSet } from "@/hooks/usePasswordSet";
 import { useTrustedDevice } from "@/hooks/useTrustedDevice";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 
-type ChangeStep = "idle" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
+type ChangeStep = "idle" | "totp-password" | "totp-enroll" | "totp-verify" | "email-send" | "email-verify";
 
 const MFA_SETTINGS_STORAGE_KEY = "mfa_settings_change_state";
 
@@ -68,9 +68,29 @@ type TrustedDeviceRecord = {
   is_current?: boolean;
 };
 
-export default function MfaSettings() {
+export default function MfaSettings({ section = "all" }: { section?: "all" | "mfa" | "devices" } = {}) {
   const { user } = useAuth();
-  const { method: currentMethod, loading: mfaLoading, refetch } = useMfa();
+  const { passwordSet } = usePasswordSet();
+  // Settings only needs the chosen method — skip the full verification check
+  // (which calls the trusted-device service) so the card renders instantly.
+  const methodCacheKey = user?.id ? `mfa_method:${user.id}` : null;
+  const [currentMethod, setCurrentMethod] = useState<"totp" | "email" | null>(() => {
+    try { return methodCacheKey ? (sessionStorage.getItem(methodCacheKey) as any) || null : null; } catch { return null; }
+  });
+  const [mfaLoading, setMfaLoading] = useState(currentMethod === null);
+  const refetch = async () => {
+    if (!user?.id) return;
+    const { data } = await (supabase as any).from("mfa_settings").select("method").eq("user_id", user.id).maybeSingle();
+    let m: "totp" | "email" | null = data?.method === "totp" || data?.method === "email" ? data.method : null;
+    if (!m) {
+      const { data: f } = await supabase.auth.mfa.listFactors();
+      if (f?.totp?.some((x) => x.status === "verified")) m = "totp";
+    }
+    setCurrentMethod(m);
+    try { if (methodCacheKey && m) sessionStorage.setItem(methodCacheKey, m); } catch { /* noop */ }
+    setMfaLoading(false);
+  };
+  useEffect(() => { void refetch(); }, [user?.id]);
   const { listDevices, revokeDevice, revokeAllDevices } = useTrustedDevice();
   const { toast } = useToast();
 
@@ -80,6 +100,7 @@ export default function MfaSettings() {
   const [factorId, setFactorId] = useState("");
   const [qrCode, setQrCode] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  const [stepUpPassword, setStepUpPassword] = useState("");
   const autoSubmitTriggered = useRef(false);
 
   // Trusted devices state
@@ -98,9 +119,9 @@ export default function MfaSettings() {
 
   // Load trusted devices
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || section === "mfa") return;
     loadDevices();
-  }, [user?.id]);
+  }, [user?.id, section]);
 
   async function loadDevices() {
     setDevicesLoading(true);
@@ -172,15 +193,29 @@ export default function MfaSettings() {
     setFactorId("");
     setQrCode("");
     setTotpSecret("");
+    setStepUpPassword("");
     autoSubmitTriggered.current = false;
     clearStoredMfaSettingsState(user?.id);
   }
 
   async function startSwitchToTotp() {
+    if (!stepUpPassword) return;
     setSubmitting(true);
     try {
-      const { data: resetData, error: resetErr } = await supabase.functions.invoke("reset-totp");
-      if (resetErr) throw resetErr;
+      const { data: resetData, error: resetErr } = await supabase.functions.invoke("reset-totp", {
+        body: { password: stepUpPassword },
+      });
+      if (resetErr) {
+        const detail = (resetErr as any)?.context?.body;
+        let message = resetErr.message;
+        try {
+          const parsed = typeof detail === "string" ? JSON.parse(detail) : detail;
+          if (parsed?.error) message = parsed.error;
+        } catch {
+          // keep original message
+        }
+        throw new Error(message);
+      }
       if (resetData?.error) throw new Error(resetData.error);
 
       const { data, error } = await supabase.auth.mfa.enroll({
@@ -188,6 +223,7 @@ export default function MfaSettings() {
         friendlyName: "Authenticator App",
       });
       if (error) throw error;
+      setStepUpPassword("");
       setFactorId(data.id);
       setQrCode(data.totp.qr_code);
       setTotpSecret(data.totp.secret);
@@ -300,6 +336,7 @@ export default function MfaSettings() {
 
   return (
     <div className="space-y-6">
+      {section !== "devices" && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -311,65 +348,112 @@ export default function MfaSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Current method display */}
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-3">
-              <MethodIcon className="h-5 w-5 text-primary" />
-              <div>
-                <p className="text-sm font-medium">Current Method</p>
-                <p className="text-xs text-muted-foreground">{methodLabel}</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Current method display */}
+            <div className="flex h-full items-center justify-between gap-3 rounded-lg border p-4">
+              <div className="flex items-center gap-3">
+                <MethodIcon className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Current Method</p>
+                  <p className="text-xs text-muted-foreground">{methodLabel}</p>
+                </div>
               </div>
+              <Badge variant="secondary" className="gap-1">
+                <Check className="h-3 w-3" /> Active
+              </Badge>
             </div>
-            <Badge variant="secondary" className="gap-1">
-              <Check className="h-3 w-3" /> Active
-            </Badge>
+
+            {/* Switch options (only show when idle) */}
+            {step === "idle" && (
+              <div className="space-y-2">
+                {currentMethod !== "totp" && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between h-auto min-h-[4.5rem] py-3"
+                    onClick={() => setStep("totp-password")}
+                    disabled={submitting}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Smartphone className="h-5 w-5 shrink-0 text-primary" />
+                      <span className="text-left">
+                        <span className="block text-sm font-medium">Switch to Authenticator App</span>
+                        <span className="block text-xs text-muted-foreground">Google Authenticator, Authy, etc.</span>
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </Button>
+                )}
+                {currentMethod !== "email" && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between h-auto min-h-[4.5rem] py-3"
+                    onClick={startSwitchToEmail}
+                    disabled={submitting}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Mail className="h-5 w-5 shrink-0 text-primary" />
+                      <span className="text-left">
+                        <span className="block text-sm font-medium">Switch to Email Verification</span>
+                        <span className="block max-w-[14rem] truncate text-xs text-muted-foreground">
+                          Code sent to {user?.email}
+                        </span>
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </Button>
+                )}
+                {submitting && (
+                  <div className="flex justify-center pt-2">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Switch options (only show when idle) */}
-          {step === "idle" && (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground text-center">or switch to</p>
-              {currentMethod !== "totp" && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-between h-14"
-                  onClick={startSwitchToTotp}
-                  disabled={submitting}
-                >
-                  <span className="flex items-center gap-3">
-                    <Smartphone className="h-5 w-5 text-primary" />
-                    <span className="text-left">
-                      <span className="block text-sm font-medium">Authenticator App</span>
-                      <span className="block text-xs text-muted-foreground">Google Authenticator, Authy, etc.</span>
-                    </span>
-                  </span>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              )}
-              {currentMethod !== "email" && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-between h-14"
-                  onClick={startSwitchToEmail}
-                  disabled={submitting}
-                >
-                  <span className="flex items-center gap-3">
-                    <Mail className="h-5 w-5 text-primary" />
-                    <span className="text-left">
-                      <span className="block text-sm font-medium">Email Verification</span>
-                      <span className="block text-xs text-muted-foreground">Code sent to {user?.email}</span>
-                    </span>
-                  </span>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              )}
-              {submitting && (
-                <div className="flex justify-center pt-2">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              )}
+          {/* Password confirmation before replacing an authenticator */}
+          {step === "totp-password" && passwordSet === false && (
+            <div className="space-y-3 rounded-lg border p-4">
+              <p className="text-sm font-medium">Set a password first</p>
+              <p className="text-xs text-muted-foreground">
+                You sign in with Xero, so there's no password to confirm yet. Set one in the Password card above, then come back to switch to an authenticator app.
+              </p>
+              <Button variant="outline" onClick={reset} className="w-full">OK</Button>
             </div>
           )}
+          {step === "totp-password" && passwordSet !== false && (
+            <div className="space-y-4 rounded-lg border p-4">
+              <div>
+                <p className="text-sm font-medium">Confirm your password</p>
+                <p className="text-xs text-muted-foreground">
+                  For your security, re-enter your account password before setting up a new authenticator app.
+                </p>
+              </div>
+              <Input
+                type="password"
+                value={stepUpPassword}
+                onChange={(e) => setStepUpPassword(e.target.value)}
+                placeholder="Your password"
+                autoComplete="current-password"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && stepUpPassword && !submitting) void startSwitchToTotp();
+                }}
+              />
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={reset} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={startSwitchToTotp}
+                  disabled={!stepUpPassword || submitting}
+                  className="flex-1"
+                >
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continue"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+
 
           {/* TOTP verification step */}
           {step === "totp-verify" && (
@@ -428,8 +512,10 @@ export default function MfaSettings() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Trusted Devices */}
+      {section !== "mfa" && (
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -555,6 +641,7 @@ export default function MfaSettings() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

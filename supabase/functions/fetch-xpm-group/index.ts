@@ -1,65 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decryptToken, encryptToken } from "../_shared/crypto.ts";
+import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://deno.land/x/xml@6.0.1/mod.ts";
-import { buildXpmEdges, parseXpmRelationshipType } from "../_shared/xpm-relationships.ts";
+import { normaliseXpmRelationship, parseXpmLabel } from "../_shared/xpm-policy-normalise.ts";
+import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
+import { resolveEntityType } from "../_shared/xpm-entity-type.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
 
 const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
-
-// ── Token refresh (5-minute window, rotate refresh token) ──────────
-async function refreshAccessToken(supabase: any, connection: any): Promise<string> {
-  const now = new Date();
-  const expiresAt = new Date(connection.expires_at);
-  const currentAccessToken = await decryptToken(connection.access_token);
-
-  if (expiresAt.getTime() - now.getTime() > 300_000) {
-    return currentAccessToken;
-  }
-
-  console.log("[fetch-xpm-group] Token expires soon, refreshing...");
-  const clientId = Deno.env.get("XERO_CLIENT_ID")!;
-  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET")!;
-  const currentRefreshToken = await decryptToken(connection.refresh_token);
-
-  const res = await fetch("https://identity.xero.com/connect/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: currentRefreshToken,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token refresh failed: ${body}`);
-  }
-
-  const tokens = await res.json();
-  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
-  const encryptedAccessToken = await encryptToken(tokens.access_token);
-  const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
-
-  await supabase
-    .from("xero_connections")
-    .update({
-      access_token: encryptedAccessToken,
-      refresh_token: encryptedRefreshToken,
-      expires_at: newExpiresAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", connection.id);
-
-  return tokens.access_token;
-}
 
 // ── XPM helpers ────────────────────────────────────────────────────
 function xpmHeaders(accessToken: string, xeroTenantId: string): Record<string, string> {
@@ -121,40 +69,11 @@ async function discoverPmTenantId(accessToken: string, storedTenantId: string | 
   return storedTenantId;
 }
 
-const BUSINESS_STRUCTURE_MAP: Record<string, string> = {
-  Individual: "Individual",
-  Company: "Company",
-  Trust: "Trust",
-  Partnership: "Partnership",
-  "Sole Trader": "Sole Trader",
-  "Trustee Company": "Company",
-  "Discretionary Trust": "trust_discretionary",
-  "Unit Trust": "trust_unit",
-  "Hybrid Trust": "trust_hybrid",
-  "Bare Trust": "trust_bare",
-  "Testamentary Trust": "trust_testamentary",
-  "Deceased Estate": "trust_deceased_estate",
-  "Family Trust": "trust_family",
-  "Self Managed Superannuation Fund": "smsf",
-  SMSF: "smsf",
-  "Super Fund": "smsf",
-  SuperFund: "smsf",
-};
-
-function resolveEntityType(businessStructure?: string): string {
-  if (businessStructure) {
-    const mapped = BUSINESS_STRUCTURE_MAP[businessStructure];
-    if (mapped) return mapped;
-    const lower = businessStructure.toLowerCase();
-    for (const [key, val] of Object.entries(BUSINESS_STRUCTURE_MAP)) {
-      if (key.toLowerCase() === lower) return val;
-    }
-  }
-  return "Unclassified";
-}
+const isYes = (v?: string) => /^(yes|true|1)$/i.test((v ?? "").trim());
 
 // ── Main ────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -195,22 +114,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load Xero connection
-    const { data: connections } = await supabase
-      .from("xero_connections")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("connected_at", { ascending: false })
-      .limit(1);
+    // Load Xero connection (healthy Practice Manager link preferred)
+    const connection = await loadXeroConnection(supabase, tenantId);
 
-    if (!connections || connections.length === 0) {
+    if (!connection) {
       return new Response(JSON.stringify({ error: "No Xero connection found" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const connection = connections[0];
-    const accessToken = await refreshAccessToken(supabase, connection);
+
+    const accessToken = await getXeroAccessToken(supabase, connection);
 
     const xeroTenantId = await discoverPmTenantId(accessToken, connection.xero_tenant_id);
     if (!xeroTenantId) {
@@ -268,7 +182,13 @@ Deno.serve(async (req) => {
 
           const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
           const businessStructure = xmlText(c, "BusinessStructure");
-          const entityType = resolveEntityType(businessStructure);
+          const entityType = resolveEntityType(businessStructure, name);
+
+          // Archived/deleted XPM clients are history, not part of the active group
+          if (isYes(xmlText(c, "IsArchived")) || isYes(xmlText(c, "Archived")) || isYes(xmlText(c, "IsDeleted"))) {
+            return null;
+          }
+
           
           // Extract relationships
           const relContainer = c?.Relationships;
@@ -282,11 +202,11 @@ Deno.serve(async (req) => {
             const relatedName = xmlText(relatedClient, "Name") || xmlText(rel, "RelatedClientName");
             const percentStr = xmlText(rel, "Percentage") || xmlText(rel, "OwnershipPercentage");
             const percentage = percentStr ? parseFloat(percentStr) : null;
-            const rule = parseXpmRelationshipType(typeRaw);
+            const parsed = parseXpmLabel(typeRaw);
 
-            if ((relatedUuid || relatedName) && rule) {
+            if ((relatedUuid || relatedName) && parsed.type) {
               rels.push({
-                type: rule.type,
+                type: parsed.type,
                 typeRaw,
                 relatedClientUuid: relatedUuid,
                 relatedClientName: relatedName,
@@ -312,19 +232,34 @@ Deno.serve(async (req) => {
       }
     }
 
-    const memberUuidSet = new Set(memberUuids);
-    const edges = buildXpmEdges(
-      nodes.map((n) => ({
-        id: n.id,
-        entityType: n.entityType,
-        relationships: n.relationships.map((r) => ({
-          typeRaw: r.typeRaw,
-          relatedClientUuid: r.relatedClientUuid,
+    // Only the members still active in XPM — keeps arrows off archived clients.
+    const memberUuidSet = new Set(nodes.map((n) => n.id));
+    // Preview only (nothing written): the same canonical normaliser the
+    // imports use, so the preview never shows a link the import would refuse.
+    // Sole Trader links need a Trades As owner and stay out of the preview.
+    const entityTypes = new Map(nodes.map((n) => [n.id, n.entityType]));
+    const edges: Array<{ id: string; source: string; target: string; type: string; percentage: number | null }> = [];
+    const seenEdges = new Set<string>();
+    for (const n of nodes) {
+      for (const r of n.relationships) {
+        if (!r.relatedClientUuid || !memberUuidSet.has(r.relatedClientUuid)) continue;
+        const { edge } = normaliseXpmRelationship(
+          { label: r.typeRaw, clientId: n.id, relatedId: r.relatedClientUuid },
+          { entityTypes },
+        );
+        if (!edge) continue;
+        const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
+        if (seenEdges.has(key)) continue;
+        seenEdges.add(key);
+        edges.push({
+          id: `${edge.fromId}-${edge.type}-${edge.toId}`,
+          source: edge.fromId,
+          target: edge.toId,
+          type: edge.type,
           percentage: r.percentage,
-        })),
-      })),
-      memberUuidSet,
-    );
+        });
+      }
+    }
 
     return new Response(JSON.stringify({
       groupName,

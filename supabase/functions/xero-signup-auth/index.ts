@@ -1,12 +1,10 @@
+import { safeFrontend } from "../_shared/safe-redirect.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -24,13 +22,15 @@ Deno.serve(async (req) => {
     let selectedPlan = "pro";
     let selectedBilling = "monthly";
     let callerOrigin: string | undefined;
-    let connectionType = "accounting";
+    // Sign-up always uses basic Xero access so any Xero user can create an
+    // account. Practice Manager is connected afterwards during onboarding.
+    const connectionType: "practice_manager" | "standard" = "standard";
 
     try {
       const body = await req.json();
       firmName = typeof body.firmName === "string" ? body.firmName.trim() : "";
       callerOrigin = typeof body.origin === "string" ? body.origin : undefined;
-      if (body.connection_type === "practice_manager") connectionType = "practice_manager";
+
       const plan = body.selectedPlan;
       const billing = body.selectedBilling;
       if (plan && ["starter", "pro", "enterprise"].includes(plan)) selectedPlan = plan;
@@ -74,11 +74,11 @@ Deno.serve(async (req) => {
 
     const frontendOrigin = callerOrigin ||
       Deno.env.get("FRONTEND_URL") ||
-      "https://link-map-insight.lovable.app";
+      "https://strukcha-dev.lovable.app";
 
     const state = btoa(JSON.stringify({
       csrf: csrfToken,
-      origin: frontendOrigin,
+      origin: safeFrontend(frontendOrigin),
       flow: "signup",
     }));
 

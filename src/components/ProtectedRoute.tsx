@@ -1,3 +1,4 @@
+import { isXeroUser } from "@/hooks/usePasswordSet";
 import { useState, useEffect } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth, BootStatus } from "@/hooks/useAuth";
@@ -276,10 +277,13 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return <BootLoadingScreen />;
   }
 
-  // ── Invite / Xero signup / recovery: must set password on /setup-password ───
-  // Self-signup users set a password during signup; they are tagged with user_metadata.signup_source === "self_service".
+  // ── Email invites: must set password on /setup-password ───
+  // Self-signup users chose a password at signup; Xero users sign in with Xero
+  // and can optionally set a password later in Settings → Security.
   const needsInvitePasswordSetup =
-    onboardingComplete === false && user?.user_metadata?.signup_source !== "self_service";
+    onboardingComplete === false &&
+    user?.user_metadata?.signup_source !== "self_service" &&
+    !isXeroUser(user?.user_metadata);
   if (needsInvitePasswordSetup) {
     return <Navigate to="/setup-password" replace />;
   }
@@ -307,12 +311,37 @@ function MfaGate({ children }: { children: React.ReactNode }) {
   return <BillingGate>{children}</BillingGate>;
 }
 
-/** Check billing access after MFA is resolved */
+/**
+ * Check billing access after MFA is resolved.
+ *
+ * No-op while `billing_enforcement_enabled` is false: check-subscription returns
+ * enforcement_enabled=false with access_enabled forced to true, so this gate
+ * never fires until the flag is switched on.
+ */
 function BillingGate({ children }: { children: React.ReactNode }) {
   const { billing, loading } = useBilling();
 
   if (loading) {
     return <BootLoadingScreen />;
+  }
+
+  // Fail open when billing state can't be read — never lock a firm out on a
+  // transient error; the DB triggers remain the hard backstop.
+  // Mandatory registration payment-method capture — enforced regardless of the
+  // billing enforcement kill-switch, since no Stripe trial exists without a card.
+  // Billing-exempt firms (the product owner's own firm) never see payment or lock screens.
+  if (billing?.billing_exempt === true) {
+    return <>{children}</>;
+  }
+
+  if (billing?.payment_method_required === true) {
+    trace("ProtectedRoute", "decision: payment method required → /complete-setup");
+    return <Navigate to="/complete-setup" replace />;
+  }
+
+  if (billing?.enforcement_enabled === true && billing.access_enabled === false) {
+    trace("ProtectedRoute", `decision: billing locked (${billing.access_locked_reason ?? "unknown"})`);
+    return <Navigate to="/subscription-locked" replace />;
   }
 
   return <>{children}</>;

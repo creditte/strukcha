@@ -15,12 +15,23 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-export default function FeedbackModal() {
+interface FeedbackModalProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}
+
+export default function FeedbackModal({ open: openProp, onOpenChange, hideTrigger }: FeedbackModalProps = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const location = useLocation();
   const params = useParams();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (v: boolean) => {
+    if (onOpenChange) onOpenChange(v);
+    else setOpenState(v);
+  };
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -40,21 +51,44 @@ export default function FeedbackModal() {
 
       if (!profile) throw new Error("Profile not found");
 
-      const { error } = await supabase.from("feedback").insert({
-        tenant_id: profile.tenant_id,
-        user_id: user.id,
-        page: location.pathname,
-        structure_id: structureId,
-        message: message.trim(),
-        metadata: {
-          user_agent: navigator.userAgent,
-          timestamp: new Date().toISOString(),
-        },
-      });
+      const { data: inserted, error } = await supabase
+        .from("feedback")
+        .insert({
+          tenant_id: profile.tenant_id,
+          user_id: user.id,
+          page: location.pathname,
+          structure_id: structureId,
+          message: message.trim(),
+          metadata: {
+            user_agent: navigator.userAgent,
+            timestamp: new Date().toISOString(),
+          },
+        })
+        .select("id")
+        .single();
 
       if (error) throw error;
 
+      // Route the feedback to the support inbox (recipient is fixed on the
+      // 'feedback-received' template via FEEDBACK_INBOX).
+      supabase.functions
+        .invoke("send-transactional-email", {
+          body: {
+            templateName: "feedback-received",
+            recipientEmail: user.email,
+            idempotencyKey: `feedback-${inserted?.id ?? Date.now()}`,
+            templateData: {
+              message: message.trim(),
+              submittedBy: user.email,
+              page: location.pathname,
+              structureId: structureId ?? undefined,
+            },
+          },
+        })
+        .catch((e) => console.error("[feedback] email notification failed", e));
+
       toast({ title: "Feedback sent", description: "Thank you for your feedback!" });
+
       setMessage("");
       setOpen(false);
     } catch (err: any) {
@@ -66,15 +100,17 @@ export default function FeedbackModal() {
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full justify-start gap-2 text-sidebar-foreground/70"
-        onClick={() => setOpen(true)}
-      >
-        <MessageSquarePlus className="h-4 w-4" />
-        Send Feedback
-      </Button>
+      {!hideTrigger && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-sidebar-foreground/70"
+          onClick={() => setOpen(true)}
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+          Send Feedback
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">

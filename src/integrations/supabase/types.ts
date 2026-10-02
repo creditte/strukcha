@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -69,6 +69,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "audit_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      duplicate_dismissals: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          group_key: string
+          id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          group_key: string
+          id?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          group_key?: string
+          id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duplicate_dismissals_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -187,6 +222,7 @@ export type Database = {
           trust_subtype: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at: string
           verified: boolean
+          xpm_last_seen_at: string | null
           xpm_uuid: string | null
         }
         Insert: {
@@ -212,6 +248,7 @@ export type Database = {
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean
+          xpm_last_seen_at?: string | null
           xpm_uuid?: string | null
         }
         Update: {
@@ -237,6 +274,7 @@ export type Database = {
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean
+          xpm_last_seen_at?: string | null
           xpm_uuid?: string | null
         }
         Relationships: [
@@ -551,6 +589,7 @@ export type Database = {
           id: string
           last_sign_in_at: string | null
           onboarding_complete: boolean
+          password_set: boolean
           selected_billing: string | null
           selected_plan: string | null
           status: string
@@ -564,6 +603,7 @@ export type Database = {
           id?: string
           last_sign_in_at?: string | null
           onboarding_complete?: boolean
+          password_set?: boolean
           selected_billing?: string | null
           selected_plan?: string | null
           status?: string
@@ -577,6 +617,7 @@ export type Database = {
           id?: string
           last_sign_in_at?: string | null
           onboarding_complete?: boolean
+          password_set?: boolean
           selected_billing?: string | null
           selected_plan?: string | null
           status?: string
@@ -587,6 +628,145 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "profiles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      relationship_import_evidence: {
+        Row: {
+          canonical_from_entity_id: string | null
+          canonical_to_entity_id: string | null
+          canonical_type: string | null
+          created_at: string
+          dedupe_key: string | null
+          direction_known: boolean
+          entity_type_provisional: boolean
+          id: string
+          import_run_id: string | null
+          import_source: string
+          policy_outcome: string
+          policy_reason: string
+          proposed_from_entity_id: string | null
+          proposed_to_entity_id: string | null
+          raw_from_entity_type: string | null
+          raw_from_identifier: string | null
+          raw_from_name: string | null
+          raw_payload: Json | null
+          raw_relationship_label: string
+          raw_to_entity_type: string | null
+          raw_to_identifier: string | null
+          raw_to_name: string | null
+          relationship_id: string | null
+          resolved_via_trades_as: boolean
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          canonical_from_entity_id?: string | null
+          canonical_to_entity_id?: string | null
+          canonical_type?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          direction_known?: boolean
+          entity_type_provisional?: boolean
+          id?: string
+          import_run_id?: string | null
+          import_source: string
+          policy_outcome: string
+          policy_reason: string
+          proposed_from_entity_id?: string | null
+          proposed_to_entity_id?: string | null
+          raw_from_entity_type?: string | null
+          raw_from_identifier?: string | null
+          raw_from_name?: string | null
+          raw_payload?: Json | null
+          raw_relationship_label: string
+          raw_to_entity_type?: string | null
+          raw_to_identifier?: string | null
+          raw_to_name?: string | null
+          relationship_id?: string | null
+          resolved_via_trades_as?: boolean
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          canonical_from_entity_id?: string | null
+          canonical_to_entity_id?: string | null
+          canonical_type?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          direction_known?: boolean
+          entity_type_provisional?: boolean
+          id?: string
+          import_run_id?: string | null
+          import_source?: string
+          policy_outcome?: string
+          policy_reason?: string
+          proposed_from_entity_id?: string | null
+          proposed_to_entity_id?: string | null
+          raw_from_entity_type?: string | null
+          raw_from_identifier?: string | null
+          raw_from_name?: string | null
+          raw_payload?: Json | null
+          raw_relationship_label?: string
+          raw_to_entity_type?: string | null
+          raw_to_identifier?: string | null
+          raw_to_name?: string | null
+          relationship_id?: string | null
+          resolved_via_trades_as?: boolean
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relationship_import_evidence_canonical_from_entity_id_fkey"
+            columns: ["canonical_from_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_canonical_to_entity_id_fkey"
+            columns: ["canonical_to_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_proposed_from_entity_id_fkey"
+            columns: ["proposed_from_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_proposed_to_entity_id_fkey"
+            columns: ["proposed_to_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_relationship_id_fkey"
+            columns: ["relationship_id"]
+            isOneToOne: false
+            referencedRelation: "relationships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -828,22 +1008,34 @@ export type Database = {
       }
       stripe_webhook_events: {
         Row: {
+          attempts: number
+          completed_at: string | null
           event_type: string
           id: string
+          last_error: string | null
           payload: Json | null
           processed_at: string
+          status: string
         }
         Insert: {
+          attempts?: number
+          completed_at?: string | null
           event_type: string
           id: string
+          last_error?: string | null
           payload?: Json | null
           processed_at?: string
+          status?: string
         }
         Update: {
+          attempts?: number
+          completed_at?: string | null
           event_type?: string
           id?: string
+          last_error?: string | null
           payload?: Json | null
           processed_at?: string
+          status?: string
         }
         Relationships: []
       }
@@ -1172,6 +1364,7 @@ export type Database = {
           access_enabled: boolean | null
           access_locked_reason: string | null
           allow_admin_integrations: boolean
+          billing_exempt: boolean
           brand_primary_color: string | null
           cancel_at_period_end: boolean | null
           canceled_at: string | null
@@ -1188,22 +1381,30 @@ export type Database = {
           firm_name: string
           id: string
           last_plan_switch_at: string | null
+          legacy_stripe_customer_id: string | null
+          legacy_stripe_mode: string | null
+          legacy_stripe_subscription_id: string | null
           logo_url: string | null
           name: string
+          payment_method_captured: boolean
+          payment_setup_completed_at: string | null
           selected_plan: string | null
           stripe_customer_id: string | null
+          stripe_mode: string | null
           stripe_subscription_id: string | null
           subscription_plan: string | null
           subscription_status: string
           trial_ends_at: string | null
           trial_starts_at: string | null
           trial_used_at: string | null
+          unlimited_structures: boolean
           updated_at: string
         }
         Insert: {
           access_enabled?: boolean | null
           access_locked_reason?: string | null
           allow_admin_integrations?: boolean
+          billing_exempt?: boolean
           brand_primary_color?: string | null
           cancel_at_period_end?: boolean | null
           canceled_at?: string | null
@@ -1220,22 +1421,30 @@ export type Database = {
           firm_name?: string
           id?: string
           last_plan_switch_at?: string | null
+          legacy_stripe_customer_id?: string | null
+          legacy_stripe_mode?: string | null
+          legacy_stripe_subscription_id?: string | null
           logo_url?: string | null
           name: string
+          payment_method_captured?: boolean
+          payment_setup_completed_at?: string | null
           selected_plan?: string | null
           stripe_customer_id?: string | null
+          stripe_mode?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
           subscription_status?: string
           trial_ends_at?: string | null
           trial_starts_at?: string | null
           trial_used_at?: string | null
+          unlimited_structures?: boolean
           updated_at?: string
         }
         Update: {
           access_enabled?: boolean | null
           access_locked_reason?: string | null
           allow_admin_integrations?: boolean
+          billing_exempt?: boolean
           brand_primary_color?: string | null
           cancel_at_period_end?: boolean | null
           canceled_at?: string | null
@@ -1252,16 +1461,23 @@ export type Database = {
           firm_name?: string
           id?: string
           last_plan_switch_at?: string | null
+          legacy_stripe_customer_id?: string | null
+          legacy_stripe_mode?: string | null
+          legacy_stripe_subscription_id?: string | null
           logo_url?: string | null
           name?: string
+          payment_method_captured?: boolean
+          payment_setup_completed_at?: string | null
           selected_plan?: string | null
           stripe_customer_id?: string | null
+          stripe_mode?: string | null
           stripe_subscription_id?: string | null
           subscription_plan?: string | null
           subscription_status?: string
           trial_ends_at?: string | null
           trial_starts_at?: string | null
           trial_used_at?: string | null
+          unlimited_structures?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -1325,10 +1541,19 @@ export type Database = {
           access_token: string
           connected_at: string | null
           connected_by_email: string | null
+          connection_type: string
           created_at: string | null
           expires_at: string
           id: string
+          invalidated_at: string | null
+          last_error: string | null
+          last_error_at: string | null
+          last_refresh_at: string | null
+          reauth_notified_at: string | null
+          refresh_lock_until: string | null
           refresh_token: string
+          scopes: string | null
+          status: string
           tenant_id: string
           updated_at: string | null
           user_id: string
@@ -1339,10 +1564,19 @@ export type Database = {
           access_token: string
           connected_at?: string | null
           connected_by_email?: string | null
+          connection_type?: string
           created_at?: string | null
           expires_at: string
           id?: string
+          invalidated_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_refresh_at?: string | null
+          reauth_notified_at?: string | null
+          refresh_lock_until?: string | null
           refresh_token: string
+          scopes?: string | null
+          status?: string
           tenant_id: string
           updated_at?: string | null
           user_id: string
@@ -1353,17 +1587,34 @@ export type Database = {
           access_token?: string
           connected_at?: string | null
           connected_by_email?: string | null
+          connection_type?: string
           created_at?: string | null
           expires_at?: string
           id?: string
+          invalidated_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          last_refresh_at?: string | null
+          reauth_notified_at?: string | null
+          refresh_lock_until?: string | null
           refresh_token?: string
+          scopes?: string | null
+          status?: string
           tenant_id?: string
           updated_at?: string | null
           user_id?: string
           xero_org_name?: string | null
           xero_tenant_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "xero_connections_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       xero_oauth_states: {
         Row: {
@@ -1405,6 +1656,9 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_selected: boolean
+          last_synced_at: string | null
+          member_hash: string | null
           name: string
           tenant_id: string
           updated_at: string
@@ -1413,6 +1667,9 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_selected?: boolean
+          last_synced_at?: string | null
+          member_hash?: string | null
           name: string
           tenant_id: string
           updated_at?: string
@@ -1421,6 +1678,9 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_selected?: boolean
+          last_synced_at?: string | null
+          member_hash?: string | null
           name?: string
           tenant_id?: string
           updated_at?: string
@@ -1441,6 +1701,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _rp_check_pair: {
+        Args: { _from: string; _rule: Json; _to: string }
+        Returns: Json
+      }
+      _rp_check_source: {
+        Args: { _rule: Json; _src: string; _tgt: string }
+        Returns: Json
+      }
+      _rp_check_target: { Args: { _rule: Json; _tgt: string }; Returns: Json }
+      _rp_rank: { Args: { _r: string }; Returns: number }
+      _rp_trust_like: { Args: { _cats: Json }; Returns: boolean }
+      admin_operations_health: { Args: never; Returns: Json }
+      claim_sync_job: {
+        Args: { _job_id: string; _lease_seconds?: number }
+        Returns: boolean
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
@@ -1452,6 +1728,10 @@ export type Database = {
       email_queue_dispatch: { Args: never; Returns: undefined }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
+        Returns: number
+      }
+      fail_stale_import_jobs: {
+        Args: { _max_idle_minutes?: number }
         Returns: number
       }
       find_duplicate_entities: {
@@ -1488,11 +1768,21 @@ export type Database = {
         }
         Returns: boolean
       }
+      health_review_dataset: { Args: never; Returns: Json }
+      health_review_fingerprint: { Args: never; Returns: string }
+      import_xpm_batch: {
+        Args: { _payload: Json; _tenant_id: string }
+        Returns: Json
+      }
       is_billing_enforcement_enabled: { Args: never; Returns: boolean }
       is_owner: { Args: { _tenant_id: string }; Returns: boolean }
       is_owner_or_admin: { Args: { _tenant_id: string }; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       link_tenant_user_on_login: { Args: never; Returns: Json }
+      merge_duplicate_xpm_entities: {
+        Args: { _limit_groups?: number; _tenant_id?: string }
+        Returns: Json
+      }
       move_to_dlq: {
         Args: {
           dlq_name: string
@@ -1510,6 +1800,24 @@ export type Database = {
           read_ct: number
         }[]
       }
+      rel_direction_valid: {
+        Args: { _from_type: string; _rtype: string; _to_type: string }
+        Returns: boolean
+      }
+      relationship_policy_category: {
+        Args: { _db_type: string }
+        Returns: string
+      }
+      relationship_policy_evaluate: {
+        Args: {
+          _direction_known?: boolean
+          _from_type: string
+          _to_type: string
+          _type: string
+        }
+        Returns: Json
+      }
+      relationship_policy_rule: { Args: { _type: string }; Returns: Json }
       rpc_change_tenant_user_role: {
         Args: {
           p_new_role: string
@@ -1561,6 +1869,53 @@ export type Database = {
         Args: { p_tenant_id: string; p_tenant_user_id: string }
         Returns: Json
       }
+      sync_xpm_archive_absent_clients: {
+        Args: { _since: string; _tenant_id: string }
+        Returns: Json
+      }
+      sync_xpm_ensure_fallback_structure: {
+        Args: { _since: string; _tenant_id: string }
+        Returns: Json
+      }
+      sync_xpm_link_group: {
+        Args: {
+          _group_name: string
+          _group_uuid: string
+          _member_hash: string
+          _member_uuids: string[]
+          _tenant_id: string
+        }
+        Returns: Json
+      }
+      sync_xpm_link_groups: {
+        Args: { _groups: Json; _tenant_id: string }
+        Returns: Json
+      }
+      sync_xpm_link_trustees: {
+        Args: { _pairs: Json; _tenant_id: string }
+        Returns: Json
+      }
+      sync_xpm_mark_seen: {
+        Args: { _tenant_id: string; _uuids: string[] }
+        Returns: number
+      }
+      sync_xpm_upsert_clients: {
+        Args: { _payload: Json; _tenant_id: string }
+        Returns: Json
+      }
+      tenant_has_unlimited_structures: {
+        Args: { _tenant_id: string }
+        Returns: boolean
+      }
+      tenant_structure_capacity: { Args: { _tenant_id: string }; Returns: Json }
+      xpm_archive_group_structures: {
+        Args: { _group_uuids: string[] }
+        Returns: Json
+      }
+      xpm_resolve_entity_ref: {
+        Args: { _ref: string; _tenant_id: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "editor" | "viewer" | "user"
@@ -1597,6 +1952,7 @@ export type Database = {
         | "child"
         | "member"
         | "unit_holder"
+        | "trades_as"
       trust_subtype:
         | "Discretionary"
         | "Unit"
@@ -1623,12 +1979,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1652,11 +2008,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1677,11 +2033,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1702,11 +2058,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1719,11 +2075,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1770,6 +2126,7 @@ export const Constants = {
         "child",
         "member",
         "unit_holder",
+        "trades_as",
       ],
       trust_subtype: [
         "Discretionary",

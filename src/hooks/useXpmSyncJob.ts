@@ -1,0 +1,342 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { xeroToastPayload } from "@/lib/xeroErrors";
+import { useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/queryKeys";
+
+/** Job rows written by the sync-xpm edge function. */
+const JOB_FILE_NAME = "xpm-sync-3.1";
+/** Poll interval while a sync is running. One narrow row read per tick. */
+const POLL_MS = 4000;
+/**
+ * A live sync writes progress every page/batch. Longer silence than this means
+ * its worker died, so the UI stops pretending it is still running.
+ */
+const STALE_MS = 3 * 60_000;
+
+
+export type XpmSyncPhase = "clients" | "groups" | "staff" | "done";
+
+export interface XpmSyncJob {
+  id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  updatedAt: string;
+  /** When the job row was first created. */
+  startedAt?: string;
+  phase: XpmSyncPhase;
+  clientsFetched: number;
+  entitiesCreated: number;
+  entitiesUpdated: number;
+  relationshipsCreated: number;
+  groupsCreated: number;
+  groupsProcessed: number;
+  groupsTotal: number;
+  groupsSkippedUnchanged: number;
+  staffFetched: number;
+  /** Client groups that could not become diagrams (workspace full / inactive plan). */
+  groupsBlockedByLimit: number;
+  limitReached: boolean;
+  limitCode: "structure_limit_reached" | "subscription_inactive" | null;
+  blockedGroups: string[];
+  /** Structure slots left when last checked; null means unlimited. */
+  capacityRemaining: number | null;
+  error?: string;
+}
+
+function mapJob(row: any): XpmSyncJob {
+  const r = row.result ?? {};
+  return {
+    id: row.id,
+    status: row.status,
+    updatedAt: row.updated_at,
+    startedAt: row.created_at ?? row.updated_at,
+    phase: (r.phase as XpmSyncPhase) ?? "clients",
+    clientsFetched: r.clientsFetched ?? 0,
+    entitiesCreated: r.entitiesCreated ?? 0,
+    entitiesUpdated: r.entitiesUpdated ?? 0,
+    relationshipsCreated: r.relationshipsCreated ?? 0,
+    groupsCreated: r.groupsCreated ?? 0,
+    groupsProcessed: r.progress?.groupsProcessed ?? r.groupsProcessed ?? 0,
+    groupsTotal: r.progress?.groupsTotal ?? r.groupsFound ?? 0,
+    groupsSkippedUnchanged: r.groupsSkippedUnchanged ?? 0,
+    staffFetched: r.staffFetched ?? 0,
+    groupsBlockedByLimit: r.groupsBlockedByLimit ?? 0,
+    limitReached: r.limitReached === true,
+    limitCode: r.limitCode ?? null,
+    blockedGroups: Array.isArray(r.blockedGroups) ? r.blockedGroups : [],
+    capacityRemaining: r.capacityRemaining ?? null,
+    error: r.error,
+  };
+}
+
+/**
+ * Plain-English explanation of a sync that ran out of structure space, or null
+ * when capacity was never a problem.
+ */
+export function xpmSyncLimitMessage(job: XpmSyncJob | null): string | null {
+  if (!job?.limitReached) return null;
+  const n = job.groupsBlockedByLimit;
+  const groups = n === 1 ? "1 client group" : `${n} client groups`;
+  if (job.limitCode === "subscription_inactive") {
+    return `${groups} could not be added because your subscription is not active. Reactivate your plan and run the sync again.`;
+  }
+  return `${groups} could not be added because your workspace is full. Archive or delete a structure, or upgrade your plan, then run the sync again — only the missing groups will be added.`;
+}
+
+/** Human-readable description of where the sync currently is. */
+export function xpmSyncLabel(job: XpmSyncJob | null): string {
+  if (!job) return "";
+  if (job.status === "failed") return job.error ?? "Sync failed";
+  if (job.status === "completed") {
+    return job.limitReached ? "Sync finished — workspace full" : "Sync complete";
+  }
+  switch (job.phase) {
+    case "clients":
+      return `Reading clients from XPM — ${job.clientsFetched} so far`;
+    case "groups":
+      return job.groupsTotal > 0
+        ? `Building client groups — ${job.groupsProcessed} of ${job.groupsTotal}`
+        : "Loading client groups from XPM";
+    case "staff":
+      return "Finalising";
+    default:
+      return "Syncing";
+  }
+}
+
+/** Rough completion percentage; the group phase dominates a real sync. */
+export function xpmSyncPercent(job: XpmSyncJob | null): number {
+  if (!job) return 0;
+  if (job.status === "completed") return 100;
+  if (job.phase === "clients") return 5;
+  if (job.phase === "staff") return 97;
+  if (job.groupsTotal > 0) {
+    return Math.min(95, 10 + Math.round((job.groupsProcessed / job.groupsTotal) * 85));
+  }
+  return 10;
+}
+
+/**
+ * Tracks the XPM sync as a background job instead of a fire-and-forget request.
+ *
+ * The sync runs across several edge-function executions, so the UI follows the
+ * job row: it polls only while a sync is actually running, stops as soon as the
+ * job reaches a terminal state, and reports completion from the database rather
+ * than from the request that started it.
+ */
+export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [job, setJob] = useState<XpmSyncJob | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const lastStatus = useRef<string | null>(null);
+  const onFinished = options?.onFinished;
+
+  const fetchJob = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("import_logs")
+      .select("id, status, created_at, updated_at, result")
+      .eq("file_name", JOB_FILE_NAME)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const mapped = mapJob(data);
+    setJob(mapped);
+    return mapped;
+  }, []);
+
+  // Pick up a sync that is already running (started on another tab or device).
+  useEffect(() => {
+    fetchJob().then((j) => {
+      lastStatus.current = j?.status ?? null;
+    });
+  }, [fetchJob]);
+
+  // A ticking value so a job that goes silent is noticed even if no new row
+  // arrives (a dead worker never updates the row again).
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  const processing = job?.status === "processing";
+  const stalled = Boolean(
+    processing && job && nowTs - new Date(job.updatedAt).getTime() > STALE_MS,
+  );
+  const running = Boolean(processing) && !stalled;
+
+  useEffect(() => {
+    if (!processing) return;
+    const timer = setInterval(async () => {
+      setNowTs(Date.now());
+      const next = await fetchJob();
+      if (!next || next.status === "processing") return;
+
+
+      if (lastStatus.current === "processing") {
+        if (next.status === "completed") {
+          const parts = [
+            `${next.clientsFetched} clients`,
+            `${next.entitiesCreated} entities created`,
+            `${next.entitiesUpdated} updated`,
+          ];
+          if (next.relationshipsCreated > 0) parts.push(`${next.relationshipsCreated} relationships`);
+          if (next.groupsCreated > 0) parts.push(`${next.groupsCreated} diagrams created`);
+          if (next.groupsSkippedUnchanged > 0) parts.push(`${next.groupsSkippedUnchanged} unchanged`);
+          const limitMsg = xpmSyncLimitMessage(next);
+          if (limitMsg) {
+            // The cap is never reported as a plain success any more.
+            toast({
+              title: "XPM sync finished — some groups were not added",
+              description: `${limitMsg} (${parts.join(", ")}.)`,
+              variant: "destructive",
+            });
+          } else {
+            toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
+          }
+        } else if (next.status === "failed") {
+          // Never show Xero's raw status codes or JSON — translate first.
+          const payload = next.error
+            ? xeroToastPayload(next.error)
+            : {
+                title: "XPM sync failed",
+                description: "The sync stopped before finishing. Please try again.",
+              };
+          toast({ title: payload.title, description: payload.description, variant: "destructive" });
+          // The connection record may now be marked as needing reconnection —
+          // re-read it so the reconnect banner appears without a page reload.
+          queryClient.invalidateQueries({ queryKey: qk.xeroConnection() });
+        }
+        onFinished?.(next);
+      }
+      lastStatus.current = next.status;
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [processing, fetchJob, toast, onFinished, queryClient]);
+
+  useEffect(() => {
+    if (job?.status) lastStatus.current = job.status;
+  }, [job?.status]);
+
+  const start = useCallback(async () => {
+    setStarting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm");
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (data?.nothingSelected) {
+        // Nothing to build: tell the user to pick groups rather than letting the
+        // run finish silently with no diagrams.
+        toast({
+          title: "No client groups selected",
+          description:
+            data.message ??
+            "Choose the client groups you want as diagrams, then run the sync again.",
+          variant: "destructive",
+        });
+      } else if (data?.atCapacity) {
+        toast({
+          title: "Workspace is full",
+          description:
+            data.message ??
+            "Existing diagrams will be refreshed, but new client groups can't be added until you archive a structure or upgrade.",
+          variant: "destructive",
+        });
+      } else if (data?.resumed) {
+        toast({
+          title: "Sync resumed",
+          description:
+            data.message ?? "The previous sync had stopped responding and was picked up again.",
+        });
+      } else {
+        toast({
+          title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
+          description: "Progress is shown here — you can keep working while it runs.",
+        });
+      }
+      lastStatus.current = "processing";
+      setNowTs(Date.now());
+      await fetchJob();
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
+      throw err;
+    } finally {
+      setStarting(false);
+    }
+  }, [fetchJob, toast]);
+
+  /**
+   * Read just the list of client groups from Practice Manager. Nothing is
+   * created — this is what a firm needs before it can choose its groups.
+   */
+  const refreshCatalogue = useCallback(async () => {
+    setStarting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm", {
+        body: { catalogue_only: true },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast({
+        title: data?.alreadyRunning ? "Already reading from Xero" : "Loading your client groups",
+        description:
+          data?.message ?? "This only reads the list of client groups — nothing is created yet.",
+      });
+      lastStatus.current = "processing";
+      setNowTs(Date.now());
+      await fetchJob();
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
+      throw err;
+    } finally {
+      setStarting(false);
+    }
+  }, [fetchJob, toast]);
+
+  /** Stop the running sync. The job row is the source of truth, so the live
+   * worker stands down on its next write. */
+  const stop = useCallback(async () => {
+    setStopping(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-xpm", {
+        body: { cancel_job: true },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      lastStatus.current = "failed";
+      toast({
+        title: data?.cancelled ? "Sync stopped" : "No sync running",
+        description:
+          data?.message ?? "The XPM sync has been stopped. You can start it again at any time.",
+      });
+      await fetchJob();
+    } catch (err) {
+      const payload = xeroToastPayload(err);
+      toast({ title: payload.title, description: payload.description, variant: "destructive" });
+    } finally {
+      setStopping(false);
+    }
+  }, [fetchJob, toast]);
+
+  return {
+    job,
+    running: running || starting,
+    starting,
+    /** The job says "processing" but its worker went silent. */
+    stalled,
+    stopping,
+    label: stalled
+      ? "Sync stopped responding — start it again to carry on where it left off"
+      : xpmSyncLabel(job),
+    // While a new run is being kicked off, the last job row may still say
+    // "completed" (100%). Never show a full bar for a sync that just began.
+    percent: job?.status === "processing" ? xpmSyncPercent(job) : starting ? 0 : xpmSyncPercent(job),
+    limitMessage: xpmSyncLimitMessage(job),
+    start,
+    stop,
+    refreshCatalogue,
+    refresh: fetchJob,
+  };
+
+}

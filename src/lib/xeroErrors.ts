@@ -127,6 +127,49 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
     };
   }
 
+  // Our own signal that the stored authorisation was rejected by Xero and only
+  // a fresh connection can fix it — no point letting the user retry.
+  if (has("xero_reauthorization_required") || has("no longer authorised")) {
+    return {
+      kind: "auth_expired",
+      title: "Reconnect Xero",
+      message: "Xero no longer accepts the saved authorisation for your firm.",
+      resolution: "Reconnect Xero Practice Manager, then run the sync again.",
+      retryable: false,
+      requiresReconnect: true,
+    };
+  }
+
+  // The connected organisation is a plain Xero org, not Practice Manager.
+  if (has("xero_practice_manager_required") || has("doesn't include practice manager")) {
+    return {
+      kind: "permission",
+      title: "Practice Manager needed",
+      message:
+        "The connected Xero organisation doesn't include Practice Manager, so client groups can't be read.",
+      resolution:
+        "Reconnect Xero and choose the Practice Manager option with an organisation that has Practice Manager enabled.",
+      retryable: false,
+      requiresReconnect: true,
+    };
+  }
+
+  // Xero Practice Manager answers "AuthorizationUnsuccessful" when the linked
+  // organisation has no Practice Manager access — usually because a plain Xero
+  // organisation was connected instead. Say that, rather than "sign-in expired".
+  if (has("authorizationunsuccessful") || has("authorisationunsuccessful")) {
+    return {
+      kind: "permission",
+      title: "No Practice Manager access",
+      message:
+        "The connected Xero organisation doesn't give strukcha access to Xero Practice Manager, so client groups can't be read.",
+      resolution:
+        "Reconnect Xero and choose the Practice Manager option with an organisation that has Practice Manager enabled.",
+      retryable: false,
+      requiresReconnect: true,
+    };
+  }
+
   // Auth / token issues.
   if (
     status === 401 ||
@@ -255,7 +298,7 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
       kind: "unavailable",
       title: "Xero request failed",
       message: "Xero didn't return a successful response for that request.",
-      resolution: "Please try again in a moment. If it keeps happening, contact support at hello@strukcha.app.",
+      resolution: "Please try again in a moment. If it keeps happening, contact support at support@strukcha.app.",
       retryable: true,
       requiresReconnect: false,
     };
@@ -265,7 +308,7 @@ export function translateXeroError(err: unknown): FriendlyXeroError {
     kind: "unknown",
     title: "Something went wrong with Xero",
     message: "We couldn't complete that Xero request.",
-    resolution: "Please try again. If the problem persists, contact support at hello@strukcha.app.",
+    resolution: "Please try again. If the problem persists, contact support at support@strukcha.app.",
     retryable: true,
     requiresReconnect: false,
   };
