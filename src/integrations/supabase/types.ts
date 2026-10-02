@@ -635,6 +635,145 @@ export type Database = {
           },
         ]
       }
+      relationship_import_evidence: {
+        Row: {
+          canonical_from_entity_id: string | null
+          canonical_to_entity_id: string | null
+          canonical_type: string | null
+          created_at: string
+          dedupe_key: string | null
+          direction_known: boolean
+          entity_type_provisional: boolean
+          id: string
+          import_run_id: string | null
+          import_source: string
+          policy_outcome: string
+          policy_reason: string
+          proposed_from_entity_id: string | null
+          proposed_to_entity_id: string | null
+          raw_from_entity_type: string | null
+          raw_from_identifier: string | null
+          raw_from_name: string | null
+          raw_payload: Json | null
+          raw_relationship_label: string
+          raw_to_entity_type: string | null
+          raw_to_identifier: string | null
+          raw_to_name: string | null
+          relationship_id: string | null
+          resolved_via_trades_as: boolean
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          canonical_from_entity_id?: string | null
+          canonical_to_entity_id?: string | null
+          canonical_type?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          direction_known?: boolean
+          entity_type_provisional?: boolean
+          id?: string
+          import_run_id?: string | null
+          import_source: string
+          policy_outcome: string
+          policy_reason: string
+          proposed_from_entity_id?: string | null
+          proposed_to_entity_id?: string | null
+          raw_from_entity_type?: string | null
+          raw_from_identifier?: string | null
+          raw_from_name?: string | null
+          raw_payload?: Json | null
+          raw_relationship_label: string
+          raw_to_entity_type?: string | null
+          raw_to_identifier?: string | null
+          raw_to_name?: string | null
+          relationship_id?: string | null
+          resolved_via_trades_as?: boolean
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          canonical_from_entity_id?: string | null
+          canonical_to_entity_id?: string | null
+          canonical_type?: string | null
+          created_at?: string
+          dedupe_key?: string | null
+          direction_known?: boolean
+          entity_type_provisional?: boolean
+          id?: string
+          import_run_id?: string | null
+          import_source?: string
+          policy_outcome?: string
+          policy_reason?: string
+          proposed_from_entity_id?: string | null
+          proposed_to_entity_id?: string | null
+          raw_from_entity_type?: string | null
+          raw_from_identifier?: string | null
+          raw_from_name?: string | null
+          raw_payload?: Json | null
+          raw_relationship_label?: string
+          raw_to_entity_type?: string | null
+          raw_to_identifier?: string | null
+          raw_to_name?: string | null
+          relationship_id?: string | null
+          resolved_via_trades_as?: boolean
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relationship_import_evidence_canonical_from_entity_id_fkey"
+            columns: ["canonical_from_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_canonical_to_entity_id_fkey"
+            columns: ["canonical_to_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_proposed_from_entity_id_fkey"
+            columns: ["proposed_from_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_proposed_to_entity_id_fkey"
+            columns: ["proposed_to_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_relationship_id_fkey"
+            columns: ["relationship_id"]
+            isOneToOne: false
+            referencedRelation: "relationships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relationship_import_evidence_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       relationships: {
         Row: {
           confidence: Database["public"]["Enums"]["confidence_level"]
@@ -1562,6 +1701,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _rp_check_pair: {
+        Args: { _from: string; _rule: Json; _to: string }
+        Returns: Json
+      }
+      _rp_check_source: {
+        Args: { _rule: Json; _src: string; _tgt: string }
+        Returns: Json
+      }
+      _rp_check_target: { Args: { _rule: Json; _tgt: string }; Returns: Json }
+      _rp_rank: { Args: { _r: string }; Returns: number }
+      _rp_trust_like: { Args: { _cats: Json }; Returns: boolean }
       admin_operations_health: { Args: never; Returns: Json }
       claim_sync_job: {
         Args: { _job_id: string; _lease_seconds?: number }
@@ -1654,6 +1804,20 @@ export type Database = {
         Args: { _from_type: string; _rtype: string; _to_type: string }
         Returns: boolean
       }
+      relationship_policy_category: {
+        Args: { _db_type: string }
+        Returns: string
+      }
+      relationship_policy_evaluate: {
+        Args: {
+          _direction_known?: boolean
+          _from_type: string
+          _to_type: string
+          _type: string
+        }
+        Returns: Json
+      }
+      relationship_policy_rule: { Args: { _type: string }; Returns: Json }
       rpc_change_tenant_user_role: {
         Args: {
           p_new_role: string
@@ -1748,6 +1912,10 @@ export type Database = {
         Args: { _group_uuids: string[] }
         Returns: Json
       }
+      xpm_resolve_entity_ref: {
+        Args: { _ref: string; _tenant_id: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "editor" | "viewer" | "user"
@@ -1784,6 +1952,7 @@ export type Database = {
         | "child"
         | "member"
         | "unit_holder"
+        | "trades_as"
       trust_subtype:
         | "Discretionary"
         | "Unit"
@@ -1957,6 +2126,7 @@ export const Constants = {
         "child",
         "member",
         "unit_holder",
+        "trades_as",
       ],
       trust_subtype: [
         "Discretionary",
