@@ -1,0 +1,76 @@
+{
+  "description": "Shared Rulebook v1 policy vectors. Consumed by src/lib/relationshipPolicy.test.ts and, in Phase 2, by the SQL parity test against public.relationship_policy_evaluate(). Expected values are hand-written from the Rulebook, not generated.",
+  "vectors": [
+    { "type": "director", "from": "Individual", "to": "Company", "outcome": "valid", "reason": "valid", "canonicalType": "director", "swapped": false },
+    { "type": "director", "from": "Company", "to": "Individual", "outcome": "reverse", "reason": "auto_reversed", "canonicalType": "director", "swapped": true },
+    { "type": "director", "from": "Company", "to": "Company", "outcome": "invalid", "reason": "invalid_source", "canonicalType": "director", "swapped": false },
+    { "type": "director", "from": "Individual", "to": "trust_discretionary", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "director", "swapped": false },
+    { "type": "director", "from": "Unclassified", "to": "Company", "outcome": "review", "reason": "unclassified_review", "canonicalType": "director", "swapped": false },
+
+    { "type": "shareholder", "from": "Individual", "to": "Company", "outcome": "valid", "reason": "valid", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "Partnership", "to": "Company", "outcome": "valid", "reason": "valid", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "trust_bare", "to": "Company", "outcome": "valid", "reason": "valid", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "Incorporated Association/Club", "to": "Company", "outcome": "valid", "reason": "valid", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "smsf", "to": "Company", "outcome": "valid", "reason": "valid", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "Sole Trader", "to": "Company", "outcome": "resolve_sole_trader", "reason": "sole_trader_resolves_to_individual", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "Trust", "to": "Company", "outcome": "review", "reason": "generic_trust_review", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "Company", "to": "trust_unit", "outcome": "reverse", "reason": "auto_reversed", "canonicalType": "shareholder", "swapped": true },
+    { "type": "shareholder", "from": "Company", "to": "Company", "outcome": "valid", "reason": "valid", "canonicalType": "shareholder", "swapped": false },
+    { "type": "shareholder", "from": "Company", "to": "Company", "directionKnown": false, "outcome": "review", "reason": "ambiguous_direction", "canonicalType": "shareholder", "swapped": false },
+
+    { "type": "unit_holder", "from": "Individual", "to": "trust_unit", "outcome": "valid", "reason": "valid", "canonicalType": "unit_holder", "swapped": false },
+    { "type": "unit_holder", "from": "Company", "to": "trust_hybrid", "outcome": "valid", "reason": "valid", "canonicalType": "unit_holder", "swapped": false },
+    { "type": "unit_holder", "from": "Individual", "to": "trust_discretionary", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "unit_holder", "swapped": false },
+    { "type": "unit_holder", "from": "Sole Trader", "to": "trust_unit", "outcome": "resolve_sole_trader", "reason": "sole_trader_resolves_to_individual", "canonicalType": "unit_holder", "swapped": false },
+    { "type": "unit_holder", "from": "Individual", "to": "Trust", "outcome": "review", "reason": "generic_trust_review", "canonicalType": "unit_holder", "swapped": false },
+
+    { "type": "trustee", "from": "Company", "to": "trust_discretionary", "outcome": "valid", "reason": "valid", "canonicalType": "trustee", "swapped": false },
+    { "type": "trustee", "from": "Individual", "to": "smsf", "outcome": "valid", "reason": "valid", "canonicalType": "trustee", "swapped": false },
+    { "type": "trustee", "from": "trust_unit", "to": "Company", "outcome": "reverse", "reason": "auto_reversed", "canonicalType": "trustee", "swapped": true },
+    { "type": "trustee", "from": "Company", "to": "Trust", "outcome": "review", "reason": "generic_trust_review", "canonicalType": "trustee", "swapped": false },
+    { "type": "trustee", "from": "Partnership", "to": "trust_unit", "outcome": "invalid", "reason": "invalid_source", "canonicalType": "trustee", "swapped": false },
+
+    { "type": "beneficiary", "from": "Individual", "to": "trust_discretionary", "outcome": "valid", "reason": "valid", "canonicalType": "beneficiary", "swapped": false },
+    { "type": "beneficiary", "from": "Individual", "to": "trust_family", "outcome": "valid", "reason": "valid", "canonicalType": "beneficiary", "swapped": false },
+    { "type": "beneficiary", "from": "Company", "to": "trust_deceased_estate", "outcome": "valid", "reason": "valid", "canonicalType": "beneficiary", "swapped": false },
+    { "type": "beneficiary", "from": "Individual", "to": "trust_unit", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "beneficiary", "swapped": false },
+    { "type": "beneficiary", "from": "trust_discretionary", "to": "trust_bare", "outcome": "invalid", "reason": "bare_trust_source_restricted", "canonicalType": "beneficiary", "swapped": false },
+    { "type": "beneficiary", "from": "smsf", "to": "trust_bare", "outcome": "valid", "reason": "valid", "canonicalType": "beneficiary", "swapped": false },
+    { "type": "beneficiary", "from": "Individual", "to": "Trust", "outcome": "review", "reason": "generic_trust_review", "canonicalType": "beneficiary", "swapped": false },
+    { "type": "beneficiary", "from": "Sole Trader", "to": "trust_discretionary", "outcome": "resolve_sole_trader", "reason": "sole_trader_resolves_to_individual", "canonicalType": "beneficiary", "swapped": false },
+
+    { "type": "member", "from": "Individual", "to": "smsf", "outcome": "valid", "reason": "valid", "canonicalType": "member", "swapped": false },
+    { "type": "member", "from": "smsf", "to": "Individual", "outcome": "reverse", "reason": "auto_reversed", "canonicalType": "member", "swapped": true },
+    { "type": "member", "from": "Company", "to": "smsf", "outcome": "invalid", "reason": "invalid_source", "canonicalType": "member", "swapped": false },
+    { "type": "member", "from": "Individual", "to": "trust_unit", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "member", "swapped": false },
+
+    { "type": "appointer", "from": "Individual", "to": "trust_discretionary", "outcome": "valid", "reason": "valid", "canonicalType": "appointer", "swapped": false },
+    { "type": "appointer", "from": "Company", "to": "trust_family", "outcome": "valid", "reason": "valid", "canonicalType": "appointer", "swapped": false },
+    { "type": "appointer", "from": "Individual", "to": "trust_unit", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "appointer", "swapped": false },
+    { "type": "appointer", "from": "Individual", "to": "Trust", "outcome": "review", "reason": "generic_trust_review", "canonicalType": "appointer", "swapped": false },
+
+    { "type": "partner", "from": "Individual", "to": "Partnership", "outcome": "valid", "reason": "valid", "canonicalType": "partner", "swapped": false },
+    { "type": "partner", "from": "trust_discretionary", "to": "Partnership", "outcome": "valid", "reason": "valid", "canonicalType": "partner", "swapped": false },
+    { "type": "partner", "from": "Partnership", "to": "Individual", "outcome": "reverse", "reason": "auto_reversed", "canonicalType": "partner", "swapped": true },
+    { "type": "partner", "from": "Partnership", "to": "Partnership", "outcome": "invalid", "reason": "invalid_source", "canonicalType": "partner", "swapped": false },
+    { "type": "partner", "from": "Individual", "to": "Individual", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "partner", "swapped": false },
+    { "type": "partner", "from": "Sole Trader", "to": "Partnership", "outcome": "resolve_sole_trader", "reason": "sole_trader_resolves_to_individual", "canonicalType": "partner", "swapped": false },
+
+    { "type": "spouse", "from": "Individual", "to": "Individual", "outcome": "valid", "reason": "symmetric_valid", "canonicalType": "spouse", "swapped": false },
+    { "type": "spouse", "from": "Individual", "to": "Company", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "spouse", "swapped": false },
+    { "type": "spouse", "from": "Individual", "to": "Unclassified", "outcome": "review", "reason": "unclassified_review", "canonicalType": "spouse", "swapped": false },
+
+    { "type": "parent", "from": "Individual", "to": "Individual", "outcome": "valid", "reason": "valid", "canonicalType": "parent", "swapped": false },
+    { "type": "parent", "from": "Company", "to": "Individual", "outcome": "invalid", "reason": "invalid_source", "canonicalType": "parent", "swapped": false },
+    { "type": "child", "from": "Individual", "to": "Individual", "outcome": "reverse", "reason": "child_alias_reversed", "canonicalType": "parent", "swapped": true },
+
+    { "type": "trades_as", "from": "Individual", "to": "Sole Trader", "outcome": "valid", "reason": "valid", "canonicalType": "trades_as", "swapped": false },
+    { "type": "trades_as", "from": "Sole Trader", "to": "Individual", "outcome": "reverse", "reason": "auto_reversed", "canonicalType": "trades_as", "swapped": true },
+    { "type": "trades_as", "from": "Company", "to": "Sole Trader", "outcome": "invalid", "reason": "invalid_source", "canonicalType": "trades_as", "swapped": false },
+    { "type": "trades_as", "from": "Individual", "to": "Company", "outcome": "invalid", "reason": "invalid_target", "canonicalType": "trades_as", "swapped": false },
+
+    { "type": "settlor", "from": "Individual", "to": "trust_discretionary", "outcome": "deprecated", "reason": "settlor_deprecated", "canonicalType": null, "swapped": false },
+    { "type": "secretary", "from": "Individual", "to": "Company", "outcome": "invalid", "reason": "unknown_relationship_type", "canonicalType": null, "swapped": false },
+    { "type": "", "from": "Individual", "to": "Company", "outcome": "invalid", "reason": "unknown_relationship_type", "canonicalType": null, "swapped": false }
+  ]
+}
