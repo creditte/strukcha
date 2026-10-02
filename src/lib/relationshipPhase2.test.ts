@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   POLICY_RULES,
   CREATABLE_RELATIONSHIP_TYPES,
@@ -238,10 +238,12 @@ describe("manual edit and reverse", () => {
     const r = { id: "r4", relationship_type: "spouse", from_entity_id: "a", to_entity_id: "b" };
     expect(planReverse(r, ent("a", "Individual"), ent("b", "Individual"), []).ok).toBe(false);
   });
-  it("type change must be valid as stored", () => {
-    expect(planTypeChange("shareholder", ent("p", "Individual"), ent("c", "Company"), [], "x").ok).toBe(true);
-    expect(planTypeChange("member", ent("p", "Individual"), ent("c", "Company"), [], "x").ok).toBe(false);
-    expect(planTypeChange("child", ent("a", "Individual"), ent("b", "Individual"), [], "x").ok).toBe(false);
+  it("type change must be valid as stored", async () => {
+    const noLookup = { lookupTradesAsOwner: vi.fn() };
+    expect((await planTypeChange("shareholder", ent("p", "Individual"), ent("c", "Company"), [], "x", noLookup)).ok).toBe(true);
+    expect((await planTypeChange("member", ent("p", "Individual"), ent("c", "Company"), [], "x", noLookup)).ok).toBe(false);
+    expect((await planTypeChange("child", ent("a", "Individual"), ent("b", "Individual"), [], "x", noLookup)).ok).toBe(false);
+    expect(noLookup.lookupTradesAsOwner).not.toHaveBeenCalled();
   });
   it("member exposes no ownership fields", () => {
     expect(facade.getMetadataFields("member")).toEqual([]);
@@ -409,5 +411,46 @@ describe("archived/history behaviour is preserved", () => {
     for (const f of ["001_add_trades_as_enum", "002_relationship_policy_foundation"]) {
       expect(() => read(`supabase/migrations/${f}.sql`)).toThrow();
     }
+  });
+});
+
+describe("planTypeChange → trades_as enforces one owner globally", () => {
+  const p = { id: "p", entity_type: "Individual" };
+  const st = { id: "st", entity_type: "Sole Trader" };
+  // Current structure only shows this row (currently e.g. a spouse-free placeholder type); the real owner lives elsewhere.
+  const siblings = [{ id: "self", relationship_type: "director", from_entity_id: "p", to_entity_id: "st" }];
+  const run = (r: TradesAsLookup) => {
+    const lookup = vi.fn(async () => r);
+    return { lookup, res: planTypeChange("trades_as", p, st, siblings, "self", { lookupTradesAsOwner: lookup }) };
+  };
+  it("zero owners → allowed, looked up for the sole trader", async () => {
+    const { lookup, res } = run({ status: "none" });
+    expect((await res).ok).toBe(true);
+    expect(lookup).toHaveBeenCalledWith("st");
+  });
+  it("one owner held in another structure (not in siblings) → duplicate", async () => {
+    const { res } = run({ status: "resolved", individualId: "other-individual" });
+    const r = await res;
+    expect(r.ok).toBe(false);
+    expect(r.kind).toBe("duplicate");
+  });
+  it("multiple owners → duplicate", async () => {
+    const r = await run({ status: "multiple", count: 2 }).res;
+    expect(r.ok).toBe(false);
+    expect(r.kind).toBe("duplicate");
+  });
+  it("lookup unavailable → review", async () => {
+    const r = await run({ status: "unavailable" }).res;
+    expect(r.ok).toBe(false);
+    expect(r.kind).toBe("review");
+  });
+  it("ordinary type edits never query Trades As", async () => {
+    const lookup = vi.fn();
+    const ind2 = { id: "q", entity_type: "Individual" };
+    const co = { id: "c", entity_type: "Company" };
+    await planTypeChange("spouse", p, ind2, [], "self", { lookupTradesAsOwner: lookup });
+    await planTypeChange("director", p, co, [], "self", { lookupTradesAsOwner: lookup });
+    await planTypeChange("shareholder", p, co, [], "self", { lookupTradesAsOwner: lookup });
+    expect(lookup).not.toHaveBeenCalled();
   });
 });
