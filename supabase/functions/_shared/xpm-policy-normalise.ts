@@ -132,15 +132,13 @@ export function normaliseXpmRelationship(raw: XpmRawRelationship, ctx: Normalise
   const parsed = parseXpmLabel(raw.label);
   const fromId = parsed.relatedIsSource ? raw.relatedId : raw.clientId;
   const toId = parsed.relatedIsSource ? raw.clientId : raw.relatedId;
-  const fromName = (parsed.relatedIsSource ? raw.relatedName : raw.clientName) ?? null;
-  const toName = (parsed.relatedIsSource ? raw.clientName : raw.relatedName) ?? null;
   const fromType = ctx.entityTypes.get(fromId) ?? "Unclassified";
   const toType = ctx.entityTypes.get(toId) ?? "Unclassified";
   const provisional = !!(ctx.provisionalTypes?.has(fromId) || ctx.provisionalTypes?.has(toId));
 
   // Unknown labels go through the evaluator too → invalid / unknown_relationship_type.
   const evalType = parsed.type ?? `xpm:${raw.label}`;
-  let e = evaluateRelationship(evalType, fromType, toType, { directionKnown: parsed.directionKnown });
+  const e = evaluateRelationship(evalType, fromType, toType, { directionKnown: parsed.directionKnown });
   let edge = toCanonicalEdge(e, fromId, toId);
   let resolved = false;
 
@@ -187,8 +185,6 @@ export function normaliseXpmRelationship(raw: XpmRawRelationship, ctx: Normalise
       resolved_via_trades_as: resolved,
     },
   };
-  // fromName/toName are kept in raw_* in client-record terms; proposed names are derivable.
-  void fromName; void toName; void e;
 }
 
 /**
