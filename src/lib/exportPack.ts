@@ -884,7 +884,7 @@ export async function exportPdf(
         if (curY > pageH - 25) break;
 
         const isCrit = issue.severity === "critical";
-        const sevLabel = isCrit ? "HIGH" : issue.severity === "gap" ? "MEDIUM" : "LOW";
+        const sevLabel = isCrit ? "CONFLICT" : issue.severity === "gap" ? "REVIEW" : "INFO";
         const sevColor = isCrit ? C.red : issue.severity === "gap" ? C.amber : C.muted;
         const sevBg = isCrit ? C.redLight : issue.severity === "gap" ? C.amberLight : C.light;
 

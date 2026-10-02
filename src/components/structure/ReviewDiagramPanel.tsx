@@ -331,9 +331,9 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
   // Integrity checks summary
   const circularOwnership = health.issues.some((i) => i.code === "circular_ownership") ? "Yes" : "No";
   const orphanCount = health.issues.filter((i) => i.code === "orphan_entity").length;
-  const missingOwnershipPct = health.issues.filter((i) => i.code === "missing_ownership_percent").length;
+  const missingOwnershipPct = health.issues.filter((i) => i.code === "ownership_incomplete" || i.code === "ownership_under").length;
   const missingDirectors = health.issues.filter((i) => i.code === "missing_directors").length;
-  const missingTrusteeLinks = health.issues.filter((i) => i.code === "missing_trustee" || i.code === "missing_appointer").length;
+  const missingTrusteeLinks = health.issues.filter((i) => i.code === "missing_trustee").length;
 
   const panelWidth = expanded ? "w-[880px]" : "w-[620px]";
 
@@ -379,9 +379,6 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
               <Badge className={`text-[10px] px-1.5 py-0 ${STATUS_BADGE[status]}`}>
                 {health.label}
               </Badge>
-              {health.isCapped && (
-                <span className="text-[10px] text-amber-600">(capped)</span>
-              )}
             </div>
 
             <p className="text-xs text-muted-foreground italic leading-relaxed">
@@ -473,19 +470,13 @@ export default function ReviewDiagramPanel({ health, entities, relationships, st
               <div>
                 <p className="font-semibold mb-1">Diagram Integrity</p>
                 <ul className="space-y-1 text-muted-foreground">
-                  <li>Circular ownership detected: <strong className={circularOwnership === "Yes" ? "text-red-600" : "text-emerald-600"}>{circularOwnership}</strong></li>
+                  <li>Circular ownership recorded: <strong className={circularOwnership === "Yes" ? "text-red-600" : "text-emerald-600"}>{circularOwnership}</strong></li>
                   <li>Orphan entities: <strong className={orphanCount > 0 ? "text-amber-600" : "text-emerald-600"}>{orphanCount > 0 ? `${orphanCount} found` : "None"}</strong></li>
-                  <li>Missing ownership %: <strong className={missingOwnershipPct > 0 ? "text-amber-600" : "text-emerald-600"}>{missingOwnershipPct > 0 ? missingOwnershipPct : "None"}</strong></li>
+                  <li>Incomplete ownership %: <strong className={missingOwnershipPct > 0 ? "text-amber-600" : "text-emerald-600"}>{missingOwnershipPct > 0 ? missingOwnershipPct : "None"}</strong></li>
                   <li>Missing directors: <strong className={missingDirectors > 0 ? "text-amber-600" : "text-emerald-600"}>{missingDirectors > 0 ? missingDirectors : "None"}</strong></li>
-                  <li>Missing trustee/appointor links: <strong className={missingTrusteeLinks > 0 ? "text-red-600" : "text-emerald-600"}>{missingTrusteeLinks > 0 ? missingTrusteeLinks : "None"}</strong></li>
+                  <li>Trustee not recorded: <strong className={missingTrusteeLinks > 0 ? "text-amber-600" : "text-emerald-600"}>{missingTrusteeLinks > 0 ? missingTrusteeLinks : "None"}</strong></li>
                 </ul>
               </div>
-
-              {health.isCapped && health.capReason && (
-                <div className="mt-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-2.5 py-2 text-[11px] text-amber-800 dark:text-amber-300">
-                  {health.capReason}
-                </div>
-              )}
             </div>
           </CollapsibleSection>
 

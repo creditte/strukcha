@@ -34,11 +34,8 @@ export default function CanvasHealthIndicator({ health, onClick }: Props) {
       <TooltipContent side="bottom" align="end" className="max-w-xs text-xs">
         <p className="font-semibold mb-1">Structure Health: {health.score} / 100 — {health.label}</p>
         <p className="text-muted-foreground">Click to review diagram</p>
-        {health.isCapped && (
-          <p className="text-amber-600 dark:text-amber-400 mt-1 text-[10px]">Score capped — corporate trustee required for full score</p>
-        )}
         <p className="text-muted-foreground/60 mt-1 text-[10px] italic">
-          Health Score reflects structural completeness and governance robustness. It does not assess tax outcomes.
+          Health is a data-quality indicator for what is recorded in strukcha. It is not tax, legal, regulatory or compliance advice.
         </p>
       </TooltipContent>
     </Tooltip>
