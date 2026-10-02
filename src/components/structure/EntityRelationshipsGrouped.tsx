@@ -16,6 +16,7 @@ const GROUP_COLORS: Record<string, string> = {
   spouse: "bg-muted-foreground",
   parent: "bg-violet-500",
   child: "bg-cyan-500",
+  trades_as: "bg-orange-500",
 };
 
 function groupLabel(type: string): string {

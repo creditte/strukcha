@@ -13,6 +13,8 @@ import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSn
 import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 import { computeHealthScoreV2 } from "@/lib/structureScoring";
 import { supabase } from "@/integrations/supabase/client";
+import { planNewRelationship } from "@/lib/manualRelationship";
+import { manualRelationshipDeps } from "@/lib/manualRelationshipDeps";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
 import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPanel";
