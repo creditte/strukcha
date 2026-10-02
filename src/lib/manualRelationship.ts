@@ -68,7 +68,7 @@ export function pickTradesAsOwner(ownerIds: readonly string[]): TradesAsLookup {
 function isDuplicate(edge: CanonicalEdge, existing: ExistingRelationship[], ignoreId?: string): boolean {
   const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
   return existing.some(
-    (r) => r.id !== ignoreId && relationshipIdentityKey(r.relationship_type, r.from_entity_id, r.to_entity_id) === key,
+    (r) => (ignoreId === undefined || r.id !== ignoreId) && relationshipIdentityKey(r.relationship_type, r.from_entity_id, r.to_entity_id) === key,
   );
 }
 
