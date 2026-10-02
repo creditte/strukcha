@@ -21,6 +21,7 @@ import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPa
 import RelationshipLegend from "@/components/structure/RelationshipLegend";
 import ExportMenu from "@/components/structure/ExportMenu";
 import ExportBlockedBanner from "@/components/structure/ExportBlockedBanner";
+import { getExportBlock } from "@/lib/exportBlocking";
 import StructureHealthPanel from "@/components/structure/StructureHealthPanel";
 import OnboardingTooltips from "@/components/structure/OnboardingTooltips";
 import AiAssistantPanel from "@/components/structure/AiAssistantPanel";
