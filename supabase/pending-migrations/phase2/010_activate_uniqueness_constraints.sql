@@ -23,6 +23,4 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS relationships_trades_as_one_owner
   ON public.relationships (to_entity_id)
   WHERE relationship_type = 'trades_as' AND deleted_at IS NULL AND end_date IS NULL;
 
--- Trigger switch-over (validate_relationship_rules -> relationship_policy_evaluate)
--- is a separate Phase 2 migration written once manual inputs and all XPM paths
--- call the policy; see docs/relationship-policy.md.
+-- Trigger switch-over is phase2/012_activate_policy_trigger.sql.

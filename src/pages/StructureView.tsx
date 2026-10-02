@@ -13,6 +13,8 @@ import { useSnapshots, loadSnapshotData, type SnapshotData } from "@/hooks/useSn
 import { useSharedTenantSettings } from "@/contexts/TenantSettingsContext";
 import { computeHealthScoreV2 } from "@/lib/structureScoring";
 import { supabase } from "@/integrations/supabase/client";
+import { planNewRelationship } from "@/lib/manualRelationship";
+import { manualRelationshipDeps } from "@/lib/manualRelationshipDeps";
 import StructureGraph, { type LayoutMode, type LayoutStrategy } from "@/components/structure/StructureGraph";
 import EntityDetailPanel from "@/components/structure/EntityDetailPanel";
 import RelationshipDetailPanel from "@/components/structure/RelationshipDetailPanel";
@@ -122,14 +124,22 @@ export default function StructureView() {
     setPendingConnection({ source: connection.source, target: connection.target });
   }, []);
 
-  const handleConfirmRelationship = useCallback(async (relationshipType: string, needsReversal = false) => {
+  const handleConfirmRelationship = useCallback(async (relationshipType: string) => {
     if (!pendingConnection || !tenantId || !id) return;
-    const fromId = needsReversal ? pendingConnection.target : pendingConnection.source;
-    const toId = needsReversal ? pendingConnection.source : pendingConnection.target;
+    const fromEntity = entities.find((e) => e.id === pendingConnection.source);
+    const toEntity = entities.find((e) => e.id === pendingConnection.target);
+    if (!fromEntity || !toEntity) return;
+    // Canonical policy decides direction / Sole Trader resolution / de-duplication.
+    const plan = await planNewRelationship(relationshipType, fromEntity, toEntity, manualRelationshipDeps);
+    if (!plan.ok) {
+      toast({ title: plan.title, description: plan.description, variant: "destructive" });
+      setPendingConnection(null);
+      return;
+    }
     const { data: rel, error } = await supabase.from("relationships").insert({
-      from_entity_id: fromId,
-      to_entity_id: toId,
-      relationship_type: relationshipType as any,
+      from_entity_id: plan.edge.fromId,
+      to_entity_id: plan.edge.toId,
+      relationship_type: plan.edge.type as any,
       tenant_id: tenantId,
       source: "manual" as any,
     }).select("id").single();
@@ -137,11 +147,11 @@ export default function StructureView() {
       toast({ title: "Failed to create relationship", description: error?.message, variant: "destructive" });
     } else {
       await supabase.from("structure_relationships").insert({ structure_id: id, relationship_id: rel.id });
-      toast({ title: "Relationship created" });
+      toast({ title: "Relationship created", description: plan.note });
       reload();
     }
     setPendingConnection(null);
-  }, [pendingConnection, tenantId, id, toast, reload]);
+  }, [pendingConnection, tenantId, id, toast, reload, entities]);
 
   const handleEditEntity = useCallback((nodeId: string) => {
     setSelectedEntityId(nodeId);

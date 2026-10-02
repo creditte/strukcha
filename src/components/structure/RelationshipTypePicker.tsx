@@ -3,12 +3,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { X, Info } from "lucide-react";
 import {
-  RELATIONSHIP_RULES,
-  getValidRelationshipOptions,
-  getRelationshipLabel,
-} from "@/lib/relationshipRules";
-
-const ALL_TYPE_VALUES = RELATIONSHIP_RULES.map((r) => r.type);
+  CREATABLE_RELATIONSHIP_TYPES,
+  describePolicyReason,
+  getRelationshipOptions,
+  policyLabel,
+  type RelationshipOption,
+} from "@/lib/relationshipPolicy";
 
 interface Props {
   open: boolean;
@@ -16,6 +16,7 @@ interface Props {
   toEntityName: string;
   fromEntityType?: string;
   toEntityType?: string;
+  /** needsReversal is informational; the caller re-plans via the policy before saving. */
   onConfirm: (relationshipType: string, needsReversal: boolean) => void;
   onCancel: () => void;
 }
@@ -25,12 +26,10 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
 
   if (!open) return null;
 
-  const validOptions =
-    fromEntityType && toEntityType
-      ? getValidRelationshipOptions(ALL_TYPE_VALUES, fromEntityType, toEntityType)
-      : ALL_TYPE_VALUES.map((t) => ({ type: t, needsReversal: false }));
-  const validTypes = validOptions.map((o) => o.type);
-  const selectedOption = validOptions.find((o) => o.type === selected);
+  const options: RelationshipOption[] = getRelationshipOptions(fromEntityType ?? "Unclassified", toEntityType ?? "Unclassified");
+  const selectable = options.filter((o) => o.selectable);
+  const review = options.filter((o) => !o.selectable);
+  const selectedOption = selectable.find((o) => o.type === selected);
 
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 rounded-lg border bg-card shadow-lg p-4 w-80 animate-in fade-in-0 zoom-in-95">
@@ -43,11 +42,11 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
       <p className="text-xs text-muted-foreground mb-3 truncate">
         {fromEntityName} → {toEntityName}
       </p>
-      {validTypes.length === 0 ? (
+      {selectable.length === 0 ? (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
           <Info className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
           <p className="text-xs text-destructive">
-            No valid relationship types for this entity combination.
+            {review.length > 0 ? describePolicyReason(review[0].evaluation) : "No valid relationship types for this entity combination."}
           </p>
         </div>
       ) : (
@@ -57,12 +56,15 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
               <SelectValue placeholder="Select relationship type..." />
             </SelectTrigger>
             <SelectContent>
-              {validTypes.map((t) => (
-                <SelectItem key={t} value={t}>{getRelationshipLabel(t)}</SelectItem>
+              {selectable.map((o) => (
+                <SelectItem key={o.type} value={o.type}>{policyLabel(o.type)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {fromEntityType && toEntityType && validTypes.length < ALL_TYPE_VALUES.length && (
+          {selectedOption?.evaluation.outcome === "resolve_sole_trader" && (
+            <p className="text-[10px] text-muted-foreground mt-1.5">{describePolicyReason(selectedOption.evaluation)}</p>
+          )}
+          {selectable.length < CREATABLE_RELATIONSHIP_TYPES.length && (
             <p className="text-[10px] text-muted-foreground mt-1.5">
               Only relationship types valid for this entity pair are shown.
             </p>
@@ -71,7 +73,7 @@ export default function RelationshipTypePicker({ open, fromEntityName, toEntityN
       )}
       <div className="flex justify-end gap-2 mt-3">
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" className="h-7 text-xs" disabled={!selected} onClick={() => onConfirm(selected, !!selectedOption?.needsReversal)}>
+        <Button size="sm" className="h-7 text-xs" disabled={!selectedOption} onClick={() => onConfirm(selected, !!selectedOption?.evaluation.swapped)}>
           Add
         </Button>
       </div>
