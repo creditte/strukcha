@@ -409,10 +409,28 @@ BEGIN
   )
   UPDATE _c c SET entity_id = ins.id FROM ins WHERE ins.xpm_uuid = c.uuid;
 
+  -- ── Rulebook v1 (Phase 2) · dual contract ──
+  -- legacy       : today's sync-xpm payload — rels oriented by the old label
+  --                hints, no evidence. The SQL twin decides each row with
+  --                direction unknown (family labels known), swaps a clean
+  --                reverse once, maps Child → Parent, and writes one evidence
+  --                row per raw rel.
+  -- canonical_v1 : payload carries `evidence` (one draft per raw XPM fact from
+  --                xpm-policy-normalise.ts) and canonical `rels`. Rels must be
+  --                valid exactly as sent; evidence is written from the drafts
+  --                only (never also derived from rels), so nothing doubles.
+  _contract := CASE
+    WHEN _payload->>'contract' IN ('legacy', 'canonical_v1') THEN _payload->>'contract'
+    WHEN jsonb_typeof(_payload->'evidence') = 'array' THEN 'canonical_v1'
+    ELSE 'legacy' END;
+
   CREATE TEMP TABLE _sr (
     rtype text,
+    raw_type text,
     from_uuid text,
     to_uuid text,
+    raw_from_id uuid,
+    raw_to_id uuid,
     from_id uuid,
     to_id uuid,
     from_type text,
@@ -420,11 +438,13 @@ BEGIN
     start_date date,
     end_date date,
     outcome text,
-    reason text
+    reason text,
+    ok boolean NOT NULL DEFAULT false,
+    rel_id uuid
   ) ON COMMIT DROP;
 
-  INSERT INTO _sr (rtype, from_uuid, to_uuid, start_date, end_date)
-  SELECT x.type, x.from_uuid, x.to_uuid,
+  INSERT INTO _sr (rtype, raw_type, from_uuid, to_uuid, start_date, end_date)
+  SELECT x.type, x.type, x.from_uuid, x.to_uuid,
          CASE WHEN x.start_date ~ '^\d{4}-\d{2}-\d{2}' THEN left(x.start_date, 10)::date END,
          CASE WHEN x.end_date ~ '^\d{4}-\d{2}-\d{2}' THEN left(x.end_date, 10)::date END
   FROM jsonb_to_recordset(coalesce(_payload->'rels', '[]'::jsonb))
@@ -433,110 +453,199 @@ BEGIN
 
   UPDATE _sr s SET from_id = c.entity_id FROM _c c WHERE c.uuid = s.from_uuid;
   UPDATE _sr s SET to_id = c.entity_id FROM _c c WHERE c.uuid = s.to_uuid;
+  -- Canonical rels may point at an entity outside this chunk (e.g. a Trades As
+  -- owner); resolve it by XPM UUID or entity id within the tenant.
+  UPDATE _sr s SET from_id = public.xpm_resolve_entity_ref(_tenant_id, s.from_uuid) WHERE s.from_id IS NULL;
+  UPDATE _sr s SET to_id = public.xpm_resolve_entity_ref(_tenant_id, s.to_uuid) WHERE s.to_id IS NULL;
+  UPDATE _sr SET raw_from_id = from_id, raw_to_id = to_id;
 
   SELECT count(*) INTO _rel_skipped FROM _sr WHERE from_id IS NULL OR to_id IS NULL;
-  DELETE FROM _sr WHERE from_id IS NULL OR to_id IS NULL;
 
   UPDATE _sr s SET from_type = e.entity_type::text FROM public.entities e WHERE e.id = s.from_id;
   UPDATE _sr s SET to_type = e.entity_type::text FROM public.entities e WHERE e.id = s.to_id;
 
-  -- ── Rulebook v1 (Phase 2) ──
-  -- The Edge Function has already normalised every raw XPM fact with the
-  -- canonical TypeScript policy and only sends canonical rows. Re-check here
-  -- with the SQL twin so the database never relies on the caller.
   WITH ev AS (
-    SELECT ctid AS c, public.relationship_policy_evaluate(rtype, from_type, to_type, true) AS r FROM _sr
+    SELECT ctid AS c,
+           public.relationship_policy_evaluate(rtype, from_type, to_type,
+             CASE WHEN _contract = 'canonical_v1' THEN true ELSE rtype IN ('spouse','parent','child') END) AS r
+    FROM _sr WHERE from_id IS NOT NULL AND to_id IS NOT NULL
   )
-  UPDATE _sr SET outcome = ev.r->>'outcome', reason = ev.r->>'reason' FROM ev WHERE _sr.ctid = ev.c;
+  UPDATE _sr SET
+    outcome = ev.r->>'outcome',
+    reason  = ev.r->>'reason',
+    rtype   = coalesce(ev.r->>'canonical_type', _sr.rtype),
+    ok      = CASE WHEN _contract = 'canonical_v1' THEN ev.r->>'outcome' = 'valid'
+                   ELSE ev.r->>'outcome' IN ('valid','reverse') END
+  FROM ev WHERE _sr.ctid = ev.c;
 
-  -- Spouse only is unordered. Partner keeps direction.
-  UPDATE _sr SET from_id = to_id, to_id = from_id
-  WHERE rtype = 'spouse' AND from_id > to_id;
+  -- Swap exactly once (legacy only; canonical rels are never reversed here).
+  UPDATE _sr SET from_id = to_id, to_id = from_id WHERE ok AND outcome = 'reverse';
+  SELECT count(*) INTO _rel_flipped FROM _sr WHERE ok AND outcome = 'reverse';
 
-  WITH invalid AS (
-    DELETE FROM _sr s WHERE s.outcome IS DISTINCT FROM 'valid'
-    RETURNING s.rtype
+  WITH bad AS (
+    SELECT raw_type, count(*) AS cnt FROM _sr
+    WHERE from_id IS NOT NULL AND to_id IS NOT NULL AND NOT ok GROUP BY raw_type
   )
-  SELECT _rel_skipped + count(*),
+  SELECT _rel_skipped + coalesce(sum(cnt), 0),
          _warnings || coalesce(
-           jsonb_agg(DISTINCT format('%s: %s link(s) were not canonical and were kept for review', rtype, cnt)),
+           jsonb_agg(format('%s: %s link(s) were not canonical and were kept for review', raw_type, cnt)),
            '[]'::jsonb)
     INTO _rel_skipped, _warnings
-  FROM (SELECT rtype, count(*) AS cnt FROM invalid GROUP BY rtype) g;
+  FROM bad;
 
-  -- Existing spouse facts may be stored in either order.
-  DELETE FROM _sr s
-  USING public.relationships e
-  WHERE s.rtype = 'spouse' AND e.tenant_id = _tenant_id AND e.deleted_at IS NULL
-    AND e.relationship_type::text = 'spouse'
-    AND e.from_entity_id = s.to_id AND e.to_entity_id = s.from_id;
+  -- Spouse only is unordered. Partner and every other type keep direction.
+  UPDATE _sr SET from_id = to_id, to_id = from_id
+  WHERE ok AND rtype = 'spouse' AND from_id > to_id;
 
+  -- Existing live facts (spouse in either order). Soft-deleted rows are history
+  -- and are never matched or resurrected.
+  UPDATE _sr s SET rel_id = e.id
+  FROM public.relationships e
+  WHERE s.ok AND e.tenant_id = _tenant_id AND e.deleted_at IS NULL
+    AND e.relationship_type::text = s.rtype
+    AND ((e.from_entity_id = s.from_id AND e.to_entity_id = s.to_id)
+      OR (s.rtype = 'spouse' AND e.from_entity_id = s.to_id AND e.to_entity_id = s.from_id));
+
+  -- Metadata: fill missing dates on an existing fact, never overwrite.
   UPDATE public.relationships e
   SET start_date = coalesce(e.start_date, s.start_date),
       end_date = coalesce(e.end_date, s.end_date),
       updated_at = now()
   FROM _sr s
-  WHERE e.tenant_id = _tenant_id AND e.deleted_at IS NULL
-    AND e.from_entity_id = s.from_id AND e.to_entity_id = s.to_id
-    AND e.relationship_type::text = s.rtype
+  WHERE s.rel_id = e.id
     AND (s.start_date IS NOT NULL OR s.end_date IS NOT NULL)
-    AND (e.start_date IS NULL OR e.end_date IS NULL);
+    AND ((e.start_date IS NULL AND s.start_date IS NOT NULL) OR (e.end_date IS NULL AND s.end_date IS NOT NULL));
 
-  DELETE FROM _sr s
-  USING public.relationships e
-  WHERE e.tenant_id = _tenant_id AND e.deleted_at IS NULL
+  -- Bulk insert; if any row is refused (e.g. the still-live legacy trigger
+  -- during the transition), fall back to row-by-row so one refusal never
+  -- fails the whole chunk.
+  BEGIN
+    WITH todo AS (
+      SELECT DISTINCT ON (from_id, to_id, rtype) from_id, to_id, rtype, start_date, end_date
+      FROM _sr WHERE ok AND rel_id IS NULL
+      ORDER BY from_id, to_id, rtype, start_date NULLS LAST
+    ), ins AS (
+      INSERT INTO public.relationships
+        (tenant_id, from_entity_id, to_entity_id, relationship_type, start_date, end_date, source, confidence)
+      SELECT _tenant_id, t.from_id, t.to_id, t.rtype::relationship_type, t.start_date, t.end_date,
+             'imported', 'imported'
+      FROM todo t
+      ON CONFLICT DO NOTHING
+      RETURNING id
+    )
+    SELECT count(*) INTO _rel_created FROM ins;
+  EXCEPTION WHEN OTHERS THEN
+    _rel_created := 0;
+    FOR rec IN
+      SELECT DISTINCT ON (from_id, to_id, rtype) from_id, to_id, rtype, start_date, end_date
+      FROM _sr WHERE ok AND rel_id IS NULL
+      ORDER BY from_id, to_id, rtype, start_date NULLS LAST
+    LOOP
+      BEGIN
+        _rid := NULL;
+        INSERT INTO public.relationships
+          (tenant_id, from_entity_id, to_entity_id, relationship_type, start_date, end_date, source, confidence)
+        VALUES (_tenant_id, rec.from_id, rec.to_id, rec.rtype::relationship_type, rec.start_date, rec.end_date,
+                'imported', 'imported')
+        ON CONFLICT DO NOTHING
+        RETURNING id INTO _rid;
+        IF _rid IS NOT NULL THEN _rel_created := _rel_created + 1; END IF;
+      EXCEPTION WHEN OTHERS THEN
+        _rel_skipped := _rel_skipped + 1;
+        IF jsonb_array_length(_warnings) < 200 THEN
+          _warnings := _warnings || to_jsonb(format('Failed to create %s relationship: %s', rec.rtype, SQLERRM));
+        END IF;
+      END;
+    END LOOP;
+  END;
+
+  UPDATE _sr s SET rel_id = e.id
+  FROM public.relationships e
+  WHERE s.ok AND s.rel_id IS NULL AND e.tenant_id = _tenant_id AND e.deleted_at IS NULL
     AND e.from_entity_id = s.from_id AND e.to_entity_id = s.to_id
     AND e.relationship_type::text = s.rtype;
 
-  WITH todo AS (
-    SELECT DISTINCT ON (from_id, to_id, rtype) from_id, to_id, rtype, start_date, end_date
-    FROM _sr ORDER BY from_id, to_id, rtype, start_date NULLS LAST
-  ), ins AS (
-    INSERT INTO public.relationships
-      (tenant_id, from_entity_id, to_entity_id, relationship_type, start_date, end_date, source, confidence)
-    SELECT _tenant_id, t.from_id, t.to_id, t.rtype::relationship_type, t.start_date, t.end_date,
-           'imported', 'imported'
-    FROM todo t
-    ON CONFLICT DO NOTHING
-    RETURNING id
-  )
-  SELECT count(*) INTO _rel_created FROM ins;
-
-  -- Durable evidence drafts from the Edge Function (one per raw XPM fact).
-  -- Identifiers are XPM UUIDs; resolve to entity ids through _c.
-  INSERT INTO public.relationship_import_evidence (
-      tenant_id, import_source, import_run_id, raw_relationship_label,
-      raw_from_identifier, raw_from_name, raw_to_identifier, raw_to_name, raw_payload,
-      raw_from_entity_type, raw_to_entity_type, direction_known, entity_type_provisional,
-      proposed_from_entity_id, proposed_to_entity_id, canonical_type,
-      canonical_from_entity_id, canonical_to_entity_id, policy_outcome, policy_reason,
-      review_status, resolved_via_trades_as, relationship_id
-  )
-  SELECT _tenant_id, coalesce(_payload->>'import_source', 'xpm_sync'), nullif(_payload->>'import_run_id', '')::uuid,
-         x.raw_relationship_label, x.raw_from_identifier, x.raw_from_name, x.raw_to_identifier, x.raw_to_name, x.raw_payload,
-         x.raw_from_entity_type, x.raw_to_entity_type, coalesce(x.direction_known, false), coalesce(x.entity_type_provisional, false),
-         pf.entity_id, pt.entity_id, x.canonical_type, cf.entity_id, ct.entity_id,
-         x.policy_outcome, x.policy_reason, coalesce(x.review_status, 'pending'), coalesce(x.resolved_via_trades_as, false),
-         rel.id
-  FROM jsonb_to_recordset(coalesce(_payload->'evidence', '[]'::jsonb)) AS x(
-         raw_relationship_label text, raw_from_identifier text, raw_from_name text, raw_to_identifier text,
-         raw_to_name text, raw_payload jsonb, raw_from_entity_type text, raw_to_entity_type text,
-         direction_known boolean, entity_type_provisional boolean, proposed_from_entity_id text,
-         proposed_to_entity_id text, canonical_type text, canonical_from_entity_id text,
-         canonical_to_entity_id text, policy_outcome text, policy_reason text, review_status text,
-         resolved_via_trades_as boolean)
-  LEFT JOIN _c pf ON pf.uuid = x.proposed_from_entity_id
-  LEFT JOIN _c pt ON pt.uuid = x.proposed_to_entity_id
-  LEFT JOIN _c cf ON cf.uuid = x.canonical_from_entity_id
-  LEFT JOIN _c ct ON ct.uuid = x.canonical_to_entity_id
-  LEFT JOIN LATERAL (
-    SELECT e.id FROM public.relationships e
-    WHERE e.tenant_id = _tenant_id AND e.deleted_at IS NULL AND x.canonical_type IS NOT NULL
-      AND e.relationship_type::text = x.canonical_type
-      AND ((e.from_entity_id = cf.entity_id AND e.to_entity_id = ct.entity_id)
-        OR (x.canonical_type = 'spouse' AND e.from_entity_id = ct.entity_id AND e.to_entity_id = cf.entity_id))
-    LIMIT 1
-  ) rel ON true;
+  IF _contract = 'legacy' THEN
+    -- One evidence row per raw legacy rel (the label was already parsed by the
+    -- caller, so the parsed type is the best raw label available).
+    INSERT INTO public.relationship_import_evidence (
+        tenant_id, import_source, import_run_id, raw_relationship_label,
+        raw_from_identifier, raw_from_name, raw_to_identifier, raw_to_name, raw_payload,
+        raw_from_entity_type, raw_to_entity_type, direction_known, entity_type_provisional,
+        proposed_from_entity_id, proposed_to_entity_id, canonical_type,
+        canonical_from_entity_id, canonical_to_entity_id, policy_outcome, policy_reason,
+        review_status, resolved_via_trades_as, relationship_id, dedupe_key
+    )
+    SELECT _tenant_id, coalesce(_payload->>'import_source', 'xpm_sync'), nullif(_payload->>'import_run_id', '')::uuid,
+           s.raw_type, s.from_uuid, c1.name, s.to_uuid, c2.name,
+           jsonb_build_object('contract', 'legacy', 'type', s.raw_type, 'start_date', s.start_date, 'end_date', s.end_date),
+           s.from_type, s.to_type, s.raw_type IN ('spouse','parent','child'), false,
+           s.raw_from_id, s.raw_to_id,
+           CASE WHEN s.outcome IN ('valid','reverse','resolve_sole_trader','review') THEN s.rtype END,
+           CASE WHEN s.ok THEN s.from_id END, CASE WHEN s.ok THEN s.to_id END,
+           coalesce(s.outcome, 'review'), coalesce(s.reason, 'unresolved_endpoint'),
+           CASE WHEN s.ok AND s.rel_id IS NOT NULL THEN 'not_required'
+                WHEN s.outcome IN ('invalid','deprecated') THEN 'rejected'
+                ELSE 'pending' END,
+           false, s.rel_id,
+           md5(concat_ws('|', 'legacy', s.raw_type, s.from_uuid, s.to_uuid))
+    FROM _sr s
+    LEFT JOIN _c c1 ON c1.uuid = s.from_uuid
+    LEFT JOIN _c c2 ON c2.uuid = s.to_uuid
+    ON CONFLICT (tenant_id, import_run_id, dedupe_key)
+      WHERE import_run_id IS NOT NULL AND dedupe_key IS NOT NULL DO NOTHING;
+    GET DIAGNOSTICS _ev_written = ROW_COUNT;
+  ELSE
+    -- Evidence drafts from the Edge Function (one per raw XPM fact). Identifiers
+    -- are XPM UUIDs (or entity ids for Trades As owners).
+    WITH x AS (
+      SELECT d.*,
+             coalesce((SELECT entity_id FROM _c WHERE uuid = d.proposed_from_entity_id),
+                      public.xpm_resolve_entity_ref(_tenant_id, d.proposed_from_entity_id)) AS pf,
+             coalesce((SELECT entity_id FROM _c WHERE uuid = d.proposed_to_entity_id),
+                      public.xpm_resolve_entity_ref(_tenant_id, d.proposed_to_entity_id)) AS pt,
+             coalesce((SELECT entity_id FROM _c WHERE uuid = d.canonical_from_entity_id),
+                      public.xpm_resolve_entity_ref(_tenant_id, d.canonical_from_entity_id)) AS cf,
+             coalesce((SELECT entity_id FROM _c WHERE uuid = d.canonical_to_entity_id),
+                      public.xpm_resolve_entity_ref(_tenant_id, d.canonical_to_entity_id)) AS ct
+      FROM jsonb_to_recordset(_payload->'evidence') AS d(
+             raw_relationship_label text, raw_from_identifier text, raw_from_name text, raw_to_identifier text,
+             raw_to_name text, raw_payload jsonb, raw_from_entity_type text, raw_to_entity_type text,
+             direction_known boolean, entity_type_provisional boolean, proposed_from_entity_id text,
+             proposed_to_entity_id text, canonical_type text, canonical_from_entity_id text,
+             canonical_to_entity_id text, policy_outcome text, policy_reason text, review_status text,
+             resolved_via_trades_as boolean)
+    )
+    INSERT INTO public.relationship_import_evidence (
+        tenant_id, import_source, import_run_id, raw_relationship_label,
+        raw_from_identifier, raw_from_name, raw_to_identifier, raw_to_name, raw_payload,
+        raw_from_entity_type, raw_to_entity_type, direction_known, entity_type_provisional,
+        proposed_from_entity_id, proposed_to_entity_id, canonical_type,
+        canonical_from_entity_id, canonical_to_entity_id, policy_outcome, policy_reason,
+        review_status, resolved_via_trades_as, relationship_id, dedupe_key
+    )
+    SELECT _tenant_id, coalesce(_payload->>'import_source', 'xpm_sync'), nullif(_payload->>'import_run_id', '')::uuid,
+           x.raw_relationship_label, x.raw_from_identifier, x.raw_from_name, x.raw_to_identifier, x.raw_to_name, x.raw_payload,
+           x.raw_from_entity_type, x.raw_to_entity_type, coalesce(x.direction_known, false), coalesce(x.entity_type_provisional, false),
+           x.pf, x.pt, x.canonical_type, x.cf, x.ct,
+           x.policy_outcome, x.policy_reason,
+           CASE WHEN coalesce(x.review_status, 'pending') = 'not_required' AND rel.id IS NULL THEN 'pending'
+                ELSE coalesce(x.review_status, 'pending') END,
+           coalesce(x.resolved_via_trades_as, false), rel.id,
+           md5(concat_ws('|', 'canonical_v1', x.raw_relationship_label, x.raw_from_identifier, x.raw_to_identifier, x.canonical_type))
+    FROM x
+    LEFT JOIN LATERAL (
+      SELECT e.id FROM public.relationships e
+      WHERE e.tenant_id = _tenant_id AND e.deleted_at IS NULL AND x.canonical_type IS NOT NULL
+        AND e.relationship_type::text = x.canonical_type
+        AND ((e.from_entity_id = x.cf AND e.to_entity_id = x.ct)
+          OR (x.canonical_type = 'spouse' AND e.from_entity_id = x.ct AND e.to_entity_id = x.cf))
+      LIMIT 1
+    ) rel ON true
+    ON CONFLICT (tenant_id, import_run_id, dedupe_key)
+      WHERE import_run_id IS NOT NULL AND dedupe_key IS NOT NULL DO NOTHING;
+    GET DIAGNOSTICS _ev_written = ROW_COUNT;
+  END IF;
 
   RETURN jsonb_build_object(
     'entitiesCreated', _ent_created,
@@ -544,6 +653,8 @@ BEGIN
     'relationshipsCreated', _rel_created,
     'relationshipsSkipped', _rel_skipped,
     'relationshipsReoriented', _rel_flipped,
+    'contract', _contract,
+    'evidenceWritten', _ev_written,
     'warnings', _warnings
   );
 END;
