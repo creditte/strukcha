@@ -1,11 +1,11 @@
 /**
- * Canonical Entity & Relationship Policy (Rulebook v1) — Phase 1 foundation.
+ * Canonical Entity & Relationship Policy (Rulebook v1).
  *
  * SINGLE application authority for relationship validity. It returns a
  * structured evaluation, never a bare boolean, so callers can tell "valid"
  * apart from "needs a person to look at it".
  *
-  * Shared by the browser (via src/lib/relationshipPolicy.ts) and Edge Functions.
+ * Shared by the browser (via src/lib/relationshipPolicy.ts) and Edge Functions.
  * The SQL twin is public.relationship_policy_evaluate() in
  * supabase/pending-migrations/phase1/002_relationship_policy_foundation.sql.
  * Both must agree with src/test/fixtures/relationship-policy-vectors.json.
