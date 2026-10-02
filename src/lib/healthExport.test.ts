@@ -42,7 +42,7 @@ describe("missing appointor", () => {
 
 describe("export blocking", () => {
   const nonBlocking = ["missing_appointer", "missing_trustee", "missing_member", "missing_directors",
-    "missing_shareholders", "missing_ownership_percent", "missing_identifiers", "unclassified", "orphan_entity"];
+    "missing_shareholders", "ownership_no_percent", "ownership_incomplete", "ownership_under", "missing_identifiers", "unclassified", "orphan_entity"];
 
   it("missing/incomplete facts never block", () => {
     for (const c of nonBlocking) expect(isExportBlockingIssue(iss(c))).toBe(false);
