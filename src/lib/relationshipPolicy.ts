@@ -264,8 +264,11 @@ export function evaluateRelationship(
   if (fwd.result === "resolve") return out("resolve_sole_trader", fwd.reason);
   if (fwd.result === "review") return out("review", fwd.reason);
 
-  // Forward invalid: only flip when the rule allows it and the flip is clean.
-  if (rule.autoReverse) {
+  // Forward invalid: only flip when the rule allows it, the given target is
+  // itself wrong for the rule (so the input is plausibly just backwards), and
+  // the flip is clean. If the target already fits, the source is wrong — that
+  // is not a direction error and must not be "fixed" by guessing.
+  if (rule.autoReverse && checkTarget(rule, tc).result === "no") {
     if (rev.result === "ok") return out("reverse", "auto_reversed", true);
     if (rev.result === "resolve") return out("resolve_sole_trader", rev.reason, true);
     if (rev.result === "review") return out("review", rev.reason, true);
