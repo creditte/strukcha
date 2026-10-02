@@ -33,7 +33,6 @@ const WHY_IT_MATTERS: Record<string, string> = {
   missing_shareholder: "No shareholder is recorded in strukcha. Confirm whether the structure data is complete.",
   circular_ownership: "The recorded ownership forms a loop, which is usually a data-entry error.",
   unclassified: "No entity type is recorded. Classify it to complete the structure data.",
-  duplicates_detected: "Duplicate entities can cause incorrect relationship mapping and inflated counts. Merge them to keep data clean.",
 };
 
 function IssueRow({ issue, onSelect }: { issue: ValidationIssue; onSelect?: (id: string) => void }) {
