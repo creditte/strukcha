@@ -23,27 +23,31 @@ interface Props {
 const FIXABLE_CODES = new Set(["unclassified", "missing_identifiers"]);
 
 const SEVERITY_CONFIG: Record<string, { icon: typeof AlertCircle; label: string; color: string }> = {
-  critical: { icon: AlertCircle, label: "Critical", color: "text-red-600 dark:text-red-400" },
-  gap: { icon: AlertTriangle, label: "Needs attention", color: "text-amber-600 dark:text-amber-400" },
-  minor: { icon: Info, label: "Minor", color: "text-muted-foreground" },
-  info: { icon: Info, label: "Info", color: "text-muted-foreground" },
+  critical: { icon: AlertCircle, label: "Conflicting data", color: "text-red-600 dark:text-red-400" },
+  gap: { icon: AlertTriangle, label: "Review", color: "text-amber-600 dark:text-amber-400" },
+  info: { icon: Info, label: "Information", color: "text-muted-foreground" },
 };
 
 function getHumanIssueTitle(issue: ScoringIssue): string {
   switch (issue.code) {
     case "unclassified": return "Missing entity type";
-    case "missing_trustee": return "No trustee assigned";
+    case "missing_trustee": return "No trustee recorded";
     case "missing_appointer": return "No appointor recorded";
-    case "missing_member": return "No members assigned";
+    case "missing_member": return "No member recorded";
     case "missing_directors": return "No directors recorded";
     case "missing_shareholders": return "No shareholders recorded";
-    case "missing_unit_holder": return "No unit holders recorded";
-    case "missing_ownership_percent": return "Ownership % not recorded";
+    case "missing_unit_holders": return "No unit holders recorded";
+    case "missing_partners": return "No partners recorded";
+    case "missing_trades_as_owner": return "No Trades As owner recorded";
+    case "multiple_trades_as_owners": return "Multiple Trades As owners";
+    case "invalid_relationship_direction": return "Conflicting relationship";
+    case "ownership_incomplete": return "Some ownership % blank";
+    case "ownership_under": return "Ownership below 100%";
+    case "ownership_no_percent": return "No ownership % recorded";
     case "ownership_exceeds": return "Ownership exceeds 100%";
     case "orphan_entity": return "Disconnected entity";
     case "duplicate_relationship": return "Duplicate relationship";
     case "circular_ownership": return "Circular ownership";
-    case "no_corporate_trustee": return "No corporate trustee";
     case "missing_identifiers": return "Missing ABN/ACN";
     default: return issue.message;
   }
@@ -52,18 +56,21 @@ function getHumanIssueTitle(issue: ScoringIssue): string {
 function getHumanIssueDescription(issue: ScoringIssue): string {
   switch (issue.code) {
     case "unclassified": return `Set the entity type for "${issue.entity_name}" to improve structure clarity.`;
-    case "missing_trustee": return `"${issue.entity_name}" needs a trustee. Add one from the structure diagram.`;
-    case "missing_appointer": return `"${issue.entity_name}" needs an appointor. Add one from the structure diagram.`;
-    case "missing_member": return `"${issue.entity_name}" needs members. Add them from the structure diagram.`;
-    case "missing_directors": return `"${issue.entity_name}" needs directors. Add them from the structure diagram.`;
-    case "missing_shareholders": return `"${issue.entity_name}" needs shareholders. Add them from the structure diagram.`;
-    case "missing_unit_holder": return `"${issue.entity_name}" needs unit holders. Add them from the structure diagram.`;
-    case "missing_ownership_percent": return `Record the ownership percentage for this relationship.`;
+    case "missing_trustee": return issue.message;
+    case "missing_appointer": return issue.message;
+    case "missing_member": return issue.message;
+    case "missing_directors": return issue.message;
+    case "missing_shareholders": return issue.message;
+    case "missing_unit_holders":
+    case "missing_partners":
+    case "missing_trades_as_owner":
+    case "ownership_incomplete":
+    case "ownership_under":
+      return issue.message;
     case "ownership_exceeds": return `Total ownership for "${issue.entity_name}" exceeds 100%. Review shareholder percentages.`;
     case "orphan_entity": return `"${issue.entity_name}" has no connections. Link it or remove it from the structure.`;
     case "duplicate_relationship": return `Remove the duplicate relationship to clean up the structure.`;
     case "circular_ownership": return `Break the circular ownership chain to fix this issue.`;
-    case "no_corporate_trustee": return `Add a corporate trustee to "${issue.entity_name}" for full score.`;
     case "missing_identifiers": return `Add an ABN or ACN to "${issue.entity_name}" for data completeness.`;
     default: return issue.message;
   }

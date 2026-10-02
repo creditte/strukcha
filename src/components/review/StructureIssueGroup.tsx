@@ -19,22 +19,16 @@ const SEVERITY_STYLES: Record<
   { label: string; icon: typeof AlertCircle; iconClass: string; badgeClass: string }
 > = {
   critical: {
-    label: "Critical",
+    label: "Conflicting data",
     icon: AlertCircle,
     iconClass: "text-destructive",
     badgeClass: "bg-destructive/10 text-destructive",
   },
   gap: {
-    label: "Warning",
+    label: "Review",
     icon: AlertTriangle,
     iconClass: "text-warning",
     badgeClass: "bg-warning/10 text-warning",
-  },
-  minor: {
-    label: "Minor",
-    icon: CircleDot,
-    iconClass: "text-muted-foreground",
-    badgeClass: "bg-muted text-muted-foreground",
   },
 };
 

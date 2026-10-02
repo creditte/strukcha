@@ -34,7 +34,7 @@ import StructureIssueGroup from "@/components/review/StructureIssueGroup";
 import { useClientHealthReview } from "@/hooks/useClientHealthReview";
 import type { StructureIssue } from "@/hooks/useClientHealthReview";
 
-type SeverityFilter = "all" | "critical" | "gap" | "minor";
+type SeverityFilter = "all" | "critical" | "gap";
 type SortMode = "most" | "critical" | "name";
 
 const PAGE_SIZE = 10;
@@ -65,12 +65,11 @@ export default function Review() {
 
   /* Severity counts always reflect the full, unfiltered set */
   const severityCounts = useMemo(() => {
-    const counts = { all: 0, critical: 0, gap: 0, minor: 0 };
+    const counts = { all: 0, critical: 0, gap: 0 };
     for (const issue of review?.allIssues ?? []) {
       counts.all += 1;
       if (issue.severity === "critical") counts.critical += 1;
       else if (issue.severity === "gap") counts.gap += 1;
-      else counts.minor += 1;
     }
     return counts;
   }, [review?.allIssues]);
@@ -155,9 +154,8 @@ export default function Review() {
 
   const SEVERITY_TABS: { value: SeverityFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: severityCounts.all },
-    { value: "critical", label: "Critical", count: severityCounts.critical },
-    { value: "gap", label: "Warning", count: severityCounts.gap },
-    { value: "minor", label: "Minor", count: severityCounts.minor },
+    { value: "critical", label: "Conflicting data", count: severityCounts.critical },
+    { value: "gap", label: "Review", count: severityCounts.gap },
   ];
 
 
@@ -365,7 +363,7 @@ export default function Review() {
                       <DropdownMenuSeparator />
                       <DropdownMenuLabel className="text-xs">Sort by</DropdownMenuLabel>
                       <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v as SortMode)}>
-                        <DropdownMenuRadioItem value="critical">Critical first</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="critical">Conflicting data first</DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="most">Most items first</DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="name">Name A–Z</DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
