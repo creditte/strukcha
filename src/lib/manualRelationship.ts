@@ -119,8 +119,20 @@ export async function planNewRelationship(
   return { ok: true, edge, note };
 }
 
-/** Changing the type of an existing row keeps its endpoints; must be valid as stored. */
-export function planTypeChange(newType: string, from: PlanEntity, to: PlanEntity, siblings: ExistingRelationship[], selfId: string): PlanResult {
+/**
+ * Changing the type of an existing row keeps its endpoints; must be valid as stored.
+ * Only when the new type is Trades As does this query (lazily, via deps) for the
+ * global one-owner-per-Sole-Trader rule, because the existing owner may sit in
+ * another structure that `siblings` does not contain.
+ */
+export async function planTypeChange(
+  newType: string,
+  from: PlanEntity,
+  to: PlanEntity,
+  siblings: ExistingRelationship[],
+  selfId: string,
+  deps: Pick<PlanDeps, "lookupTradesAsOwner">,
+): Promise<PlanResult> {
   if (!CREATABLE_RELATIONSHIP_TYPES.includes(newType)) return invalidFail("This relationship type can't be selected.");
   const e = evaluateRelationship(newType, from.entity_type, to.entity_type);
   if (e.outcome !== "valid") {
@@ -129,6 +141,14 @@ export function planTypeChange(newType: string, from: PlanEntity, to: PlanEntity
   }
   const edge = { type: newType, fromId: from.id, toId: to.id };
   if (isDuplicate(edge, siblings, selfId)) return { ok: false, kind: "duplicate", title: "Already exists", description: "This relationship already exists." };
+  if (newType === "trades_as") {
+    // The row being edited is not Trades As yet, so any active owner is a different fact.
+    const owner = await deps.lookupTradesAsOwner(to.id);
+    if (owner.status === "unavailable") return reviewFail("Needs review: Trades As links can't be checked or saved yet.");
+    if (owner.status !== "none") {
+      return { ok: false, kind: "duplicate", title: "Already has an owner", description: "This sole trader already has an individual linked with Trades As. A sole trader has exactly one." };
+    }
+  }
   return { ok: true, edge };
 }
 

@@ -17,6 +17,7 @@ import {
 } from "@/lib/relationshipRules";
 import { CREATABLE_RELATIONSHIP_TYPES, evaluateRelationship } from "@/lib/relationshipPolicy";
 import { planReverse, planTypeChange } from "@/lib/manualRelationship";
+import { manualRelationshipDeps } from "@/lib/manualRelationshipDeps";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
 
@@ -71,7 +72,7 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
   const handleSave = async () => {
     if (!fromEntity || !toEntity) return;
     if (editType !== relationship.relationship_type) {
-      const plan = planTypeChange(editType, fromEntity, toEntity, siblings, relationship.id);
+      const plan = await planTypeChange(editType, fromEntity, toEntity, siblings, relationship.id, manualRelationshipDeps);
       if (!plan.ok) {
         toast({ title: plan.title, description: plan.description, variant: "destructive" });
         return;
