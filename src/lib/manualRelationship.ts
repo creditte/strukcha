@@ -42,9 +42,17 @@ export interface PlanDeps {
   getEntityType: (id: string) => Promise<string | null>;
 }
 
-export type PlanResult =
-  | { ok: true; edge: CanonicalEdge; note?: string }
-  | { ok: false; kind: "review" | "invalid" | "duplicate"; title: string; description: string };
+/** Single shape (the app compiles without strictNullChecks, so no union narrowing). */
+export interface PlanResult {
+  ok: boolean;
+  /** Present when ok. */
+  edge?: CanonicalEdge;
+  note?: string;
+  /** Present when not ok. */
+  kind?: "review" | "invalid" | "duplicate";
+  title?: string;
+  description?: string;
+}
 
 const reviewFail = (description: string): PlanResult => ({ ok: false, kind: "review", title: "Needs review", description });
 const invalidFail = (description: string): PlanResult => ({ ok: false, kind: "invalid", title: "Invalid relationship", description });
