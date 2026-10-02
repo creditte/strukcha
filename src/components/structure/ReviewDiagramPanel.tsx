@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { HealthScoreV2, ScoringIssue } from "@/lib/structureScoring";
+import { groupIssuesBySeverity } from "@/lib/structureScoring";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/integrations/supabase/client";
 
