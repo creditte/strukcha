@@ -253,7 +253,7 @@ await ins("trades_as", p, st);
 await expectReject("reversed director", () => ins("director", c, p));
 await expectReject("review trustee → generic trust", () => ins("trustee", c, g));
 await expectReject("settlor", () => ins("settlor", p, g));
-const [{ id: legacy }] = await q("SELECT id FROM relationships WHERE deleted_at IS NULL LIMIT 1");
+const [{ id: legacy }] = (await rels("director", p, c)).filter((r) => r.deleted_at === null);
 await q("UPDATE relationships SET ownership_percent = 10 WHERE id = $1", [legacy]); // metadata-only edit allowed
 await q("UPDATE relationships SET deleted_at = now() WHERE id = $1", [legacy]); // soft delete allowed
 console.log("trigger: rejects non-canonical rows, allows metadata edits and soft deletes");

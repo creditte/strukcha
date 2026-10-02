@@ -53,18 +53,23 @@ Planned Edge payloads: sync sends `rels: [{type, from_uuid, to_uuid, start_date?
 ## Activation runbook (approved separately; nothing here is done yet)
 Read-only checks: `docs/relationship-activation-preflight.sql` (READ ONLY, not a migration).
 
-1. Pause XPM jobs (cron + manual sync/import buttons). Verify no active job (preflight block 11 = 0 rows).
-2. Run the preflight; record counts.
-3. Apply `phase1/001` (on its own), then `phase1/002`, then `phase2/011`. *Rollback boundary A:* all additive — new enum value, functions, empty table. Rollback = leave unused (enum values can't be dropped; harmless).
-4. Apply `phase2/013` (bridge). Smoke-test the **legacy** contract: one small CSV import and one single-group sync; check counts match before, and evidence rows appear once. *Rollback boundary B:* re-apply the previous function bodies from `supabase/migrations/20260909202705_…` and `20260917103909_…`.
-5. Deploy the three Edge integrations (`sync-xpm`, `import-xpm`, `import-xpm-group`) **together** as one step, deleting `_shared/xpm-relationships.ts`. Smoke-test the **canonical** contract: `contract = canonical_v1`, `evidenceWritten` = raw facts, no derived duplicates. *Rollback boundary C:* redeploy the previous Edge code; 013 still accepts legacy payloads.
-6. Resume XPM jobs.
-7. Remediate current live rows (separately approved: Spouse duplicates, Child → Parent incl. collisions, deterministic reversals, invalid rows, Sole Trader sources). History rows are not touched.
-8. Re-run preflight blocks 1–2; only when both are 0, run `phase2/010` (CONCURRENTLY, outside a transaction). *Rollback:* drop the two indexes.
-9. Apply `phase2/012` last. *Rollback boundary D:* re-apply the previous `validate_relationship_rules()` / `rel_direction_valid()` bodies.
-10. Re-baseline Health scoring.
+XPM jobs, cron and the sync/import buttons stay **paused from step 1 until step 11**. The only XPM traffic in between is the operator's own controlled smoke tests on a test tenant.
 
-Between steps 5 and 9 the old trigger still refuses some rows the new policy allows (e.g. Partner → Partnership, Trades As); they stay as `pending` evidence and are created on the next sync after 012.
+"Current live" in the preflight = not soft-deleted, not ended (`end_date IS NULL`), and both endpoints not deleted or archived. Everything else is history. Blocks 4, 6 and 8a are legacy diagnostics; blocks 8b and 10 need `phase1/002` and are authoritative.
+
+1. Pause XPM jobs (cron + manual sync/import UI). Verify no active job (preflight block 11 = 0 rows).
+2. Run the preflight (blocks 0–9, 11); record counts.
+3. Apply `phase1/001` (on its own), then `phase1/002`, then `phase2/011`. Run preflight blocks 8b and 10 and record them. *Rollback boundary A:* all additive (new enum value, functions, empty table). Rollback = leave unused; enum values can't be dropped, which is harmless.
+4. Apply `phase2/013` (bridge). Controlled smoke test of the **legacy** contract: one small CSV import and one single-group sync on a test tenant; counts match before; evidence written once. *Rollback boundary B:* re-apply the previous function bodies from `supabase/migrations/20260909202705_…` and `20260917103909_…`.
+5. Deploy the three Edge integrations (`sync-xpm`, `import-xpm`, `import-xpm-group`) **together** as one step, deleting `_shared/xpm-relationships.ts`. Controlled smoke test of the **canonical** contract: `contract = canonical_v1`, `evidenceWritten` = raw facts, no derived duplicates. *Rollback boundary C:* redeploy the previous Edge code; 013 still accepts legacy payloads.
+6. Remediate current live rows (separately approved): Spouse duplicates, Child → Parent (incl. collisions), deterministic reversals and invalid rows per block 10, Sole Trader sources. History rows are not touched.
+7. Re-run preflight blocks 1–2; only when both are 0, run `phase2/010` (CONCURRENTLY, outside a transaction). *Rollback:* drop the two indexes.
+8. Apply `phase2/012`. *Rollback boundary D:* re-apply the previous `validate_relationship_rules()` / `rel_direction_valid()` bodies.
+9. Final controlled smoke test: one canonical sync and one CSV import on a test tenant. Policy-valid rows the old trigger refused (e.g. Partner → Partnership, Trades As) must now be created and their evidence linked. Re-run preflight block 10: no current-live row should be `reverse` or `invalid`.
+10. Re-baseline Health scoring.
+11. Resume XPM jobs and the import UI.
+
+Until step 8 the old trigger can refuse rows the new policy allows. Keeping XPM paused until step 11 means no real import ever runs in that window; if it is reached during a smoke test, the rows stay `pending` evidence. This is not normal operation and must not be relied on.
 
 No pending file updates, backfills or deletes existing rows.
 
