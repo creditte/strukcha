@@ -772,7 +772,7 @@ async function fetchGroupSlice(
 
 /**
  * Fetch one group's membership from XPM. No database work happens here: group
- * rows are linked in batches (see `linkGroupBatch`) so the per-group database
+ * rows are reconciled per group (see `reconcileOneGroup`) so the per-group database
  * round-trip is off the critical path and XPM latency is the only cost.
  */
 async function fetchGroupMembers(
@@ -781,7 +781,7 @@ async function fetchGroupMembers(
   group: { uuid: string; name: string },
   p: Progress,
 ): Promise<{ uuid: string; name: string; hash: string; members: string[] } | null> {
-  let detail: any = await xpmGetXml(`/clientgroup.api/get/${group.uuid}`, accessToken, xeroTenantId);
+  let detail: any = await xpmGetXml(`/clientgroup.api/get/${group.uuid}`, accessToken, xeroTenantId, XPM_MAX_ATTEMPTS);
   if (!detail) return null;
   const members = xmlArray(detail?.Response?.Group?.Clients, "Client")
     .map((m: any) => xmlText(m, "UUID"))
