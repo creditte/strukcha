@@ -13,7 +13,6 @@ INSERT INTO _r SELECT 'user: reads only own role rows', (SELECT bool_and(user_id
 INSERT INTO _r SELECT 'user: cannot probe admin via has_role', NOT public.has_role('8e54bf79-9818-43d3-9af4-ff662e8b0331', 'admin');
 INSERT INTO _r SELECT 'user: cannot probe other firm via has_role', NOT public.has_role('3442ae1c-b115-42eb-85ad-f9f59ef76ea7', 'admin');
 INSERT INTO _r SELECT 'user: role-name list hidden', (SELECT count(*) = 0 FROM public.roles);
-WITH ins AS (INSERT INTO public.user_roles(user_id, role) SELECT 'ce2a9860-a759-4f63-a814-bd3ab615f4d1', 'admin' WHERE false RETURNING 1) SELECT 1;
 RESET ROLE;
 
 -- user cannot grant themselves admin (RLS rejects)
