@@ -7,7 +7,14 @@ import {
   normaliseXpmRelationship,
   type EvidenceDraft,
 } from "../_shared/xpm-policy-normalise.ts";
-import { policyMetadataFields, relationshipIdentityKey } from "../_shared/relationship-policy.ts";
+import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
+import { figuresForEdge, normaliseXpmOwnership, type XpmFigures } from "../_shared/xpm-ownership.ts";
+import {
+  hashGroupMembers,
+  planGroupReconciliation,
+  type GroupState,
+  type ReconcilePlan,
+} from "../_shared/xpm-group-reconcile.ts";
 import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
@@ -73,6 +80,14 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const groupUuid = body.group_uuid;
     const groupName = body.group_name || "XPM Group";
+    // "preview" is write-free; "apply" needs an explicit confirmation. Callers
+    // that send neither (an out-of-date page) are refused rather than applied.
+    const mode = body.mode;
+    const allowBesideManual = body.allow_create_beside_manual === true;
+    const expectedStructureId: string | null | undefined = "expected_structure_id" in body ? body.expected_structure_id : undefined;
+    if (mode !== "preview" && mode !== "apply") {
+      return new Response(JSON.stringify({ code: "preview_required", error: "Please refresh the page to review changes before opening this group." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     if (!groupUuid) {
       return new Response(JSON.stringify({ error: "group_uuid is required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -132,16 +147,18 @@ Deno.serve(async (req) => {
           const rc = rel?.RelatedClient;
           const relUuid = xmlText(rc, "UUID") || xmlText(rel, "RelatedClientUUID");
           const relName = xmlText(rc, "Name") || xmlText(rel, "RelatedClientName");
-          const pct = parseFloat(xmlText(rel, "Percentage") || xmlText(rel, "OwnershipPercentage"));
-          const shares = parseFloat(xmlText(rel, "NumberOfShares"));
+          const fig = normaliseXpmOwnership({
+            shares: xmlText(rel, "NumberOfShares"),
+            percentage: xmlText(rel, "Percentage") || xmlText(rel, "OwnershipPercentage"),
+          });
 
           if (relUuid && typeRaw) {
             rels.push({
               typeRaw,
               relatedUuid: relUuid,
               relatedName: relName,
-              percentage: isNaN(pct) ? null : pct,
-              shares: isNaN(shares) ? null : shares,
+              percentage: fig.percent,
+              shares: fig.units,
             });
           }
         }
@@ -161,251 +178,232 @@ Deno.serve(async (req) => {
       for (const r of results) if (r) allFetched.push(r);
     }
 
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
     // Archived/deleted XPM clients stay in the database as history but are kept
     // out of the active diagram, matching the full sync's behaviour.
     const inactiveUuids = allFetched.filter((c) => c.isArchived || c.isDeleted).map((c) => c.uuid);
     const clients: ClientData[] = allFetched.filter((c) => !c.isArchived && !c.isDeleted);
-    if (inactiveUuids.length > 0) {
-      console.log(`[import-xpm-group] Excluding ${inactiveUuids.length} archived/deleted member(s) from the active structure`);
-      for (let i = 0; i < inactiveUuids.length; i += 80) {
-        await supabase
-          .from("entities")
-          .update({ is_archived: true })
-          .eq("tenant_id", tenantId)
-          .in("xpm_uuid", inactiveUuids.slice(i, i + 80));
-      }
-    }
-
-    // Reuse existing XPM structure for this group name when re-opening in editor
-    const { data: existingStruct } = await supabase
-      .from("structures")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("name", groupName)
-      .eq("source", "xpm")
-      .is("deleted_at", null)
-      .maybeSingle();
-
-    let structureId: string;
-
-    if (existingStruct) {
-      structureId = existingStruct.id;
-      // Clear prior links so re-import reflects latest XPM data
-      await supabase.from("structure_relationships").delete().eq("structure_id", structureId);
-      await supabase.from("structure_entities").delete().eq("structure_id", structureId);
-    } else {
-      const { data: structure, error: structErr } = await supabase.from("structures").insert({
-        name: groupName,
-        tenant_id: tenantId,
-        layout_mode: "auto",
-        source: "xpm",
-      }).select("id").single();
-
-      if (structErr || !structure) {
-        return new Response(JSON.stringify({ error: "Failed to create structure", detail: structErr?.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      structureId = structure.id;
-    }
-
-    // Upsert entities (keyed by xpm_uuid to avoid duplicates)
-    const xpmUuidToEntityId: Record<string, string> = {};
-
-    // Check for existing entities with these xpm_uuids
-    // `.in(...)` filters live in the request URL — keep batches small so long
-    // UUID lists can't blow the URL limit (HTTP2 protocol error).
+    const memberHash = await hashGroupMembers(groupName, memberUuids);
     const FILTER_BATCH = 80;
-    const uuidList = clients.map((c) => c.uuid).filter(Boolean);
-    const existingTypes = new Map<string, string>();
-    for (let i = 0; i < uuidList.length; i += FILTER_BATCH) {
-      const { data: existingEntities } = await supabase
-        .from("entities")
-        .select("id, xpm_uuid, entity_type, is_archived")
-        .eq("tenant_id", tenantId)
-        .in("xpm_uuid", uuidList.slice(i, i + FILTER_BATCH));
-      for (const e of existingEntities ?? []) {
-        if (!e.xpm_uuid) continue;
-        xpmUuidToEntityId[e.xpm_uuid] = e.id;
-        existingTypes.set(e.xpm_uuid, e.entity_type);
-      }
-    }
 
-    // Re-classify stored records that were saved before XPM's own wording was
-    // understood (a trust left as Unclassified), and un-archive members that are
-    // active in XPM again.
-    for (const c of clients) {
-      const entityId = xpmUuidToEntityId[c.uuid];
-      if (!entityId) continue;
-      const patch: Record<string, unknown> = { is_archived: false };
-      if (c.entityType !== "Unclassified" && existingTypes.get(c.uuid) === "Unclassified") {
-        patch.entity_type = c.entityType;
-      }
-      await supabase.from("entities").update(patch).eq("id", entityId);
-    }
-
-    // Create missing entities
-    const newEntities = clients.filter(c => !xpmUuidToEntityId[c.uuid]);
-    if (newEntities.length > 0) {
-      const { data: inserted, error: entErr } = await supabase.from("entities").insert(
-        newEntities.map(c => ({
-          name: c.name,
-          entity_type: c.entityType,
-          tenant_id: tenantId,
-          source: "imported" as const,
-          abn: c.abn,
-          acn: c.acn,
-          xpm_uuid: c.uuid,
-        }))
-      ).select("id, xpm_uuid");
-
-      if (entErr) {
-        console.error("[import-xpm-group] Entity insert error:", entErr);
-      }
-
-      for (const e of inserted ?? []) {
-        if (e.xpm_uuid) xpmUuidToEntityId[e.xpm_uuid] = e.id;
-      }
-    }
-
-    // Link entities to structure
-    const structureEntities = Object.values(xpmUuidToEntityId).map(entityId => ({
-      structure_id: structureId,
-      entity_id: entityId,
-    }));
-
-    if (structureEntities.length > 0) {
-      await supabase.from("structure_entities").insert(structureEntities);
-    }
-
-    // Relationships go through the canonical policy (Rulebook v1). Every raw
-    // XPM fact between two group members gets exactly one evidence row; only
-    // canonical edges are written, one at a time so a single refusal (e.g. the
-    // database check) never blocks the rest.
-    const memberSet = new Set(clients.map((c) => c.uuid));
-    const entityTypes = new Map<string, string>();
-    const provisionalTypes = new Set<string>();
-    for (const c of clients) {
-      const id = xpmUuidToEntityId[c.uuid];
-      if (id) entityTypes.set(id, c.entityType);
-    }
-
-    // Load stored entity types — these are what the database check evaluates.
-    const allEntityIds = Object.values(xpmUuidToEntityId);
-    if (allEntityIds.length > 0) {
-      for (let i = 0; i < allEntityIds.length; i += FILTER_BATCH) {
-        const { data: typeRows } = await supabase
+    // ── Read-only lookups (shared by preview and apply) ──────────────
+    const loadEntities = async () => {
+      const map: Record<string, { id: string; type: string; archived: boolean }> = {};
+      const uuidList = allFetched.map((c) => c.uuid).filter(Boolean);
+      for (let i = 0; i < uuidList.length; i += FILTER_BATCH) {
+        const { data, error } = await supabase
           .from("entities")
-          .select("id, entity_type")
-          .in("id", allEntityIds.slice(i, i + FILTER_BATCH));
-        for (const row of typeRows ?? []) {
-          entityTypes.set(row.id, row.entity_type);
+          .select("id, xpm_uuid, entity_type, is_archived")
+          .eq("tenant_id", tenantId)
+          .is("deleted_at", null)
+          .in("xpm_uuid", uuidList.slice(i, i + FILTER_BATCH));
+        if (error) throw new Error(`Entity lookup failed: ${error.message}`);
+        for (const e of data ?? []) if (e.xpm_uuid) map[e.xpm_uuid] = { id: e.id, type: e.entity_type, archived: e.is_archived };
+      }
+      return map;
+    };
+    const loadState = async (): Promise<GroupState> => {
+      const { data, error } = await supabase.rpc("xpm_group_reconcile_state", {
+        _tenant_id: tenantId, _group_uuid: groupUuid, _group_name: groupName, _member_uuids: memberUuids,
+      });
+      if (error) throw new Error(`Group state failed: ${error.message}`);
+      return data as GroupState;
+    };
+
+    /** Canonical edges between active members. Ids are entity ids or `new:<xpm uuid>`. */
+    const buildEdges = async (idOf: (uuid: string) => string | null, storedType: (id: string) => string | undefined) => {
+      const memberSet = new Set(clients.map((c) => c.uuid));
+      const entityTypes = new Map<string, string>();
+      const provisionalTypes = new Set<string>();
+      const nameById = new Map<string, string>();
+      for (const c of clients) {
+        const id = idOf(c.uuid);
+        if (!id) continue;
+        const st = storedType(id);
+        entityTypes.set(id, st && st !== "Unclassified" ? st : c.entityType);
+        nameById.set(id, c.name);
+        const prov = classifyWithProvenance(resolveEntityType, c.businessStructure, c.name);
+        if (prov.provisional && entityTypes.get(id) === prov.entityType) provisionalTypes.add(id);
+      }
+      const soleTraderIds = [...entityTypes].filter(([id, t]) => t === "Sole Trader" && !id.startsWith("new:")).map(([id]) => id);
+      const tradesAs = await loadTradesAsOwners(supabase, tenantId, soleTraderIds, FILTER_BATCH);
+      for (const [id, t] of tradesAs.ownerTypes) if (!entityTypes.has(id)) entityTypes.set(id, t);
+      const ctx = { entityTypes, provisionalTypes, tradesAsOwners: tradesAs.owners };
+
+      const evidenceRows: Array<{ draft: EvidenceDraft; edgeKey: string | null }> = [];
+      const edgeByKey = new Map<string, { type: string; fromId: string; toId: string; figures: XpmFigures | null }>();
+      let skipped = 0;
+      for (const client of clients) {
+        const clientId = idOf(client.uuid);
+        if (!clientId) continue;
+        for (const rel of client.relationships) {
+          if (!memberSet.has(rel.relatedUuid)) continue;
+          const relatedId = idOf(rel.relatedUuid);
+          if (!relatedId) continue;
+          const { evidence, edge } = normaliseXpmRelationship({
+            label: rel.typeRaw,
+            clientId,
+            relatedId,
+            clientName: client.name,
+            relatedName: rel.relatedName || nameById.get(relatedId) || null,
+            payload: { client_uuid: client.uuid, related_uuid: rel.relatedUuid, percentage: rel.percentage, shares: rel.shares },
+          }, ctx);
+          if (!edge) { skipped++; evidenceRows.push({ draft: evidence, edgeKey: null }); continue; }
+          const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
+          evidenceRows.push({ draft: evidence, edgeKey: key });
+          if (!edgeByKey.has(key)) {
+            edgeByKey.set(key, {
+              type: edge.type, fromId: edge.fromId, toId: edge.toId,
+              figures: figuresForEdge(edge.type, entityTypes.get(edge.toId), { units: rel.shares, percent: rel.percentage }),
+            });
+          }
         }
       }
+      return { edgeByKey, evidenceRows, skipped, nameById };
+    };
+
+    const findRel = (state: GroupState, e: { type: string; fromId: string; toId: string }) =>
+      state.relationships.find((r) => r.type === e.type &&
+        ((r.from_id === e.fromId && r.to_id === e.toId) || (e.type === "spouse" && r.from_id === e.toId && r.to_id === e.fromId)));
+
+    const conflictBody = (plan: ReconcilePlan) => ({
+      code: plan.status,
+      error: plan.status === "ambiguous_structure_match"
+        ? `More than one XPM diagram is called "${groupName}". Nothing was changed; please review them.`
+        : `A hand-made diagram called "${groupName}" already exists. Nothing was changed.`,
+      candidates: plan.candidates,
+      same_name_manual: plan.same_name_manual,
+    });
+
+    // ── Preview: guaranteed write-free (selects + a STABLE function only) ──
+    if (mode === "preview") {
+      const ents = await loadEntities();
+      const state = await loadState();
+      const idOf = (u: string) => ents[u]?.id ?? (clients.some((c) => c.uuid === u) ? `new:${u}` : null);
+      const typeById = new Map(Object.values(ents).map((e) => [e.id, e.type]));
+      const { edgeByKey, evidenceRows, skipped, nameById } = await buildEdges(idOf, (id) => typeById.get(id));
+
+      const confirmed = new Set<string>();
+      const figures = new Map<string, XpmFigures>();
+      const newRelationships: unknown[] = [];
+      const nm = (id: string) => nameById.get(id) ?? id;
+      for (const e of edgeByKey.values()) {
+        const r = e.fromId.startsWith("new:") || e.toId.startsWith("new:") ? undefined : findRel(state, e);
+        if (r) { confirmed.add(r.id); if (e.figures) figures.set(r.id, e.figures); }
+        else newRelationships.push({ type: e.type, from: nm(e.fromId), to: nm(e.toId), units: e.figures?.units ?? null, percent: e.figures?.percent ?? null });
+      }
+      // Preview shows what an Open in Editor confirmation would do: active
+      // members as they will be once un-archived by the apply.
+      const activeUuids = new Set(clients.map((c) => c.uuid));
+      const previewState: GroupState = {
+        ...state,
+        members: state.members.map((m) => ({ ...m, is_archived: activeUuids.has(m.xpm_uuid) ? false : true })),
+      };
+      const plan = planGroupReconciliation(previewState, { confirmedRelationshipIds: confirmed, figures, allowCreateBesideManual: allowBesideManual });
+      const entName = new Map<string, string>();
+      for (const m of state.members) if (m.entity_id) entName.set(m.entity_id, m.name ?? m.xpm_uuid);
+      for (const s of state.structure_entities) entName.set(s.entity_id, s.name ?? s.entity_id);
+      const relLabel = (id: string) => {
+        const r = state.relationships.find((x) => x.id === id);
+        return r ? { type: r.type, from: entName.get(r.from_id) ?? r.from_id, to: entName.get(r.to_id) ?? r.to_id, units: r.units, percent: r.percent } : { id };
+      };
+      return json({
+        mode: "preview",
+        status: plan.status,
+        match: plan.match,
+        structure_id: plan.structure_id,
+        group_uuid: groupUuid,
+        group_name: groupName,
+        member_hash: memberHash,
+        ...(plan.status === "ready" ? {} : conflictBody(plan)),
+        summary: {
+          newEntities: clients.filter((c) => !ents[c.uuid]).map((c) => c.name),
+          membersToAdd: plan.add_members.map((id) => entName.get(id) ?? id),
+          membersToRemove: plan.remove_members.map((id) => entName.get(id) ?? id),
+          archivedInXpm: allFetched.filter((c) => c.isArchived || c.isDeleted).map((c) => c.name),
+          linksToAdd: plan.add_links.map(relLabel),
+          linksToRemove: plan.remove_links.map(relLabel),
+          newRelationships,
+          metadataUpdates: plan.metadata_updates.map((m) => ({ ...relLabel(m.relationship_id), new_units: m.units, new_percent: m.percent })),
+          preserved: {
+            manualMembers: plan.preserved.manual_members.map((id) => entName.get(id) ?? id),
+            manualLinks: plan.preserved.manual_links.map(relLabel),
+            metadataOverrides: plan.preserved.metadata_overrides.map(relLabel),
+            membersKeptForManualLinks: plan.preserved.members_kept_for_manual_links.map((id) => entName.get(id) ?? id),
+          },
+          evidenceFacts: evidenceRows.length,
+          relationshipsSkipped: skipped,
+        },
+        plan,
+      });
     }
 
-    // A type guessed from the client's name only is provisional: its links are
-    // evidenced as pending review even when canonical.
+    // ── Apply ────────────────────────────────────────────────────────
+    {
+      const pre = planGroupReconciliation(await loadState(), { allowCreateBesideManual: allowBesideManual });
+      if (pre.status !== "ready") return json(conflictBody(pre), 409);
+      if (expectedStructureId !== undefined && (pre.structure_id ?? null) !== (expectedStructureId ?? null)) {
+        return json({ code: "stale_plan", error: "This group changed since the preview. Please review it again." }, 409);
+      }
+    }
+
+    if (inactiveUuids.length > 0) {
+      for (let i = 0; i < inactiveUuids.length; i += FILTER_BATCH) {
+        await supabase.from("entities").update({ is_archived: true })
+          .eq("tenant_id", tenantId).in("xpm_uuid", inactiveUuids.slice(i, i + FILTER_BATCH));
+      }
+    }
+
+    const ents = await loadEntities();
+    // Re-classify Unclassified records and un-archive members active in XPM again.
     for (const c of clients) {
-      const id = xpmUuidToEntityId[c.uuid];
-      if (!id) continue;
-      const prov = classifyWithProvenance(resolveEntityType, c.businessStructure, c.name);
-      if (prov.provisional && entityTypes.get(id) === prov.entityType) provisionalTypes.add(id);
+      const e = ents[c.uuid];
+      if (!e) continue;
+      const patch: Record<string, unknown> = {};
+      if (e.archived) patch.is_archived = false;
+      if (c.entityType !== "Unclassified" && e.type === "Unclassified") patch.entity_type = c.entityType;
+      if (Object.keys(patch).length === 0) continue;
+      await supabase.from("entities").update(patch).eq("id", e.id).eq("tenant_id", tenantId);
+      if (patch.entity_type) e.type = String(patch.entity_type);
+    }
+    const missing = clients.filter((c) => !ents[c.uuid]);
+    if (missing.length > 0) {
+      const { data: inserted, error: entErr } = await supabase.from("entities").insert(
+        missing.map((c) => ({
+          name: c.name, entity_type: c.entityType, tenant_id: tenantId, source: "imported" as const,
+          abn: c.abn, acn: c.acn, xpm_uuid: c.uuid,
+        })),
+      ).select("id, xpm_uuid, entity_type");
+      if (entErr) console.error("[import-xpm-group] Entity insert error:", entErr.message);
+      for (const e of inserted ?? []) if (e.xpm_uuid) ents[e.xpm_uuid] = { id: e.id, type: e.entity_type, archived: false };
     }
 
-    const soleTraderIds = [...entityTypes].filter(([, t]) => t === "Sole Trader").map(([id]) => id);
-    const tradesAs = await loadTradesAsOwners(supabase, tenantId, soleTraderIds, FILTER_BATCH);
-    for (const [id, t] of tradesAs.ownerTypes) if (!entityTypes.has(id)) entityTypes.set(id, t);
-
-    const ctx = { entityTypes, provisionalTypes, tradesAsOwners: tradesAs.owners };
+    const typeById = new Map(Object.values(ents).map((e) => [e.id, e.type]));
+    const { edgeByKey, evidenceRows } = await buildEdges((u) => ents[u]?.id ?? null, (id) => typeById.get(id));
     const importRunId = crypto.randomUUID();
-    const nameById = new Map<string, string>();
-    for (const c of clients) {
-      const id = xpmUuidToEntityId[c.uuid];
-      if (id) nameById.set(id, c.name);
-    }
-
-    const evidenceRows: Array<{ draft: EvidenceDraft; edgeKey: string | null }> = [];
-    const edgeByKey = new Map<string, { type: string; fromId: string; toId: string; percentage: number | null; shares: number | null }>();
     const relIdByKey = new Map<string, string>();
-    const linkedRelIds = new Set<string>();
+    const figures = new Map<string, XpmFigures>();
     let relationshipsCreated = 0;
-    let relationshipsLinked = 0;
     let relationshipsSkipped = 0;
 
-    for (const client of clients) {
-      const clientEntityId = xpmUuidToEntityId[client.uuid];
-      if (!clientEntityId) continue;
-
-      for (const rel of client.relationships) {
-        if (!memberSet.has(rel.relatedUuid)) continue;
-        const relatedEntityId = xpmUuidToEntityId[rel.relatedUuid];
-        if (!relatedEntityId) continue;
-
-        const { evidence, edge } = normaliseXpmRelationship({
-          label: rel.typeRaw,
-          clientId: clientEntityId,
-          relatedId: relatedEntityId,
-          clientName: client.name,
-          relatedName: rel.relatedName || nameById.get(relatedEntityId) || null,
-          payload: {
-            client_uuid: client.uuid,
-            related_uuid: rel.relatedUuid,
-            percentage: rel.percentage,
-            shares: rel.shares,
-          },
-        }, ctx);
-
-        if (!edge) {
-          relationshipsSkipped++;
-          evidenceRows.push({ draft: evidence, edgeKey: null });
-          continue;
-        }
-        // Spouse only is unordered; Partner and every other type keep direction.
-        const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
-        evidenceRows.push({ draft: evidence, edgeKey: key });
-        if (!edgeByKey.has(key)) {
-          edgeByKey.set(key, { ...edge, percentage: rel.percentage, shares: rel.shares });
-        }
-      }
-    }
-
     for (const [key, edge] of edgeByKey) {
-      let relationshipId: string | null = null;
-
-      let existingQuery = supabase
-        .from("relationships")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("relationship_type", edge.type)
-        .is("deleted_at", null);
-      existingQuery = edge.type === "spouse"
-        ? existingQuery.or(
-          `and(from_entity_id.eq.${edge.fromId},to_entity_id.eq.${edge.toId}),and(from_entity_id.eq.${edge.toId},to_entity_id.eq.${edge.fromId})`,
-        )
-        : existingQuery.eq("from_entity_id", edge.fromId).eq("to_entity_id", edge.toId);
-      const { data: existingRel } = await existingQuery.limit(1).maybeSingle();
-
-      if (existingRel) {
-        relationshipId = existingRel.id;
-      } else {
-        // Only types whose policy allows ownership metadata carry it (never Member).
-        const meta = policyMetadataFields(edge.type, entityTypes.get(edge.toId));
-        const [fromId, toId] = edge.type === "spouse" && edge.fromId > edge.toId
-          ? [edge.toId, edge.fromId]
-          : [edge.fromId, edge.toId];
-        const { data: insertedRel, error: relErr } = await supabase
-          .from("relationships")
-          .insert({
-            from_entity_id: fromId,
-            to_entity_id: toId,
-            relationship_type: edge.type,
-            tenant_id: tenantId,
-            source: "imported",
-            ownership_percent: meta.includes("ownership_percent") ? edge.percentage : null,
-            ownership_units: meta.includes("ownership_units") ? edge.shares : null,
-          })
-          .select("id")
-          .single();
-
+      let q = supabase.from("relationships").select("id")
+        .eq("tenant_id", tenantId).eq("relationship_type", edge.type).is("deleted_at", null);
+      q = edge.type === "spouse"
+        ? q.or(`and(from_entity_id.eq.${edge.fromId},to_entity_id.eq.${edge.toId}),and(from_entity_id.eq.${edge.toId},to_entity_id.eq.${edge.fromId})`)
+        : q.eq("from_entity_id", edge.fromId).eq("to_entity_id", edge.toId);
+      const { data: existingRel } = await q.limit(1).maybeSingle();
+      let relationshipId: string | null = existingRel?.id ?? null;
+      if (!relationshipId) {
+        const [fromId, toId] = edge.type === "spouse" && edge.fromId > edge.toId ? [edge.toId, edge.fromId] : [edge.fromId, edge.toId];
+        const { data: insertedRel, error: relErr } = await supabase.from("relationships").insert({
+          from_entity_id: fromId, to_entity_id: toId, relationship_type: edge.type, tenant_id: tenantId,
+          source: "imported", metadata_source: "xpm",
+          ownership_percent: edge.figures?.percent ?? null,
+          ownership_units: edge.figures?.units ?? null,
+        }).select("id").single();
         if (relErr || !insertedRel) {
           console.error("[import-xpm-group] Relationship insert error:", relErr?.message, { type: edge.type, fromId, toId });
           relationshipsSkipped++;
@@ -414,66 +412,55 @@ Deno.serve(async (req) => {
         relationshipId = insertedRel.id;
         relationshipsCreated++;
       }
-
-      if (!relationshipId) continue;
-      relIdByKey.set(key, relationshipId);
-      if (linkedRelIds.has(relationshipId)) continue;
-
-      const { error: linkErr } = await supabase
-        .from("structure_relationships")
-        .upsert(
-          { structure_id: structureId, relationship_id: relationshipId },
-          { onConflict: "structure_id,relationship_id", ignoreDuplicates: true },
-        );
-
-      if (linkErr) {
-        console.error("[import-xpm-group] structure_relationships link error:", linkErr.message);
-        relationshipsSkipped++;
-        continue;
-      }
-
-      linkedRelIds.add(relationshipId);
-      relationshipsLinked++;
+      relIdByKey.set(key, relationshipId!);
+      if (edge.figures) figures.set(relationshipId!, edge.figures);
     }
 
     // Evidence: exactly one row per raw fact, written once per import run.
-    // A canonical fact whose row could not be written stays pending review.
     let evidenceWritten = 0;
     if (evidenceRows.length > 0) {
       const rows = evidenceRows.map(({ draft, edgeKey }) => {
         const relationshipId = edgeKey ? relIdByKey.get(edgeKey) ?? null : null;
         return {
-          ...draft,
-          tenant_id: tenantId,
-          import_source: "xpm_group",
-          import_run_id: importRunId,
+          ...draft, tenant_id: tenantId, import_source: "xpm_group", import_run_id: importRunId,
           relationship_id: relationshipId,
           review_status: draft.review_status === "not_required" && !relationshipId ? "pending" : draft.review_status,
         };
       });
       for (let i = 0; i < rows.length; i += 200) {
-        const { error: evErr, count } = await supabase
-          .from("relationship_import_evidence")
-          .insert(rows.slice(i, i + 200), { count: "exact" });
-        if (evErr) {
-          console.error("[import-xpm-group] Evidence insert error:", evErr.message);
-        } else {
-          evidenceWritten += count ?? 0;
-        }
+        const { error: evErr, count } = await supabase.from("relationship_import_evidence").insert(rows.slice(i, i + 200), { count: "exact" });
+        if (evErr) console.error("[import-xpm-group] Evidence insert error:", evErr.message);
+        else evidenceWritten += count ?? 0;
       }
     }
 
-    console.log(`[import-xpm-group] Structure ${structureId}: ${Object.keys(xpmUuidToEntityId).length} entities, ${relationshipsLinked} relationships linked (${relationshipsCreated} new, ${relationshipsSkipped} skipped), ${evidenceWritten} evidence rows (run ${importRunId})`);
+    const state = await loadState();
+    const plan = planGroupReconciliation(state, {
+      confirmedRelationshipIds: new Set(relIdByKey.values()), figures, allowCreateBesideManual: allowBesideManual,
+    });
+    if (plan.status !== "ready") return json(conflictBody(plan), 409);
+    const { data: applied, error: applyErr } = await supabase.rpc("xpm_apply_group_reconciliation", {
+      _tenant_id: tenantId, _group_uuid: groupUuid, _group_name: groupName, _member_hash: memberHash,
+      _plan: plan, _select: true, _actor: user.id, _run_id: importRunId,
+    });
+    if (applyErr) return json({ error: "Failed to update the diagram", detail: applyErr.message }, 500);
+    const result = applied as Record<string, unknown>;
+    if (result.status !== "applied") {
+      const status = result.status === "limit_reached" ? 403 : 409;
+      return json({ code: result.code ?? result.status, error: result.error ?? `Group not applied: ${result.status}`, result }, status);
+    }
 
-    return new Response(JSON.stringify({
-      structure_id: structureId,
-      entities_count: Object.keys(xpmUuidToEntityId).length,
-      relationships_count: relationshipsLinked,
+    console.log(`[import-xpm-group] ${groupUuid} → ${result.structure_id}: ${JSON.stringify(result)} (run ${importRunId})`);
+    return json({
+      mode: "apply",
+      structure_id: result.structure_id,
+      entities_count: plan.add_members.length + plan.promote_members.length + plan.keep_members.length,
+      relationships_count: relIdByKey.size,
       relationships_created: relationshipsCreated,
       relationships_skipped: relationshipsSkipped,
       evidence_written: evidenceWritten,
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
+      result,
+    });
   } catch (err) {
     console.error("[import-xpm-group] Error:", err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), {
