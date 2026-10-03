@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
+import { XpmGroupPreviewDialog, type XpmGroupPreview } from "./XpmGroupPreviewDialog";
 
 interface XpmGroup {
   xpm_uuid: string;
@@ -31,6 +32,9 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<XpmGroupPreview | null>(null);
+  const [previewGroup, setPreviewGroup] = useState<XpmGroup | null>(null);
+  const [applying, setApplying] = useState(false);
   const { invalid: xeroInvalid, reportError: reportXeroError } = useXeroConnection();
 
   async function loadFromDb() {
@@ -273,6 +277,12 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
       {filtered.length === 0 && groups.length > 0 && (
         <p className="text-xs text-muted-foreground py-4 text-center">No groups match your search.</p>
       )}
+      <XpmGroupPreviewDialog
+        preview={preview}
+        applying={applying}
+        onCancel={() => { setPreview(null); setPreviewGroup(null); }}
+        onConfirm={handleConfirmImport}
+      />
     </div>
   );
 }
