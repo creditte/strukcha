@@ -25,10 +25,20 @@ function xpmHeaders(accessToken: string, xeroTenantId: string) {
   return { Authorization: `Bearer ${accessToken}`, "xero-tenant-id": xeroTenantId, Accept: "application/xml" };
 }
 
-async function xpmGetXml(path: string, accessToken: string, xeroTenantId: string) {
-  const res = await fetch(`${XPM_BASE}${path}`, { headers: xpmHeaders(accessToken, xeroTenantId) });
-  if (!res.ok) return null;
-  try { return parseXml(await res.text()); } catch { return null; }
+// Retries rate limits / transient errors so a group is never planned from a
+// partial member list.
+async function xpmGetXml(path: string, accessToken: string, xeroTenantId: string): Promise<any> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(`${XPM_BASE}${path}`, { headers: xpmHeaders(accessToken, xeroTenantId) });
+    if (res.ok) {
+      try { return parseXml(await res.text()); } catch { return null; }
+    }
+    await res.body?.cancel();
+    if (res.status !== 429 && res.status < 500) return null;
+    const wait = Number(res.headers.get("retry-after")) * 1000 || 1000 * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, Math.min(wait, 8000)));
+  }
+  return null;
 }
 
 function xmlArray(parent: any, key: string): any[] {
@@ -128,15 +138,15 @@ Deno.serve(async (req) => {
     }
 
     const allFetched: ClientData[] = [];
+    const failedUuids: string[] = [];
     const BATCH_SIZE = 10;
 
     for (let i = 0; i < memberUuids.length; i += BATCH_SIZE) {
       const batch = memberUuids.slice(i, i + BATCH_SIZE);
       const results = await Promise.all(batch.map(async (uuid: string) => {
         const xml = await xpmGetXml(`/client.api/get/${uuid}`, accessToken, xeroTenantId);
-        if (!xml) return null;
         const c = xml?.Response?.Client;
-        if (!c) return null;
+        if (!c) { failedUuids.push(uuid); return null; }
 
         const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
         const bs = xmlText(c, "BusinessStructure");
@@ -180,6 +190,16 @@ Deno.serve(async (req) => {
 
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+    // Never preview or apply from an incomplete group: a missing member record
+    // would silently drop its relationships.
+    if (failedUuids.length > 0) {
+      return json({
+        code: "xpm_member_fetch_failed",
+        error: `${failedUuids.length} client record(s) in this group could not be read from XPM. Nothing was changed; please try again.`,
+        failed_member_uuids: failedUuids,
+      }, 502);
+    }
 
     // Archived/deleted XPM clients stay in the database as history but are kept
     // out of the active diagram, matching the full sync's behaviour.
