@@ -381,6 +381,7 @@ function issueToAction(issue: import("@/lib/structureScoring").ScoringIssue): st
     case "missing_partners": return `Confirm and record the partners of "${name}"`;
     case "missing_trades_as_owner": return `Record the individual who trades as "${name}"`;
     case "multiple_trades_as_owners": return `Keep only one Trades As owner for "${name}"`;
+    case "ownership_units_only": return `Optionally record ownership percentages for "${name}" (units are recorded)`;
     case "ownership_no_percent": return `Optionally record ownership percentages for "${name}"`;
     case "ownership_incomplete": return `Complete the blank ownership percentages for "${name}"`;
     case "ownership_under": return `Confirm the ownership percentages for "${name}" (recorded total is below 100%)`;
