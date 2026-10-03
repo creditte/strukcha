@@ -65,26 +65,55 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
     }
   }
 
+  async function invokeImport(body: Record<string, unknown>) {
+    const { data, error: fnError } = await supabase.functions.invoke("import-xpm-group", { body });
+    if (data?.mode === "preview") return data;
+    if (fnError) {
+      const ctx = (fnError as { context?: Response }).context;
+      const detail = ctx && typeof ctx.json === "function" ? await ctx.json().catch(() => null) : null;
+      throw new Error(detail?.detail || detail?.error || data?.detail || data?.error || fnError.message || "");
+    }
+    if (data?.error) throw new Error(data.detail || data.error);
+    return data;
+  }
+
+  // Open in Editor: preview first (no changes), apply only on confirmation.
   async function handleImportToEditor(e: React.MouseEvent, group: XpmGroup) {
     e.stopPropagation();
     setImportingId(group.xpm_uuid);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("import-xpm-group", {
-        body: { group_uuid: group.xpm_uuid, group_name: group.name },
-      });
-      if (fnError) {
-        throw new Error(data?.detail || data?.error || fnError.message || "");
-      }
-      if (data?.error) throw new Error(data.detail || data.error);
-
-      toast.success(`Imported ${data.entities_count} entities and ${data.relationships_count} relationships`);
-      navigate(`/structures/${data.structure_id}`);
+      const data = await invokeImport({ group_uuid: group.xpm_uuid, group_name: group.name, mode: "preview" });
+      setPreviewGroup(group);
+      setPreview(data as XpmGroupPreview);
     } catch (err: unknown) {
       reportXeroError(err);
       const payload = xeroToastPayload(err);
       toast.error(payload.title, { description: payload.description });
     } finally {
       setImportingId(null);
+    }
+  }
+
+  async function handleConfirmImport(allowBesideManual: boolean) {
+    if (!preview || !previewGroup) return;
+    setApplying(true);
+    try {
+      const data = await invokeImport({
+        group_uuid: previewGroup.xpm_uuid,
+        group_name: previewGroup.name,
+        mode: "apply",
+        expected_structure_id: preview.structure_id,
+        allow_create_beside_manual: allowBesideManual,
+      });
+      toast.success(`Opened ${previewGroup.name}`);
+      setPreview(null);
+      setPreviewGroup(null);
+      navigate(`/structures/${data.structure_id}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Could not apply changes", { description: message });
+    } finally {
+      setApplying(false);
     }
   }
 
