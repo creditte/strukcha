@@ -189,8 +189,9 @@ Deno.serve(async (req) => {
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
       const encryptedAccessToken = await encryptToken(tokens.access_token);
       const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
-      // Sign-in uses basic Xero access. Never let it replace a firm's working
-      // Practice Manager link, or client syncs would stop.
+      // Sign-in uses basic Xero access. Never let it replace a firm's Practice
+      // Manager link — even one that needs reconnecting, which must stay
+      // flagged so the firm is prompted to re-authorise Practice Manager.
       let keepPracticeManager = false;
       if (connectionType === "standard") {
         const { data: pm } = await supabase
@@ -198,7 +199,6 @@ Deno.serve(async (req) => {
           .select("id")
           .eq("tenant_id", String(profile.tenant_id))
           .eq("connection_type", "practice_manager")
-          .neq("status", "needs_reauth")
           .limit(1);
         keepPracticeManager = Boolean(pm && pm.length > 0);
       }
