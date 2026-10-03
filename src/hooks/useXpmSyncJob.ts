@@ -224,7 +224,12 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
               variant: "destructive",
             });
           } else {
-            toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
+            toast({
+              title: next.groupsFailedIncomplete > 0
+                ? "XPM sync finished — some groups weren't updated"
+                : next.fullRefresh ? "Full refresh complete" : "XPM sync complete",
+              description: parts.join(", ") + ".",
+            });
           }
         } else if (next.status === "failed") {
           // Never show Xero's raw status codes or JSON — translate first.
