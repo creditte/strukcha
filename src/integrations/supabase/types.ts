@@ -782,6 +782,7 @@ export type Database = {
           end_date: string | null
           from_entity_id: string
           id: string
+          metadata_source: string | null
           ownership_class: string | null
           ownership_percent: number | null
           ownership_units: number | null
@@ -791,6 +792,7 @@ export type Database = {
           tenant_id: string
           to_entity_id: string
           updated_at: string
+          xpm_metadata_at: string | null
         }
         Insert: {
           confidence?: Database["public"]["Enums"]["confidence_level"]
@@ -799,6 +801,7 @@ export type Database = {
           end_date?: string | null
           from_entity_id: string
           id?: string
+          metadata_source?: string | null
           ownership_class?: string | null
           ownership_percent?: number | null
           ownership_units?: number | null
@@ -808,6 +811,7 @@ export type Database = {
           tenant_id: string
           to_entity_id: string
           updated_at?: string
+          xpm_metadata_at?: string | null
         }
         Update: {
           confidence?: Database["public"]["Enums"]["confidence_level"]
@@ -816,6 +820,7 @@ export type Database = {
           end_date?: string | null
           from_entity_id?: string
           id?: string
+          metadata_source?: string | null
           ownership_class?: string | null
           ownership_percent?: number | null
           ownership_units?: number | null
@@ -825,6 +830,7 @@ export type Database = {
           tenant_id?: string
           to_entity_id?: string
           updated_at?: string
+          xpm_metadata_at?: string | null
         }
         Relationships: [
           {
@@ -1042,21 +1048,27 @@ export type Database = {
       structure_entities: {
         Row: {
           entity_id: string
+          membership_source: string
           position_x: number | null
           position_y: number | null
           structure_id: string
+          xpm_last_seen_at: string | null
         }
         Insert: {
           entity_id: string
+          membership_source?: string
           position_x?: number | null
           position_y?: number | null
           structure_id: string
+          xpm_last_seen_at?: string | null
         }
         Update: {
           entity_id?: string
+          membership_source?: string
           position_x?: number | null
           position_y?: number | null
           structure_id?: string
+          xpm_last_seen_at?: string | null
         }
         Relationships: [
           {
@@ -1077,16 +1089,22 @@ export type Database = {
       }
       structure_relationships: {
         Row: {
+          membership_source: string
           relationship_id: string
           structure_id: string
+          xpm_last_seen_at: string | null
         }
         Insert: {
+          membership_source?: string
           relationship_id: string
           structure_id: string
+          xpm_last_seen_at?: string | null
         }
         Update: {
+          membership_source?: string
           relationship_id?: string
           structure_id?: string
+          xpm_last_seen_at?: string | null
         }
         Relationships: [
           {
@@ -1164,6 +1182,7 @@ export type Database = {
           source: string
           tenant_id: string
           updated_at: string
+          xpm_group_uuid: string | null
         }
         Insert: {
           archived_at?: string | null
@@ -1178,6 +1197,7 @@ export type Database = {
           source?: string
           tenant_id: string
           updated_at?: string
+          xpm_group_uuid?: string | null
         }
         Update: {
           archived_at?: string | null
@@ -1192,6 +1212,7 @@ export type Database = {
           source?: string
           tenant_id?: string
           updated_at?: string
+          xpm_group_uuid?: string | null
         }
         Relationships: [
           {
@@ -1712,6 +1733,15 @@ export type Database = {
       _rp_check_target: { Args: { _rule: Json; _tgt: string }; Returns: Json }
       _rp_rank: { Args: { _r: string }; Returns: number }
       _rp_trust_like: { Args: { _cats: Json }; Returns: boolean }
+      _xpm_set_relationship_metadata: {
+        Args: {
+          _percent: number
+          _rel_id: string
+          _tenant_id: string
+          _units: number
+        }
+        Returns: string
+      }
       admin_operations_health: { Args: never; Returns: Json }
       claim_sync_job: {
         Args: { _job_id: string; _lease_seconds?: number }
@@ -1908,13 +1938,51 @@ export type Database = {
         Returns: boolean
       }
       tenant_structure_capacity: { Args: { _tenant_id: string }; Returns: Json }
+      xpm_apply_group_reconciliation: {
+        Args: {
+          _actor?: string
+          _group_name: string
+          _group_uuid: string
+          _member_hash: string
+          _plan: Json
+          _run_id?: string
+          _select?: boolean
+          _tenant_id: string
+        }
+        Returns: Json
+      }
+      xpm_apply_relationship_metadata: {
+        Args: { _rows: Json; _tenant_id: string }
+        Returns: Json
+      }
       xpm_archive_group_structures: {
         Args: { _group_uuids: string[] }
         Returns: Json
       }
+      xpm_group_reconcile_state: {
+        Args: {
+          _group_name: string
+          _group_uuid: string
+          _member_uuids: string[]
+          _tenant_id: string
+        }
+        Returns: Json
+      }
+      xpm_metadata_managed: {
+        Args: {
+          _confidence: Database["public"]["Enums"]["confidence_level"]
+          _metadata_source: string
+          _source: Database["public"]["Enums"]["data_source"]
+        }
+        Returns: boolean
+      }
       xpm_resolve_entity_ref: {
         Args: { _ref: string; _tenant_id: string }
         Returns: string
+      }
+      xpm_resolve_group_structure: {
+        Args: { _group_name: string; _group_uuid: string; _tenant_id: string }
+        Returns: Json
       }
     }
     Enums: {
