@@ -60,7 +60,7 @@ describe("full-sync group phase", () => {
   const groups = [{ uuid: "G1", name: "Bad" }, { uuid: "G2", name: "Good" }, { uuid: "G3", name: "Conflict" }];
 
   it("never reconciles an incomplete group and continues with unrelated groups", async () => {
-    const reconcile = vi.fn(async (g: { uuid: string }) => (g.uuid === "G3" ? "skipped_conflict" : "refreshed") as const);
+    const reconcile = vi.fn(async (g: { uuid: string }) => (g.uuid === "G3" ? "skipped_conflict" as const : "refreshed" as const));
     const { results } = await syncGroupsSafely(groups, {
       fetchMembers: async (g) => ({ members: g.uuid === "G1" ? ["m1", "m2"] : ["m3"], hash: "h" }),
       findUnread: async (m) => m,
