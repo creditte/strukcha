@@ -88,7 +88,11 @@ describe("abuse controls", () => {
 describe("frontend URL handling", () => {
   it("uses a valid configured https origin", () => {
     expect(canonicalFrontendFrom("https://www.strukcha.app/")).toBe("https://www.strukcha.app");
-    expect(canonicalFrontendFrom("https://app.example.com/path?x=1")).toBe("https://app.example.com");
+    expect(canonicalFrontendFrom("https://strukcha-dev.lovable.app/path?x=1")).toBe("https://strukcha-dev.lovable.app");
+  });
+  it("ignores a stale or unknown configured address", () => {
+    expect(canonicalFrontendFrom("https://link-map-insight.lovable.app")).toBe(CANONICAL_FALLBACK);
+    expect(canonicalFrontendFrom("https://app.example.com")).toBe(CANONICAL_FALLBACK);
   });
   it("falls back when missing, invalid, plain http or localhost in cloud", () => {
     for (const v of [undefined, "", "not a url", "http://evil.com", "http://localhost:8080", "javascript:alert(1)"])
@@ -102,7 +106,7 @@ describe("frontend URL handling", () => {
   });
   it("accepts allow-listed origins", () => {
     expect(resolveFrontendFrom("https://strukcha-dev.lovable.app/x", "https://www.strukcha.app")).toBe("https://strukcha-dev.lovable.app");
-    expect(resolveFrontendFrom("https://app.example.com", "https://app.example.com")).toBe("https://app.example.com");
+    expect(resolveFrontendFrom("https://app.example.com", "https://app.example.com")).toBe(CANONICAL_FALLBACK);
   });
   it("no stale project address anywhere", () => {
     expect(CANONICAL_FALLBACK).not.toContain("link-map-insight");

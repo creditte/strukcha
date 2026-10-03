@@ -1,7 +1,8 @@
 // Single source for every backend-generated link back to the strukcha app
 // (Xero redirects, email links, password reset, Stripe success/cancel).
 //
-// - FRONTEND_URL is used when it is a valid https origin (http only for localhost).
+// - FRONTEND_URL is used when it is a valid origin on the allow-list below
+//   (an unknown or stale value, e.g. an old project address, is ignored).
 // - A caller-supplied origin is accepted only if it is on the explicit allow-list
 //   below; anything else falls back to the canonical origin. Never reflected.
 
@@ -40,7 +41,7 @@ export function normaliseOrigin(value: unknown): string | null {
 /** Canonical app origin from the configured value. Localhost is rejected unless allowLocal. */
 export function canonicalFrontendFrom(configured: unknown, allowLocal = false): string {
   const origin = normaliseOrigin(configured);
-  if (!origin) return CANONICAL_FALLBACK;
+  if (!origin || !ALLOWED_FRONTEND_ORIGINS.includes(origin)) return CANONICAL_FALLBACK;
   if (!allowLocal && LOCAL_HOSTS.has(new URL(origin).hostname)) return CANONICAL_FALLBACK;
   return origin;
 }
@@ -84,6 +85,7 @@ export function resolveFrontend(candidate: unknown): string {
 /** Readiness summary for super admins; contains no secrets. */
 export function frontendConfigStatus(): { configured: boolean; valid: boolean; origin: string } {
   const raw = env("FRONTEND_URL");
-  const valid = !!normaliseOrigin(raw);
+  const o = normaliseOrigin(raw);
+  const valid = !!o && ALLOWED_FRONTEND_ORIGINS.includes(o);
   return { configured: !!(raw && raw.trim()), valid, origin: canonicalFrontend() };
 }

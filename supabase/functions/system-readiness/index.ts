@@ -38,8 +38,9 @@ Deno.serve(async (req) => {
     items.push({
       key: "frontend", label: "App web address",
       status: fe.configured && fe.valid ? "ok" : "warn",
-      summary: fe.configured && fe.valid ? `Links point to ${fe.origin}` : `Not set; links fall back to ${fe.origin}`,
-      hint: fe.configured && fe.valid ? undefined : "Set FRONTEND_URL to your live web address in the backend settings.",
+      summary: fe.configured && fe.valid ? `Links point to ${fe.origin}`
+        : `${fe.configured ? "Setting is not a recognised strukcha address" : "Not set"}; links use ${fe.origin}`,
+      hint: fe.configured && fe.valid ? undefined : "Update the FRONTEND_URL backend setting to https://www.strukcha.app.",
     });
 
     // Email
