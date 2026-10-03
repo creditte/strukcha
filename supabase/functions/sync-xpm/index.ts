@@ -37,6 +37,13 @@ import {
   planGroupReconciliation,
   type GroupState,
 } from "../_shared/xpm-group-reconcile.ts";
+import {
+  splitByFreshness,
+  syncGroupsSafely,
+  XPM_MAX_ATTEMPTS,
+  type GroupSyncStatus,
+  type MemberFetchFailure,
+} from "../_shared/xpm-member-completeness.ts";
 
 /**
  * XPM labels that are deliberately not modelled as structure relationships
@@ -103,8 +110,16 @@ interface Stats {
   groupsCatalogued: number;
   groupsCreated: number;
   groupsProcessed: number;
-  /** Groups whose XPM membership is unchanged since the last sync. */
+  /** Re-read from XPM this run; membership unchanged so nothing was written. */
   groupsSkippedUnchanged: number;
+  /** Re-read from XPM in full and reconciled (includes unchanged). */
+  groupsRefreshed: number;
+  /** Left alone because they were checked recently (normal sync only). Not reviewed. */
+  groupsSkippedRecent: number;
+  /** Not changed because the name clashes with a hand-made or second diagram. */
+  groupsSkippedConflict: number;
+  /** Not changed because one or more member records could not be read. */
+  groupsFailedIncomplete: number;
   trusteesDetected: number;
   staffFetched: number;
   /**
@@ -166,6 +181,8 @@ interface Progress {
   limitCode: string;
   /** Example group names that were blocked, for user-facing messaging. */
   blockedGroups: string[];
+  /** Groups left unchanged because member records could not be read. */
+  incompleteGroups: MemberFetchFailure[];
   /** Remaining structure slots observed when the run started (null = unlimited). */
   capacityRemaining: number | null;
 }
@@ -196,6 +213,10 @@ function emptyProgress(): Progress {
       groupsCreated: 0,
       groupsProcessed: 0,
       groupsSkippedUnchanged: 0,
+      groupsRefreshed: 0,
+      groupsSkippedRecent: 0,
+      groupsSkippedConflict: 0,
+      groupsFailedIncomplete: 0,
       trusteesDetected: 0,
       staffFetched: 0,
       groupsBlockedByLimit: 0,
@@ -210,6 +231,7 @@ function emptyProgress(): Progress {
     limitReached: false,
     limitCode: "",
     blockedGroups: [],
+    incompleteGroups: [],
     capacityRemaining: null,
   };
 }
@@ -1100,6 +1122,7 @@ async function saveProgress(
         limitReached: p.limitReached,
         limitCode: p.limitCode || null,
         blockedGroups: p.blockedGroups.slice(0, 20),
+        incompleteGroups: p.incompleteGroups.slice(0, 20),
         capacityRemaining: p.capacityRemaining,
         // Keep the row bounded: only the most recent warnings are retained.
         warnings: p.warnings.slice(-50),
@@ -1166,6 +1189,10 @@ function loadProgress(result: any): Progress {
       groupsCreated: result.groupsCreated ?? 0,
       groupsProcessed: result.groupsProcessed ?? result.progress?.groupsProcessed ?? 0,
       groupsSkippedUnchanged: result.groupsSkippedUnchanged ?? 0,
+      groupsRefreshed: result.groupsRefreshed ?? 0,
+      groupsSkippedRecent: result.groupsSkippedRecent ?? 0,
+      groupsSkippedConflict: result.groupsSkippedConflict ?? 0,
+      groupsFailedIncomplete: result.groupsFailedIncomplete ?? 0,
       trusteesDetected: result.trusteesDetected ?? 0,
 
       staffFetched: result.staffFetched ?? 0,
