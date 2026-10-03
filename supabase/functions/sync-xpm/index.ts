@@ -782,10 +782,7 @@ async function fetchGroupMembers(
   p: Progress,
 ): Promise<{ uuid: string; name: string; hash: string; members: string[] } | null> {
   let detail: any = await xpmGetXml(`/clientgroup.api/get/${group.uuid}`, accessToken, xeroTenantId);
-  if (!detail) {
-    warn(p, `Could not read group "${group.name}" from XPM`);
-    return null;
-  }
+  if (!detail) return null;
   const members = xmlArray(detail?.Response?.Group?.Clients, "Client")
     .map((m: any) => xmlText(m, "UUID"))
     .filter(Boolean);
@@ -795,56 +792,82 @@ async function fetchGroupMembers(
 }
 
 /**
- * Link a batch of groups in ONE database request. The routine resolves each
- * structure, links members and their relationships, and compares the membership
- * fingerprint so an unchanged group short-circuits server-side.
+ * Reconcile one complete group (the caller guarantees every member record was
+ * read). Returns the outcome; never throws for an ordinary per-group problem.
  */
-async function linkGroupBatch(
+async function reconcileOneGroup(
   supabase: any,
   tenantId: string,
-  batch: { uuid: string; name: string; hash: string; members: string[] }[],
+  g: { uuid: string; name: string; hash: string; members: string[] },
   p: Progress,
   runId: string,
-) {
-  for (const g of batch) {
-    const st = await rpcCall(supabase, "xpm_group_reconcile_state", {
-      _tenant_id: tenantId, _group_uuid: g.uuid, _group_name: g.name, _member_uuids: g.members,
-    });
-    if (st.error) { warn(p, `Failed to read group "${g.name}": ${st.error.message}`); continue; }
-    const state = st.data as GroupState;
-    const plan = planGroupReconciliation(state);
-    if (plan.status !== "ready") {
-      warn(p, plan.status === "ambiguous_structure_match"
-        ? `Group "${g.name}" matches more than one XPM diagram — skipped for review.`
-        : `Group "${g.name}" has the same name as a hand-made diagram — skipped for review.`);
-      continue;
+): Promise<GroupSyncStatus> {
+  const st = await rpcCall(supabase, "xpm_group_reconcile_state", {
+    _tenant_id: tenantId, _group_uuid: g.uuid, _group_name: g.name, _member_uuids: g.members,
+  });
+  if (st.error) { warn(p, `Failed to read group "${g.name}": ${st.error.message}`); return "failed"; }
+  const state = st.data as GroupState;
+  const plan = planGroupReconciliation(state);
+  if (plan.status !== "ready") {
+    warn(p, plan.status === "ambiguous_structure_match"
+      ? `Group "${g.name}" matches more than one XPM diagram — skipped for review.`
+      : `Group "${g.name}" has the same name as a hand-made diagram — skipped for review.`);
+    return "skipped_conflict";
+  }
+  if (isNoopPlan(plan) && state.group?.member_hash === g.hash) { p.stats.groupsSkippedUnchanged++; return "refreshed"; }
+  const ap = await rpcCall(supabase, "xpm_apply_group_reconciliation", {
+    _tenant_id: tenantId, _group_uuid: g.uuid, _group_name: g.name, _member_hash: g.hash,
+    _plan: plan, _select: false, _actor: null, _run_id: runId,
+  });
+  if (ap.error) { warn(p, `Failed to sync group "${g.name}": ${ap.error.message}`); return "failed"; }
+  const res = (ap.data ?? {}) as any;
+  if (res.status === "applied") {
+    if (res.structureCreated) p.stats.groupsCreated++;
+    return "refreshed";
+  }
+  if (res.status === "limit_reached") {
+    p.stats.groupsBlockedByLimit++;
+    if (p.blockedGroups.length < 20) p.blockedGroups.push(g.name);
+    if (!p.limitReached) {
+      p.limitReached = true;
+      p.limitCode = String(res.code ?? "structure_limit_reached");
+      warn(
+        p,
+        p.limitCode === "subscription_inactive"
+          ? "Some client groups could not be turned into diagrams because the subscription is inactive."
+          : "Some client groups could not be turned into diagrams because the workspace structure limit was reached.",
+      );
     }
-    if (isNoopPlan(plan) && state.group?.member_hash === g.hash) { p.stats.groupsSkippedUnchanged++; continue; }
-    const ap = await rpcCall(supabase, "xpm_apply_group_reconciliation", {
-      _tenant_id: tenantId, _group_uuid: g.uuid, _group_name: g.name, _member_hash: g.hash,
-      _plan: plan, _select: false, _actor: null, _run_id: runId,
-    });
-    if (ap.error) { warn(p, `Failed to sync group "${g.name}": ${ap.error.message}`); continue; }
-    const res = (ap.data ?? {}) as any;
-    if (res.status === "applied") {
-      if (res.structureCreated) p.stats.groupsCreated++;
-    } else if (res.status === "limit_reached") {
-      p.stats.groupsBlockedByLimit++;
-      if (p.blockedGroups.length < 20) p.blockedGroups.push(g.name);
-      if (!p.limitReached) {
-        p.limitReached = true;
-        p.limitCode = String(res.code ?? "structure_limit_reached");
-        warn(
-          p,
-          p.limitCode === "subscription_inactive"
-            ? "Some client groups could not be turned into diagrams because the subscription is inactive."
-            : "Some client groups could not be turned into diagrams because the workspace structure limit was reached.",
-        );
-      }
-    } else {
-      warn(p, `Group "${g.name}" not synced: ${res.status}${res.error ? ` (${res.error})` : ""}`);
+    return "limit_reached";
+  }
+  warn(p, `Group "${g.name}" not synced: ${res.status}${res.error ? ` (${res.error})` : ""}`);
+  return "failed";
+}
+
+/**
+ * Members whose full record this run has NOT already read in the client sweep
+ * (never imported, or not seen since this job started). Those are read
+ * individually before the group may be reconciled.
+ */
+async function findUnreadMembers(
+  supabase: any,
+  tenantId: string,
+  members: string[],
+  since: string,
+): Promise<string[]> {
+  const seen = new Set<string>();
+  for (const part of chunk(members, 80)) {
+    const { data, error } = await supabase
+      .from("entities")
+      .select("xpm_uuid, xpm_last_seen_at")
+      .eq("tenant_id", tenantId)
+      .in("xpm_uuid", part);
+    if (error) throw new DatabaseStepError(`Could not check group members: ${error.message}`);
+    for (const r of data ?? []) {
+      if (r.xpm_last_seen_at && new Date(r.xpm_last_seen_at).getTime() >= new Date(since).getTime()) seen.add(r.xpm_uuid);
     }
   }
+  return members.filter((m) => !seen.has(m));
 }
 
 // ── Phase: staff + fallback structure ──────────────────────────────
@@ -1023,13 +1046,12 @@ async function runSlice(
       // Groups read recently enough are left alone: their membership is already
       // in the database and re-reading them would only spend XPM quota.
       const freshBefore = Date.now() - t.groupFreshnessMinutes * 60_000;
-      const dueGroups = p.fullSync
-        ? slice
-        : slice.filter((g) => !g.lastSyncedAt || new Date(g.lastSyncedAt).getTime() < freshBefore);
-      const skippedFresh = slice.length - dueGroups.length;
-      if (skippedFresh > 0) {
-        p.stats.groupsSkippedUnchanged += skippedFresh;
-        p.stats.groupsProcessed += skippedFresh;
+      // Normal sync leaves recently checked groups alone; they are counted as
+      // "skipped recently", never as reviewed. Full refresh re-reads them all.
+      const { due: dueGroups, skippedRecent } = splitByFreshness(slice, p.fullSync, freshBefore);
+      if (skippedRecent.length > 0) {
+        p.stats.groupsSkippedRecent += skippedRecent.length;
+        p.stats.groupsProcessed += skippedRecent.length;
       }
       if (dueGroups.length === 0) {
         p.groupCursor = slice[slice.length - 1].uuid;
@@ -1039,16 +1061,37 @@ async function runSlice(
       }
       for (const batch of chunk(dueGroups, t.groupBatchSize)) {
         const batchStartedAt = Date.now();
-        const fetched = await mapLimit(batch, t.groupConcurrency, (group) =>
-          fetchGroupMembers(accessToken, xeroTenantId!, group, p)
-        );
-        await linkGroupBatch(
-          supabase,
-          tenantId,
-          fetched.filter((g): g is NonNullable<typeof g> => g !== null),
-          p,
-          jobId,
-        );
+        // Membership reads run concurrently; reconciliation is strictly per group.
+        const fetched = new Map<string, { hash: string; members: string[] } | null>();
+        await mapLimit(batch, t.groupConcurrency, async (group) => {
+          fetched.set(group.uuid, await fetchGroupMembers(accessToken, xeroTenantId!, group, p));
+        });
+        const { results } = await syncGroupsSafely(batch, {
+          fetchMembers: async (g) => fetched.get(g.uuid) ?? null,
+          findUnread: (members) => findUnreadMembers(supabase, tenantId, members, p.started_at),
+          readMember: async (uuid) => {
+            const xml = await xpmGetXml(`/client.api/get/${uuid}`, accessToken, xeroTenantId!, XPM_MAX_ATTEMPTS);
+            const c = xml?.Response?.Client;
+            return c && xmlText(c, "UUID") ? true : null;
+          },
+          reconcile: (g, members, hash) =>
+            reconcileOneGroup(supabase, tenantId, { uuid: g.uuid, name: g.name, members, hash }, p, jobId),
+          isFatal: (e) =>
+            e instanceof FatalXpmError || e instanceof DatabaseStepError ||
+            e instanceof JobCancelledError || e instanceof XeroReauthRequiredError,
+        });
+        for (const r of results) {
+          if (r.status === "refreshed") p.stats.groupsRefreshed++;
+          else if (r.status === "skipped_conflict") p.stats.groupsSkippedConflict++;
+          else if (r.status === "failed_incomplete" && r.failure) {
+            p.stats.groupsFailedIncomplete++;
+            if (p.incompleteGroups.length < 20) p.incompleteGroups.push(r.failure);
+            console.warn("[sync-xpm] xpm_member_fetch_failed", JSON.stringify(r.failure));
+            warn(p, `xpm_member_fetch_failed: ${r.failure.message} (group ${r.failure.group_uuid}; members ${r.failure.failed_member_uuids.join(", ")})`);
+          } else if (r.status === "failed") {
+            warn(p, `Group "${r.group.name}" could not be synced this time and was left unchanged.`);
+          }
+        }
         console.log(`[sync-xpm] linked ${batch.length} groups in ${Date.now() - batchStartedAt}ms (slice ${Date.now() - sliceStartedAt}ms)`);
         processed += batch.length;
         p.stats.groupsProcessed += batch.length;
@@ -1208,6 +1251,7 @@ function loadProgress(result: any): Progress {
     limitReached: result.limitReached === true,
     limitCode: result.limitCode ?? "",
     blockedGroups: Array.isArray(result.blockedGroups) ? result.blockedGroups.slice(0, 20) : [],
+    incompleteGroups: Array.isArray(result.incompleteGroups) ? result.incompleteGroups.slice(0, 20) : [],
     capacityRemaining: result.capacityRemaining ?? null,
   };
 }
