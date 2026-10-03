@@ -17,6 +17,7 @@ import {
 } from "../_shared/xpm-group-reconcile.ts";
 import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
+import { fetchXpmWithRetry, memberFetchFailure, readGroupMemberRecords } from "../_shared/xpm-member-completeness.ts";
 
 
 const XPM_BASE = "https://api.xero.com/practicemanager/3.1";
@@ -25,20 +26,12 @@ function xpmHeaders(accessToken: string, xeroTenantId: string) {
   return { Authorization: `Bearer ${accessToken}`, "xero-tenant-id": xeroTenantId, Accept: "application/xml" };
 }
 
-// Retries rate limits / transient errors so a group is never planned from a
-// partial member list.
+// Retries rate limits / transient errors (shared rules with sync-xpm) so a
+// group is never planned from a partial member list.
 async function xpmGetXml(path: string, accessToken: string, xeroTenantId: string): Promise<any> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const res = await fetch(`${XPM_BASE}${path}`, { headers: xpmHeaders(accessToken, xeroTenantId) });
-    if (res.ok) {
-      try { return parseXml(await res.text()); } catch { return null; }
-    }
-    await res.body?.cancel();
-    if (res.status !== 429 && res.status < 500) return null;
-    const wait = Number(res.headers.get("retry-after")) * 1000 || 1000 * 2 ** attempt;
-    await new Promise((r) => setTimeout(r, Math.min(wait, 8000)));
-  }
-  return null;
+  const out = await fetchXpmWithRetry(() => fetch(`${XPM_BASE}${path}`, { headers: xpmHeaders(accessToken, xeroTenantId) }));
+  if (!out.ok) return null;
+  try { return parseXml(out.text); } catch { return null; }
 }
 
 function xmlArray(parent: any, key: string): any[] {
@@ -137,16 +130,13 @@ Deno.serve(async (req) => {
       relationships: Array<{ typeRaw: string; relatedUuid: string; relatedName: string; percentage: number | null; shares: number | null }>;
     }
 
-    const allFetched: ClientData[] = [];
-    const failedUuids: string[] = [];
-    const BATCH_SIZE = 10;
-
-    for (let i = 0; i < memberUuids.length; i += BATCH_SIZE) {
-      const batch = memberUuids.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(batch.map(async (uuid: string) => {
+    // Shared completeness rule: every member record must be read and parsed.
+    const { records: allFetched, failed: failedUuids } = await readGroupMemberRecords<ClientData>(
+      memberUuids,
+      async (uuid: string) => {
         const xml = await xpmGetXml(`/client.api/get/${uuid}`, accessToken, xeroTenantId);
         const c = xml?.Response?.Client;
-        if (!c) { failedUuids.push(uuid); return null; }
+        if (!c) return null;
 
         const name = xmlText(c, "Name") || `${xmlText(c, "FirstName")} ${xmlText(c, "LastName")}`.trim();
         const bs = xmlText(c, "BusinessStructure");
@@ -184,9 +174,8 @@ Deno.serve(async (req) => {
           isDeleted: isYes(xmlText(c, "IsDeleted")),
           relationships: rels,
         } as ClientData;
-      }));
-      for (const r of results) if (r) allFetched.push(r);
-    }
+      },
+    );
 
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -194,10 +183,11 @@ Deno.serve(async (req) => {
     // Never preview or apply from an incomplete group: a missing member record
     // would silently drop its relationships.
     if (failedUuids.length > 0) {
+      const failure = memberFetchFailure({ uuid: groupUuid, name: groupName }, failedUuids)!;
+      console.warn("[import-xpm-group] xpm_member_fetch_failed", JSON.stringify(failure));
       return json({
-        code: "xpm_member_fetch_failed",
+        ...failure,
         error: `${failedUuids.length} client record(s) in this group could not be read from XPM. Nothing was changed; please try again.`,
-        failed_member_uuids: failedUuids,
       }, 502);
     }
 
