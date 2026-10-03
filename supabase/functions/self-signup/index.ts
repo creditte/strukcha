@@ -4,6 +4,10 @@ import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
 import { TRIAL_GROUP_LIMIT } from "../_shared/stripe-plans.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
+import {
+  CODE_TTL_MINUTES, GENERIC_SIGNUP_RESPONSE, RATE_LIMITED_ERROR, SIGNUP_LIMITS,
+  clientAddress, decideSignup, generateCode, hashKey, isPendingUnverifiedShell, normaliseEmail, withinLimits,
+} from "../_shared/signup-guard.ts";
 
 
 
@@ -54,8 +58,12 @@ Deno.serve(async (req) => {
 
   try {
     const { fullName, email, password, firmName, selectedPlan, selectedBilling } = await req.json();
-    if (!email || !password || !firmName || !fullName) {
+    const normalisedEmail = normaliseEmail(email);
+    if (!normalisedEmail || !password || !firmName || !fullName) {
       return json({ error: "Missing required fields" }, 400);
+    }
+    if (typeof password !== "string" || password.length < 6 || password.length > 200) {
+      return json({ error: "Password must be at least 6 characters." }, 400);
     }
     const plan = selectedPlan || "pro";
     const billing = selectedBilling || "monthly";
@@ -65,78 +73,92 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const normalisedEmail = String(email).toLowerCase();
+    // Abuse controls: per email and per (hashed) client address. Fail closed.
+    const emailKey = await hashKey("email", normalisedEmail);
+    const clientKey = await hashKey("client", clientAddress(req.headers));
+    const allowed = await withinLimits(supabaseAdmin, [
+      { bucket: "signup_email", key: emailKey, ...SIGNUP_LIMITS.signupPerEmail },
+      { bucket: "signup_client", key: clientKey, ...SIGNUP_LIMITS.signupPerClient },
+    ]);
+    if (!allowed) return json({ error: RATE_LIMITED_ERROR }, 200);
 
-    // 0. Registration is only "complete" once a Stripe trial/subscription exists.
-    // If a previous attempt stalled before that point, purge it so the user can
-    // register again instead of being blocked by "email already exists".
-    const { data: priorMembership } = await supabaseAdmin
+    // Never delete or replace an earlier sign-up, firm, account or invitation.
+    // Existing emails get the same response as new ones (no enumeration).
+    const { data: memberships } = await supabaseAdmin
       .from("tenant_users")
-      .select("id, tenant_id, auth_user_id")
+      .select("id, tenant_id, auth_user_id, role")
       .eq("email", normalisedEmail)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(5);
+    const { count: inviteCount } = await supabaseAdmin
+      .from("invitations")
+      .select("id", { count: "exact", head: true })
+      .eq("email", normalisedEmail)
+      .is("accepted_at", null);
 
-    if (priorMembership) {
-      const { data: priorTenant } = await supabaseAdmin
-        .from("tenants")
-        .select("id, payment_method_captured, stripe_subscription_id")
-        .eq("id", priorMembership.tenant_id)
-        .maybeSingle();
-
-      const registrationComplete =
-        !!priorTenant?.stripe_subscription_id || priorTenant?.payment_method_captured === true;
-
-      if (registrationComplete) {
-        return json({ error: "An account with this email already exists. Please log in instead." }, 400);
+    let pendingUnverifiedUserId: string | null = null;
+    if (memberships && memberships.length === 1 && memberships[0].auth_user_id) {
+      const m = memberships[0];
+      const [{ data: t }, { count: memberCount }, { data: au }] = await Promise.all([
+        supabaseAdmin.from("tenants")
+          .select("stripe_subscription_id, payment_method_captured, subscription_status, access_enabled, trial_used_at, payment_setup_completed_at")
+          .eq("id", m.tenant_id).maybeSingle(),
+        supabaseAdmin.from("tenant_users").select("id", { count: "exact", head: true }).eq("tenant_id", m.tenant_id),
+        supabaseAdmin.auth.admin.getUserById(m.auth_user_id),
+      ]);
+      if (t && au?.user && isPendingUnverifiedShell({
+        memberCount: memberCount ?? 0,
+        memberRole: m.role,
+        authEmailConfirmed: !!au.user.email_confirmed_at,
+        authEverSignedIn: !!au.user.last_sign_in_at,
+        stripeSubscriptionId: t.stripe_subscription_id,
+        paymentMethodCaptured: t.payment_method_captured === true,
+        subscriptionStatus: t.subscription_status,
+        accessEnabled: t.access_enabled,
+        trialUsedAt: t.trial_used_at,
+        paymentSetupCompletedAt: t.payment_setup_completed_at,
+      })) {
+        pendingUnverifiedUserId = m.auth_user_id;
       }
+    }
 
-      // Incomplete registration → clean slate.
-      const staleUserId = priorMembership.auth_user_id;
-      const staleTenantId = priorMembership.tenant_id;
-      console.log(`[Signup] Purging incomplete registration tenant=${staleTenantId} user=${staleUserId}`);
+    const decision = decideSignup({
+      hasMembership: (memberships?.length ?? 0) > 0,
+      hasInvitation: (inviteCount ?? 0) > 0,
+      pendingUnverifiedUserId,
+    });
 
-      await supabaseAdmin.from("signup_verifications").delete().eq("email", normalisedEmail);
-      await supabaseAdmin.from("tenant_users").delete().eq("tenant_id", staleTenantId);
-      if (staleUserId) {
-        await supabaseAdmin.from("profiles").delete().eq("user_id", staleUserId);
-        await supabaseAdmin.from("user_roles").delete().eq("user_id", staleUserId);
-      }
-      await supabaseAdmin.from("tenants").delete().eq("id", staleTenantId);
-      if (staleUserId) {
-        await supabaseAdmin.auth.admin.deleteUser(staleUserId).catch((e) =>
-          console.error("[Signup] stale auth user delete failed:", e?.message)
-        );
-      }
+    if (decision.kind === "silent") {
+      console.log("[Signup] email already in use; returning generic response");
+      return json({ ...GENERIC_SIGNUP_RESPONSE });
+    }
+    if (decision.kind === "resend_pending") {
+      // Re-send a fresh code to the existing unfinished sign-up. Its password and firm are unchanged.
+      await issueCode(supabaseAdmin, decision.userId, normalisedEmail);
+      return json({ ...GENERIC_SIGNUP_RESPONSE });
     }
 
     // 1. Create the auth user (NOT confirmed)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalisedEmail,
       password,
       email_confirm: false,
       user_metadata: { full_name: fullName, signup_source: "self_service" },
     });
 
-    if (authError) {
-      const msg = authError.message?.includes("already been registered")
-        ? "An account with this email already exists. Please log in instead."
-        : authError.message;
-      return json({ error: msg }, 400);
+    if (authError || !authData?.user) {
+      // Includes "already registered": same response, nothing modified.
+      console.log("[Signup] createUser refused:", authError?.message);
+      return json({ ...GENERIC_SIGNUP_RESPONSE });
     }
 
     const userId = authData.user.id;
-
-
-    // 2. Create the tenant — no trial yet. The 7-day trial is created and managed
-    // by Stripe once the owner attaches a payment method via Checkout.
     const now = new Date();
 
+    // 2. Create the tenant — no trial yet; Stripe owns the trial after Checkout.
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from("tenants")
       .insert({
-        name: firmName.toLowerCase().replace(/\s+/g, "-"),
+        name: String(firmName).toLowerCase().replace(/\s+/g, "-"),
         firm_name: firmName,
         subscription_status: "incomplete",
         subscription_plan: plan,
@@ -151,33 +173,28 @@ Deno.serve(async (req) => {
 
     if (tenantError) throw tenantError;
 
-    // 2b. Create the Stripe customer only. The trialing subscription is created by
-    // Stripe Checkout (mode=subscription, trial_period_days=7) so the card is
-    // authorised and stored by Stripe without an immediate charge.
     const stripeKey = stripeVar("STRIPE_SECRET_KEY");
     if (stripeKey) {
       try {
         const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
         const customer = await stripe.customers.create({
-          email,
+          email: normalisedEmail,
           metadata: { workspace_id: tenant.id, owner_user_id: userId },
         });
-
         await supabaseAdmin.from("tenants").update({
           stripe_customer_id: customer.id,
           stripe_mode: stripeMode(),
         }).eq("id", tenant.id);
-
         console.log(`[Signup] Stripe customer ${customer.id} created (awaiting payment method)`);
       } catch (stripeErr: any) {
         console.error("[Signup] Stripe setup failed:", stripeErr.message);
       }
     }
 
-    // 3. Create tenant_user row (owner)
+    // 3. Owner team-member row
     const { error: tuError } = await supabaseAdmin.from("tenant_users").insert({
       tenant_id: tenant.id,
-      email: email.toLowerCase(),
+      email: normalisedEmail,
       display_name: fullName,
       role: "owner",
       status: "active",
@@ -188,7 +205,7 @@ Deno.serve(async (req) => {
     });
     if (tuError) throw tuError;
 
-    // 4. Create profile
+    // 4. Profile
     const { error: profileError } = await supabaseAdmin.from("profiles")
       .upsert({
         user_id: userId,
@@ -202,40 +219,35 @@ Deno.serve(async (req) => {
       }, { onConflict: "user_id" });
     if (profileError) throw profileError;
 
-    // 5. Create user_roles
-    const { error: roleError } = await supabaseAdmin.from("user_roles").insert({
-      user_id: userId,
-      role: "admin",
-    });
+    // 5. Role
+    const { error: roleError } = await supabaseAdmin.from("user_roles").insert({ user_id: userId, role: "admin" });
     if (roleError) throw roleError;
 
-    // 6. Generate verification code & send directly via smtp2go
-    const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    // 6. Verification code
+    await issueCode(supabaseAdmin, userId, normalisedEmail);
 
-    await supabaseAdmin.from("signup_verifications").insert({
-      user_id: userId,
-      email: email.toLowerCase(),
-      code: verificationCode,
-      expires_at: expiresAt,
-    });
-
-    try {
-      await sendViaSmtp2go(
-        email,
-        `Verify your strukcha account — ${verificationCode}`,
-        renderVerificationHtml(verificationCode),
-        `Your strukcha verification code is: ${verificationCode}. It expires in 10 minutes.`
-      );
-      console.log(`[Signup] Verification email sent to ${email}`);
-    } catch (sendErr) {
-      console.error("[Signup] Failed to send verification email:", sendErr);
-      console.log(`[Signup] Verification code for ${email}: ${verificationCode}`);
-    }
-
-    return json({ ok: true, needsVerification: true, userId });
+    return json({ ...GENERIC_SIGNUP_RESPONSE });
   } catch (err: any) {
     console.error("self-signup error:", err);
-    return json({ error: err.message || "Signup failed" }, 500);
+    return json({ error: "Sign-up could not be completed. Please try again." }, 500);
   }
 });
+
+// deno-lint-ignore no-explicit-any
+async function issueCode(db: any, userId: string, email: string): Promise<void> {
+  await db.from("signup_verifications").update({ used: true }).eq("email", email).eq("used", false);
+  const code = generateCode();
+  const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
+  await db.from("signup_verifications").insert({ user_id: userId, email, code, expires_at: expiresAt });
+  try {
+    await sendViaSmtp2go(
+      email,
+      `Verify your strukcha account — ${code}`,
+      renderVerificationHtml(code),
+      `Your strukcha verification code is: ${code}. It expires in ${CODE_TTL_MINUTES} minutes.`,
+    );
+    console.log("[Signup] verification email sent");
+  } catch (sendErr) {
+    console.error("[Signup] Failed to send verification email:", (sendErr as Error)?.message);
+  }
+}
