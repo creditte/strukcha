@@ -27,6 +27,7 @@ const WHY_IT_MATTERS: Record<string, string> = {
   ownership_exceeds: "Recorded ownership totals more than 100%, so the recorded facts contradict each other.",
   ownership_under: "Recorded ownership totals less than 100%. Confirm whether the structure data is complete.",
   ownership_incomplete: "Some ownership percentages are blank. Confirm whether the structure data is complete.",
+  ownership_units_only: "Optional: units are recorded but no ownership percentages.",
   ownership_no_percent: "Optional: no ownership percentages are recorded.",
   missing_trustee: "No trustee is recorded in strukcha. Confirm whether the structure data is complete.",
   missing_member: "No member is recorded in strukcha. Confirm whether the structure data is complete.",

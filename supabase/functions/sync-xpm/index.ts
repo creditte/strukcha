@@ -30,6 +30,13 @@ import {
 } from "../_shared/xpm-policy-normalise.ts";
 import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
 import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
+import { figuresForEdge, normaliseXpmOwnership } from "../_shared/xpm-ownership.ts";
+import {
+  hashGroupMembers,
+  isNoopPlan,
+  planGroupReconciliation,
+  type GroupState,
+} from "../_shared/xpm-group-reconcile.ts";
 
 /**
  * XPM labels that are deliberately not modelled as structure relationships
@@ -250,11 +257,7 @@ function warnUnknownRelType(p: Progress, raw: string) {
 
 // ── Small helpers ──────────────────────────────────────────────────
 /** Stable fingerprint of a group's membership, used for change detection. */
-async function hashMembers(name: string, memberUuids: string[]): Promise<string> {
-  const payload = `${name}\n${[...memberUuids].sort().join(",")}`;
-  const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(payload));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+const hashMembers = hashGroupMembers;
 
 /** Bulk insert helper — only used for the small staff list. */
 async function bulkInsertEntities(
@@ -291,6 +294,10 @@ interface ParsedClient {
     name: string;
     startDate: string | null;
     endDate: string | null;
+    /** NumberOfShares as units; zero/blank → null. */
+    shares: number | null;
+    /** Percentage; zero/blank → null, never inferred from shares. */
+    percentage: number | null;
   }[];
 }
 
@@ -377,6 +384,13 @@ function parseClientSegment(segment: string, p: Progress): ParsedClient | null {
         name: relatedName,
         startDate: tagText(rel, "StartDate") || null,
         endDate: tagText(rel, "EndDate") || null,
+        ...(() => {
+          const f = normaliseXpmOwnership({
+            shares: tagText(rel, "NumberOfShares"),
+            percentage: tagText(rel, "Percentage") || tagText(rel, "OwnershipPercentage"),
+          });
+          return { shares: f.units, percentage: f.percent };
+        })(),
       });
     }
   }
@@ -408,7 +422,7 @@ async function normaliseChunk(
   tenantId: string,
   parsed: ParsedClient[],
   related: Map<string, string>,
-): Promise<{ rels: Record<string, unknown>[]; evidence: EvidenceDraft[]; skipped: number }> {
+): Promise<{ rels: Record<string, unknown>[]; evidence: EvidenceDraft[]; skipped: number; metadata: Record<string, unknown>[] }> {
   const t = tuning();
   const payloadType = new Map<string, string>();
   const provisionalCandidate = new Map<string, string>();
@@ -473,6 +487,7 @@ async function normaliseChunk(
   const evidence: EvidenceDraft[] = [];
   const rels: Record<string, unknown>[] = [];
   const seen = new Set<string>();
+  const metadata: Record<string, unknown>[] = [];
   let skipped = 0;
   for (const c of parsed) {
     for (const r of c.rels) {
@@ -482,7 +497,7 @@ async function normaliseChunk(
         relatedId: r.uuid,
         clientName: c.name,
         relatedName: r.name || null,
-        payload: { start_date: r.startDate, end_date: r.endDate },
+        payload: { start_date: r.startDate, end_date: r.endDate, shares: r.shares, percentage: r.percentage },
       };
       const { evidence: draft, edge } = normaliseXpmRelationship(raw, ctx);
       evidence.push(draft);
@@ -493,16 +508,20 @@ async function normaliseChunk(
       const key = relationshipIdentityKey(edge.type, edge.fromId, edge.toId);
       if (seen.has(key)) continue;
       seen.add(key);
+      const fig = figuresForEdge(edge.type, entityTypes.get(edge.toId), { units: r.shares, percent: r.percentage });
       rels.push({
         type: edge.type,
         from_uuid: edge.fromId,
         to_uuid: edge.toId,
         start_date: r.startDate,
         end_date: r.endDate,
+        ownership_units: fig?.units ?? null,
+        ownership_percent: fig?.percent ?? null,
       });
+      if (fig) metadata.push({ type: edge.type, from_uuid: edge.fromId, to_uuid: edge.toId, units: fig.units, percent: fig.percent });
     }
   }
-  return { rels, evidence, skipped };
+  return { rels, evidence, skipped, metadata };
 }
 
 /**
@@ -590,7 +609,7 @@ async function processClientPage(
     }
 
     if (clients.length > 0) {
-      const { rels, evidence, skipped } = await normaliseChunk(supabase, tenantId, parsedClients, related);
+      const { rels, evidence, skipped, metadata } = await normaliseChunk(supabase, tenantId, parsedClients, related);
       p.stats.relationshipsSkipped += skipped;
       const { data, error } = await rpcCall(supabase, "sync_xpm_upsert_clients", {
         _tenant_id: tenantId,
@@ -619,6 +638,13 @@ async function processClientPage(
       p.stats.relationshipsCreated += res.relationshipsCreated ?? 0;
       p.stats.relationshipsSkipped += res.relationshipsSkipped ?? 0;
       for (const w of res.warnings ?? []) warn(p, String(w));
+
+      // Ownership figures: refreshed only on XPM-managed relationships; a
+      // manual override is preserved. Failure here is reported, not fatal.
+      if (metadata.length > 0) {
+        const meta = await rpcCall(supabase, "xpm_apply_relationship_metadata", { _tenant_id: tenantId, _rows: metadata });
+        if (meta.error) warn(p, `Ownership figures for client page ${page} were not refreshed: ${meta.error.message}`);
+      }
 
       // Only clients that appear in XPM's list are "seen": a client that shows up
       // solely as a relation is archived in XPM and must not look live here.
@@ -756,38 +782,47 @@ async function linkGroupBatch(
   tenantId: string,
   batch: { uuid: string; name: string; hash: string; members: string[] }[],
   p: Progress,
+  runId: string,
 ) {
-  if (batch.length === 0) return;
-  const { data, error } = await rpcCall(supabase, "sync_xpm_link_groups", {
-    _tenant_id: tenantId,
-    _groups: batch,
-  });
-  if (error) {
-    warn(p, `Failed to sync ${batch.length} group(s): ${error.message}`);
-    return;
-  }
-  const res = (data ?? {}) as any;
-  p.stats.groupsCreated += res.structuresCreated ?? 0;
-  p.stats.groupsSkippedUnchanged += res.skippedUnchanged ?? 0;
-  const blocked = res.groupsBlocked ?? 0;
-  if (blocked > 0 || res.limitReached === true) {
-    // Distinct, expected condition — recorded once, not buried in warnings.
-    p.stats.groupsBlockedByLimit += blocked;
-    if (!p.limitReached) {
-      p.limitReached = true;
-      p.limitCode = String(res.limitCode ?? "structure_limit_reached");
-      warn(
-        p,
-        p.limitCode === "subscription_inactive"
-          ? "Some client groups could not be turned into diagrams because the subscription is inactive."
-          : "Some client groups could not be turned into diagrams because the workspace structure limit was reached.",
-      );
+  for (const g of batch) {
+    const st = await rpcCall(supabase, "xpm_group_reconcile_state", {
+      _tenant_id: tenantId, _group_uuid: g.uuid, _group_name: g.name, _member_uuids: g.members,
+    });
+    if (st.error) { warn(p, `Failed to read group "${g.name}": ${st.error.message}`); continue; }
+    const state = st.data as GroupState;
+    const plan = planGroupReconciliation(state);
+    if (plan.status !== "ready") {
+      warn(p, plan.status === "ambiguous_structure_match"
+        ? `Group "${g.name}" matches more than one XPM diagram — skipped for review.`
+        : `Group "${g.name}" has the same name as a hand-made diagram — skipped for review.`);
+      continue;
     }
-    for (const name of res.blockedGroups ?? []) {
-      if (p.blockedGroups.length < 20) p.blockedGroups.push(String(name));
+    if (isNoopPlan(plan) && state.group?.member_hash === g.hash) { p.stats.groupsSkippedUnchanged++; continue; }
+    const ap = await rpcCall(supabase, "xpm_apply_group_reconciliation", {
+      _tenant_id: tenantId, _group_uuid: g.uuid, _group_name: g.name, _member_hash: g.hash,
+      _plan: plan, _select: false, _actor: null, _run_id: runId,
+    });
+    if (ap.error) { warn(p, `Failed to sync group "${g.name}": ${ap.error.message}`); continue; }
+    const res = (ap.data ?? {}) as any;
+    if (res.status === "applied") {
+      if (res.structureCreated) p.stats.groupsCreated++;
+    } else if (res.status === "limit_reached") {
+      p.stats.groupsBlockedByLimit++;
+      if (p.blockedGroups.length < 20) p.blockedGroups.push(g.name);
+      if (!p.limitReached) {
+        p.limitReached = true;
+        p.limitCode = String(res.code ?? "structure_limit_reached");
+        warn(
+          p,
+          p.limitCode === "subscription_inactive"
+            ? "Some client groups could not be turned into diagrams because the subscription is inactive."
+            : "Some client groups could not be turned into diagrams because the workspace structure limit was reached.",
+        );
+      }
+    } else {
+      warn(p, `Group "${g.name}" not synced: ${res.status}${res.error ? ` (${res.error})` : ""}`);
     }
   }
-  for (const e of res.errors ?? []) warn(p, String(e));
 }
 
 // ── Phase: staff + fallback structure ──────────────────────────────
@@ -990,6 +1025,7 @@ async function runSlice(
           tenantId,
           fetched.filter((g): g is NonNullable<typeof g> => g !== null),
           p,
+          jobId,
         );
         console.log(`[sync-xpm] linked ${batch.length} groups in ${Date.now() - batchStartedAt}ms (slice ${Date.now() - sliceStartedAt}ms)`);
         processed += batch.length;

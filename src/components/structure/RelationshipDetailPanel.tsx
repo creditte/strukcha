@@ -317,6 +317,9 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1">Units</p>
                   <p className="text-sm">{relationship.ownership_units}</p>
+                  {relationship.ownership_percent == null && (
+                    <p className="text-xs text-muted-foreground">No percentage recorded</p>
+                  )}
                 </div>
               )}
               {relationship.ownership_class && (
