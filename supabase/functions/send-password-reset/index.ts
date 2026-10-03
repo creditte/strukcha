@@ -1,15 +1,16 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canonicalFrontend } from "../_shared/frontend-url.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
-const PROD_FRONTEND_URL = "https://strukcha.app";
+const PROD_FRONTEND_URL = canonicalFrontend();
 
 function buildResetRedirect(): string {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const isLocalRuntime = supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
-  const configured = (Deno.env.get("FRONTEND_URL") || "").trim() || PROD_FRONTEND_URL;
+  const configured = PROD_FRONTEND_URL;
   try {
     const url = new URL(configured);
     if (!isLocalRuntime && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {

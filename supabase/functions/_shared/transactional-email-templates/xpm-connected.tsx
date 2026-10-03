@@ -1,3 +1,4 @@
+import { canonicalFrontend } from '../frontend-url.ts'
 import * as React from 'npm:react@18.3.1'
 import {
   Body, Button, Container, Head, Heading, Html, Preview, Text,
@@ -5,7 +6,7 @@ import {
 import type { TemplateEntry } from './registry.ts'
 
 const SITE_NAME = 'strukcha'
-const SITE_URL = 'https://strukcha.app'
+const SITE_URL = canonicalFrontend()
 
 interface XpmConnectedProps {
   name?: string

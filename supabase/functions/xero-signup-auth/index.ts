@@ -1,4 +1,5 @@
 import { safeFrontend } from "../_shared/safe-redirect.ts";
+import { canonicalFrontend } from "../_shared/frontend-url.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
 
@@ -72,9 +73,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const frontendOrigin = callerOrigin ||
-      Deno.env.get("FRONTEND_URL") ||
-      "https://strukcha-dev.lovable.app";
+    const frontendOrigin = callerOrigin || canonicalFrontend();
 
     const state = btoa(JSON.stringify({
       csrf: csrfToken,

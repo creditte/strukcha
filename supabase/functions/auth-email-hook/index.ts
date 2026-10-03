@@ -36,7 +36,7 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "link-map-insight"
+const SITE_NAME = "strukcha"
 const SENDER_DOMAIN = "notify.strukcha.app"
 const ROOT_DOMAIN = "strukcha.app"
 const FROM_DOMAIN = "strukcha.app" // Domain shown in From address (may be root or sender subdomain)

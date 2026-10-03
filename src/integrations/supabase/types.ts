@@ -877,8 +877,30 @@ export type Database = {
         }
         Relationships: []
       }
+      signup_rate_events: {
+        Row: {
+          bucket: string
+          created_at: string
+          id: number
+          key_hash: string
+        }
+        Insert: {
+          bucket: string
+          created_at?: string
+          id?: number
+          key_hash: string
+        }
+        Update: {
+          bucket?: string
+          created_at?: string
+          id?: number
+          key_hash?: string
+        }
+        Relationships: []
+      }
       signup_verifications: {
         Row: {
+          attempts: number
           code: string
           created_at: string
           email: string
@@ -888,6 +910,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          attempts?: number
           code: string
           created_at?: string
           email: string
@@ -897,6 +920,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          attempts?: number
           code?: string
           created_at?: string
           email?: string
@@ -1898,6 +1922,19 @@ export type Database = {
       rpc_soft_delete_tenant_user: {
         Args: { p_tenant_id: string; p_tenant_user_id: string }
         Returns: Json
+      }
+      signup_check_code: {
+        Args: { _code: string; _email: string; _max_attempts?: number }
+        Returns: string
+      }
+      signup_rate_hit: {
+        Args: {
+          _bucket: string
+          _key_hash: string
+          _max: number
+          _window_seconds: number
+        }
+        Returns: boolean
       }
       sync_xpm_archive_absent_clients: {
         Args: { _since: string; _tenant_id: string }

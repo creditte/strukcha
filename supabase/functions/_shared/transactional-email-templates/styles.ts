@@ -1,3 +1,4 @@
+import { canonicalFrontend } from '../frontend-url.ts'
 export const emailStyles = {
   main: {
     backgroundColor: '#ffffff',
@@ -32,7 +33,7 @@ export const emailStyles = {
 }
 
 export const SITE_NAME = 'strukcha'
-export const SITE_URL = 'https://strukcha.app'
+export const SITE_URL = canonicalFrontend()
 /** Customer support address: shown in support copy and used as Reply-To. */
 export const SUPPORT_EMAIL = 'support@strukcha.app'
 /** General/sales contact — never used for support or technical workflows. */

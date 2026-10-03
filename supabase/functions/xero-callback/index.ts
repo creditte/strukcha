@@ -1,4 +1,5 @@
 import { safeFrontend } from "../_shared/safe-redirect.ts";
+import { canonicalFrontend } from "../_shared/frontend-url.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptToken } from "../_shared/crypto.ts";
@@ -11,7 +12,7 @@ serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
-    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
+    const defaultFrontendUrl = canonicalFrontend();
 
     if (error) {
       console.error("Xero OAuth error:", error);
@@ -233,7 +234,7 @@ serve(async (req) => {
     return Response.redirect(`${frontendUrl}/?xero=connected`, 302);
   } catch (err) {
     console.error("xero-callback error:", err);
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
+    const frontendUrl = canonicalFrontend();
     return Response.redirect(`${frontendUrl}/?xero=error&reason=server_error`, 302);
   }
 });
