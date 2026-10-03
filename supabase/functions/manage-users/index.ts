@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canonicalFrontend } from "../_shared/frontend-url.ts";
 import { queueTransactionalEmail } from "../_shared/queue-transactional-email.ts";
 import { getTenantUserRecipient } from "../_shared/tenant-recipients.ts";
 import { corsHeadersFor } from "../_shared/cors.ts";
@@ -6,7 +7,7 @@ import { corsHeadersFor } from "../_shared/cors.ts";
 
 const SITE_NAME = "strukcha";
 const FROM_DOMAIN = "strukcha.app";
-const PROD_FRONTEND_URL = "https://strukcha.app";
+const PROD_FRONTEND_URL = canonicalFrontend();
 
 function buildSetupPasswordRedirect(): string | null {
   const frontendUrl =  PROD_FRONTEND_URL;
