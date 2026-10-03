@@ -1,3 +1,4 @@
+import { canonicalFrontend } from '../frontend-url.ts'
 export const emailStyles = {
   main: {
     backgroundColor: '#ffffff',
