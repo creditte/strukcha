@@ -16,14 +16,14 @@ INSERT INTO _r SELECT 'user: cannot probe other firm via has_role', NOT public.h
 INSERT INTO _r SELECT 'user: role-name list hidden', (SELECT count(*) = 0 FROM public.roles);
 RESET ROLE;
 
--- user cannot grant themselves admin (RLS rejects)
+-- ordinary user cannot write role rows (RLS rejects)
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claims', '{"sub":"ce2a9860-a759-4f63-a814-bd3ab615f4d1","role":"authenticated"}', true);
 DO $$ BEGIN
   INSERT INTO public.user_roles(user_id, role) VALUES ('ce2a9860-a759-4f63-a814-bd3ab615f4d1', 'user') ON CONFLICT DO NOTHING;
-  INSERT INTO _r VALUES ('user: cannot self-grant admin', false);
+  INSERT INTO _r VALUES ('user: cannot write role rows', false);
 EXCEPTION WHEN insufficient_privilege OR check_violation OR unique_violation THEN
-  INSERT INTO _r VALUES ('user: cannot self-grant admin', true);
+  INSERT INTO _r VALUES ('user: cannot write role rows', true);
 END $$;
 RESET ROLE;
 
