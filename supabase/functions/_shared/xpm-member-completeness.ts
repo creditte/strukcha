@@ -144,6 +144,8 @@ export interface GroupSyncDeps<G> {
   readMember: (uuid: string) => Promise<unknown | null>;
   /** Only ever called for a complete group. */
   reconcile: (g: G, members: string[], hash: string) => Promise<GroupSyncStatus>;
+  /** Errors that must stop the whole run (auth, cancellation, database step). */
+  isFatal?: (e: unknown) => boolean;
 }
 
 /**
@@ -167,7 +169,8 @@ export async function syncGroupsSafely<G extends { uuid: string; name: string }>
       const failure = memberFetchFailure(g, failed);
       if (failure) { results.push({ group: g, status: "failed_incomplete", failure }); continue; }
       results.push({ group: g, status: await deps.reconcile(g, fetched.members, fetched.hash) });
-    } catch {
+    } catch (e) {
+      if (deps.isFatal?.(e)) throw e;
       results.push({ group: g, status: "failed" });
     }
   }
