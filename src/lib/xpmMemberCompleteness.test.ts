@@ -17,8 +17,8 @@ describe("retry rules", () => {
     expect(xpmRetryDelayMs(500, 1)).toBe(1000);
     expect(xpmRetryDelayMs(503, 2)).toBe(2000);
     expect(xpmRetryDelayMs("network", 3)).toBe(4000);
-    expect(xpmRetryDelayMs(429, 1, "60")).toBe(8000); // capped
-    expect(xpmRetryDelayMs(429, 4)).toBeNull(); // attempts exhausted
+    expect(xpmRetryDelayMs(429, 1, "60")).toBe(20000); // capped
+    expect(xpmRetryDelayMs(429, 5)).toBeNull(); // attempts exhausted
     expect(xpmRetryDelayMs(404, 1)).toBeNull();
     expect(xpmRetryDelayMs(401, 1)).toBeNull();
   });
@@ -38,7 +38,7 @@ describe("retry rules", () => {
     const f = vi.fn().mockImplementation(async () => res(503));
     const out = await fetchXpmWithRetry(f, { sleep: noSleep });
     expect(out).toEqual({ ok: false, status: 503 });
-    expect(f).toHaveBeenCalledTimes(4);
+    expect(f).toHaveBeenCalledTimes(5);
   });
 });
 
