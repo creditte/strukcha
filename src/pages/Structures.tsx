@@ -551,6 +551,24 @@ export default function Structures() {
     }
   }, [xpmPreview, xpmPreviewGroup, invokeXpmImport, invalidateStructures, navigate]);
 
+  // Keep using the existing same-name diagram: link it to the XPM group, then review the XPM changes.
+  const handleLinkExistingXpm = useCallback(async (structureId: string) => {
+    if (!xpmPreviewGroup) return;
+    setXpmApplying(true);
+    try {
+      const base = { group_uuid: xpmPreviewGroup.xpm_uuid, group_name: xpmPreviewGroup.name };
+      await invokeXpmImport({ ...base, mode: "link", structure_id: structureId });
+      const data = await invokeXpmImport({ ...base, mode: "preview" });
+      setXpmPreview(data as XpmGroupPreview);
+      invalidateStructures();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Could not link the diagram", { description: message });
+    } finally {
+      setXpmApplying(false);
+    }
+  }, [xpmPreviewGroup, invokeXpmImport, invalidateStructures]);
+
   // ── Tab Bar ──
   const TabBar = () => (
     <div className="mb-4 grid grid-cols-1 gap-1 border-b border-border/50 sm:grid-cols-2">
@@ -1135,6 +1153,8 @@ export default function Structures() {
         applying={xpmApplying}
         onCancel={() => { setXpmPreview(null); setXpmPreviewGroup(null); }}
         onConfirm={handleConfirmXpmImport}
+        onLinkExisting={handleLinkExistingXpm}
+        onOpenExisting={(id) => { setXpmPreview(null); setXpmPreviewGroup(null); navigate(`/structures/${id}`); }}
       />
       <CreateStructureModal
         open={showCreateModal}
