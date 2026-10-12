@@ -31,7 +31,7 @@ describe("retry rules", () => {
       .mockResolvedValueOnce(res(200, "<ok/>"));
     const out = await fetchXpmWithRetry(f, { sleep: noSleep });
     expect(out).toEqual({ ok: true, text: "<ok/>" });
-    expect(f).toHaveBeenCalledTimes(5);
+    expect(f).toHaveBeenCalledTimes(4);
   });
 
   it("gives up after the bounded number of attempts", async () => {
