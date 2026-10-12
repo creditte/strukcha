@@ -6,9 +6,9 @@
  * Pure (no Deno / network imports) so it is unit-tested from Vitest.
  */
 
-export const XPM_MAX_ATTEMPTS = 4;
+export const XPM_MAX_ATTEMPTS = 5;
 export const XPM_BACKOFF_BASE_MS = 1000;
-export const XPM_BACKOFF_CAP_MS = 8000;
+export const XPM_BACKOFF_CAP_MS = 20000;
 
 /**
  * Delay before the next attempt, or null when the failure is not worth
@@ -65,7 +65,7 @@ export async function fetchXpmWithRetry(
 export async function readGroupMemberRecords<T>(
   memberUuids: string[],
   readOne: (uuid: string) => Promise<T | null>,
-  concurrency = 10,
+  concurrency = 3,
 ): Promise<{ records: T[]; failed: string[] }> {
   const records: T[] = [];
   const failed: string[] = [];
