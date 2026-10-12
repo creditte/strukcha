@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
     }
 
     const nodes: NodeData[] = [];
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 3;
     const memberUuids = members.map((m: any) => xmlText(m, "UUID")).filter(Boolean);
 
     for (let i = 0; i < memberUuids.length; i += BATCH_SIZE) {
