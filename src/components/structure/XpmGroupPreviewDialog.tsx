@@ -3,6 +3,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 type RelLabel = { type?: string; from?: string; to?: string; units?: number | null; percent?: number | null; new_units?: number | null; new_percent?: number | null; id?: string };
@@ -13,6 +14,8 @@ export interface XpmGroupPreview {
   structure_id: string | null;
   group_name: string;
   error?: string;
+  /** Existing same-name diagrams that are not yet linked to this XPM group. */
+  same_name_manual?: string[];
   summary: {
     newEntities: string[];
     membersToAdd: string[];
@@ -41,21 +44,28 @@ function Section({ title, items }: { title: string; items: string[] }) {
 }
 
 export function XpmGroupPreviewDialog({
-  preview, applying, onCancel, onConfirm,
+  preview, applying, onCancel, onConfirm, onLinkExisting, onOpenExisting,
 }: {
   preview: XpmGroupPreview | null;
   applying: boolean;
   onCancel: () => void;
   onConfirm: (allowBesideManual: boolean) => void;
+  /** Link the one existing same-name diagram to this XPM group, then review again. */
+  onLinkExisting: (structureId: string) => void;
+  /** Open the existing diagram as it is, without any XPM changes. */
+  onOpenExisting: (structureId: string) => void;
 }) {
   if (!preview) return null;
   const s = preview.summary;
   const ambiguous = preview.status === "ambiguous_structure_match";
   const manualConflict = preview.status === "manual_structure_name_conflict";
+  const existingId = manualConflict && preview.same_name_manual?.length === 1 ? preview.same_name_manual[0] : null;
   const intro = ambiguous
     ? "More than one XPM diagram has this name. Nothing will change until they are reviewed."
     : manualConflict
-      ? "A hand-made diagram already has this name. It will not be changed. You can create a separate XPM diagram instead."
+      ? existingId
+        ? "A diagram with this name already exists but isn't linked to this XPM group yet. Link it to keep using the same diagram — nothing in it changes until you review and confirm the XPM updates next."
+        : "More than one diagram has this name. Nothing will change until they are reviewed."
       : preview.match === "create"
         ? "A new XPM diagram will be created for this group."
         : "These changes will be made to the existing XPM diagram. Hand-made items are kept.";
@@ -67,7 +77,7 @@ export function XpmGroupPreviewDialog({
           <AlertDialogTitle>Review changes from XPM: {preview.group_name}</AlertDialogTitle>
           <AlertDialogDescription>{intro}</AlertDialogDescription>
         </AlertDialogHeader>
-        {!ambiguous && (
+        {!ambiguous && !manualConflict && (
           <ScrollArea className="max-h-[50vh] pr-3">
             <div className="space-y-3">
               <Section title="New clients to add" items={s.newEntities} />
@@ -86,13 +96,27 @@ export function XpmGroupPreviewDialog({
         )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={applying}>Cancel</AlertDialogCancel>
-          {!ambiguous && (
+          {existingId && (
+            <Button variant="outline" disabled={applying} onClick={() => onOpenExisting(existingId)}>
+              Open without linking
+            </Button>
+          )}
+          {existingId && (
             <AlertDialogAction
               disabled={applying}
-              onClick={(e) => { e.preventDefault(); onConfirm(manualConflict); }}
+              onClick={(e) => { e.preventDefault(); onLinkExisting(existingId); }}
             >
               {applying && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-              {manualConflict ? "Create separate XPM diagram" : "Apply and open"}
+              Link to XPM and review
+            </AlertDialogAction>
+          )}
+          {!ambiguous && !manualConflict && (
+            <AlertDialogAction
+              disabled={applying}
+              onClick={(e) => { e.preventDefault(); onConfirm(false); }}
+            >
+              {applying && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              Apply and open
             </AlertDialogAction>
           )}
         </AlertDialogFooter>

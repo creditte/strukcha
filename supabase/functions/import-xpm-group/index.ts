@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
     const mode = body.mode;
     const allowBesideManual = body.allow_create_beside_manual === true;
     const expectedStructureId: string | null | undefined = "expected_structure_id" in body ? body.expected_structure_id : undefined;
-    if (mode !== "preview" && mode !== "apply") {
+    if (mode !== "preview" && mode !== "apply" && mode !== "link") {
       return new Response(JSON.stringify({ code: "preview_required", error: "Please refresh the page to review changes before opening this group." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (!groupUuid) {
@@ -98,6 +98,22 @@ Deno.serve(async (req) => {
     const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user.id });
     if (!tenantId) {
       return new Response(JSON.stringify({ error: "No tenant found" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // "link": on explicit confirmation, attach the one existing same-name
+    // diagram to this XPM group (sets the group id only — nothing else changes).
+    // The caller then previews again and applies as a normal by-id update.
+    if (mode === "link") {
+      const { data: linked, error: linkErr } = await supabase.rpc("xpm_link_existing_structure", {
+        _tenant_id: tenantId, _group_uuid: groupUuid, _group_name: groupName,
+        _structure_id: body.structure_id ?? null, _actor: user.id,
+      });
+      const r = (linked ?? {}) as Record<string, unknown>;
+      const ok = !linkErr && r.status === "linked";
+      return new Response(JSON.stringify(ok
+        ? { mode: "link", status: "linked", structure_id: r.structure_id }
+        : { code: (r.status as string) ?? "link_failed", error: "This diagram could not be linked to the XPM group. Nothing was changed.", detail: linkErr?.message }),
+        { status: ok ? 200 : 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Load Xero connection

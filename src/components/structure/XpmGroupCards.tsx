@@ -121,6 +121,22 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
     }
   }
 
+  async function handleLinkExisting(structureId: string) {
+    if (!previewGroup) return;
+    setApplying(true);
+    try {
+      const base = { group_uuid: previewGroup.xpm_uuid, group_name: previewGroup.name };
+      await invokeImport({ ...base, mode: "link", structure_id: structureId });
+      const data = await invokeImport({ ...base, mode: "preview" });
+      setPreview(data as XpmGroupPreview);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Could not link the diagram", { description: message });
+    } finally {
+      setApplying(false);
+    }
+  }
+
   useEffect(() => {
     async function init() {
       setLoading(true);
@@ -282,6 +298,8 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
         applying={applying}
         onCancel={() => { setPreview(null); setPreviewGroup(null); }}
         onConfirm={handleConfirmImport}
+        onLinkExisting={handleLinkExisting}
+        onOpenExisting={(id) => { setPreview(null); setPreviewGroup(null); navigate(`/structures/${id}`); }}
       />
     </div>
   );

@@ -2005,6 +2005,16 @@ export type Database = {
         }
         Returns: Json
       }
+      xpm_link_existing_structure: {
+        Args: {
+          _actor: string
+          _group_name: string
+          _group_uuid: string
+          _structure_id: string
+          _tenant_id: string
+        }
+        Returns: Json
+      }
       xpm_metadata_managed: {
         Args: {
           _confidence: Database["public"]["Enums"]["confidence_level"]
