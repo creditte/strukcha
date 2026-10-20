@@ -74,3 +74,20 @@ export function resolveEntityType(businessStructure?: string, clientName?: strin
   }
   return "Unclassified";
 }
+
+/**
+ * Older imports stored XPM "Sole Trader" clients as the Sole Trader type, which
+ * blocks every person relationship (director, spouse, shareholder, trustee).
+ * Returns "Individual" when such a stored client should be corrected: XPM still
+ * calls it a sole trader and no Trades As owner exists (a real business with an
+ * owner keeps its type). Anything else returns null and is left alone.
+ */
+export function xpmTypeCorrection(
+  storedType: string | null | undefined,
+  businessStructure: string | null | undefined,
+  hasTradesAsOwner: boolean,
+): "Individual" | null {
+  if (storedType !== "Sole Trader" || hasTradesAsOwner) return null;
+  if (!/sole trader/i.test(businessStructure ?? "")) return null;
+  return "Individual";
+}

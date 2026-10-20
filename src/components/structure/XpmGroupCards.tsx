@@ -13,6 +13,7 @@ import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
 import { XpmGroupPreviewDialog, isNothingToApply, type XpmGroupPreview } from "./XpmGroupPreviewDialog";
+import { findLinkedXpmStructure, editorUrlWithXpmCheck } from "@/lib/xpmOpen";
 
 interface XpmGroup {
   xpm_uuid: string;
@@ -86,6 +87,11 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
     e.stopPropagation();
     setImportingId(group.xpm_uuid);
     try {
+      const linkedId = await findLinkedXpmStructure(group.xpm_uuid);
+      if (linkedId) {
+        navigate(editorUrlWithXpmCheck(linkedId));
+        return;
+      }
       const data = await invokeImport({ group_uuid: group.xpm_uuid, group_name: group.name, mode: "preview" });
       if (isNothingToApply(data as XpmGroupPreview)) {
         navigate(`/structures/${(data as XpmGroupPreview).structure_id}`);

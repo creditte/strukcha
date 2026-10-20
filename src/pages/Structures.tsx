@@ -33,6 +33,7 @@ import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
 import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
 import { XpmGroupPreviewDialog, isNothingToApply, type XpmGroupPreview } from "@/components/structure/XpmGroupPreviewDialog";
+import { findLinkedXpmStructure, editorUrlWithXpmCheck } from "@/lib/xpmOpen";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -515,6 +516,13 @@ export default function Structures() {
   const handleImportToEditor = useCallback(async (group: XpmGroup) => {
     setImportingId(group.xpm_uuid);
     try {
+      // Already linked: open immediately; the editor checks XPM in the background.
+      const linkedId = await findLinkedXpmStructure(group.xpm_uuid);
+      if (linkedId) {
+        setSelectedGroup(null);
+        navigate(editorUrlWithXpmCheck(linkedId));
+        return;
+      }
       const data = await invokeXpmImport({ group_uuid: group.xpm_uuid, group_name: group.name, mode: "preview" });
       if (isNothingToApply(data as XpmGroupPreview)) {
         setSelectedGroup(null);
@@ -547,6 +555,7 @@ export default function Structures() {
       setXpmPreview(null);
       setXpmPreviewGroup(null);
       invalidateStructures();
+      setSelectedGroup(null);
       navigate(`/structures/${data.structure_id}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -583,7 +592,7 @@ export default function Structures() {
       onCancel={() => { setXpmPreview(null); setXpmPreviewGroup(null); }}
       onConfirm={handleConfirmXpmImport}
       onLinkExisting={handleLinkExistingXpm}
-      onOpenExisting={(id) => { setXpmPreview(null); setXpmPreviewGroup(null); navigate(`/structures/${id}`); }}
+      onOpenExisting={(id) => { setXpmPreview(null); setXpmPreviewGroup(null); setSelectedGroup(null); navigate(`/structures/${id}`); }}
     />
   );
 

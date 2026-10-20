@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
-import { resolveEntityType } from "../_shared/xpm-entity-type.ts";
+import { resolveEntityType, xpmTypeCorrection } from "../_shared/xpm-entity-type.ts";
 import {
   classifyWithProvenance,
   normaliseXpmRelationship,
@@ -238,6 +238,20 @@ Deno.serve(async (req) => {
       return data as GroupState;
     };
 
+    /** Stored "Sole Trader" clients XPM describes as a person (no Trades As owner) → Individual. */
+    const loadTypeCorrections = async (ents: Record<string, { id: string; type: string }>) => {
+      const out = new Map<string, { name: string; from: string; to: string }>();
+      const candidates = clients.filter((c) => ents[c.uuid]?.type === "Sole Trader");
+      if (candidates.length === 0) return out;
+      const ta = await loadTradesAsOwners(supabase, tenantId, candidates.map((c) => ents[c.uuid].id), FILTER_BATCH);
+      for (const c of candidates) {
+        const id = ents[c.uuid].id;
+        const to = xpmTypeCorrection("Sole Trader", c.businessStructure, (ta.owners.get(id)?.length ?? 0) > 0);
+        if (to) out.set(id, { name: c.name, from: "Sole Trader", to });
+      }
+      return out;
+    };
+
     /** Canonical edges between active members. Ids are entity ids or `new:<xpm uuid>`. */
     const buildEdges = async (idOf: (uuid: string) => string | null, storedType: (id: string) => string | undefined) => {
       const memberSet = new Set(clients.map((c) => c.uuid));
@@ -309,6 +323,9 @@ Deno.serve(async (req) => {
       const state = await loadState();
       const idOf = (u: string) => ents[u]?.id ?? (clients.some((c) => c.uuid === u) ? `new:${u}` : null);
       const typeById = new Map(Object.values(ents).map((e) => [e.id, e.type]));
+      // Show relationships as they will be once the confirmed apply corrects the type.
+      const typeCorrections = await loadTypeCorrections(ents);
+      for (const [id, t] of typeCorrections) typeById.set(id, t.to);
       const { edgeByKey, evidenceRows, skipped, nameById } = await buildEdges(idOf, (id) => typeById.get(id));
 
       const confirmed = new Set<string>();
@@ -352,6 +369,7 @@ Deno.serve(async (req) => {
           linksToAdd: plan.add_links.map(relLabel),
           linksToRemove: plan.remove_links.map(relLabel),
           newRelationships,
+          typeCorrections: [...typeCorrections.values()],
           metadataUpdates: plan.metadata_updates.map((m) => ({ ...relLabel(m.relationship_id), new_units: m.units, new_percent: m.percent })),
           preserved: {
             manualMembers: plan.preserved.manual_members.map((id) => entName.get(id) ?? id),
@@ -383,13 +401,17 @@ Deno.serve(async (req) => {
     }
 
     const ents = await loadEntities();
-    // Re-classify Unclassified records and un-archive members active in XPM again.
+    const typeCorrections = await loadTypeCorrections(ents);
+    // Re-classify Unclassified records, correct people stored as Sole Traders
+    // (shown in the confirmed preview), and un-archive members active in XPM again.
     for (const c of clients) {
       const e = ents[c.uuid];
       if (!e) continue;
       const patch: Record<string, unknown> = {};
       if (e.archived) patch.is_archived = false;
       if (c.entityType !== "Unclassified" && e.type === "Unclassified") patch.entity_type = c.entityType;
+      const fix = typeCorrections.get(e.id);
+      if (fix) patch.entity_type = fix.to;
       if (Object.keys(patch).length === 0) continue;
       await supabase.from("entities").update(patch).eq("id", e.id).eq("tenant_id", tenantId);
       if (patch.entity_type) e.type = String(patch.entity_type);

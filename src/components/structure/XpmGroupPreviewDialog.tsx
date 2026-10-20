@@ -25,6 +25,8 @@ export interface XpmGroupPreview {
     linksToRemove: RelLabel[];
     newRelationships: RelLabel[];
     metadataUpdates: RelLabel[];
+    /** Clients XPM describes as a person but stored as a Sole Trader. */
+    typeCorrections?: Array<{ name: string; from: string; to: string }>;
     preserved: { manualMembers: string[]; manualLinks: RelLabel[]; metadataOverrides: RelLabel[]; membersKeptForManualLinks: string[] };
   };
 }
@@ -34,7 +36,16 @@ export function isNothingToApply(p: XpmGroupPreview | null | undefined): boolean
   if (!p || p.status !== "ready" || p.match !== "uuid" || !p.structure_id) return false;
   const s = p.summary;
   return s.newEntities.length + s.membersToAdd.length + s.membersToRemove.length +
-    s.linksToAdd.length + s.linksToRemove.length + s.newRelationships.length + s.metadataUpdates.length === 0;
+    s.linksToAdd.length + s.linksToRemove.length + s.newRelationships.length + s.metadataUpdates.length +
+    (s.typeCorrections?.length ?? 0) === 0;
+}
+
+/** Number of changes the preview would make (for the editor's update banner). */
+export function countXpmChanges(p: XpmGroupPreview): number {
+  const s = p.summary;
+  return s.newEntities.length + s.membersToAdd.length + s.membersToRemove.length +
+    s.linksToAdd.length + s.linksToRemove.length + s.newRelationships.length + s.metadataUpdates.length +
+    (s.typeCorrections?.length ?? 0);
 }
 
 const fig = (u?: number | null, p?: number | null) =>
@@ -88,6 +99,7 @@ export function XpmGroupPreviewDialog({
         {!ambiguous && !manualConflict && (
           <ScrollArea className="max-h-[50vh] pr-3">
             <div className="space-y-3">
+              <Section title="Client type corrections" items={(s.typeCorrections ?? []).map((t) => `${t.name}: ${t.from} → ${t.to}`)} />
               <Section title="New clients to add" items={s.newEntities} />
               <Section title="Members to add" items={s.membersToAdd} />
               <Section title="Members to remove (from XPM only)" items={s.membersToRemove} />
