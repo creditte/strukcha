@@ -32,7 +32,7 @@ import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
 import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
-import { XpmGroupPreviewDialog, type XpmGroupPreview } from "@/components/structure/XpmGroupPreviewDialog";
+import { XpmGroupPreviewDialog, isNothingToApply, type XpmGroupPreview } from "@/components/structure/XpmGroupPreviewDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -530,7 +530,7 @@ export default function Structures() {
     } finally {
       setImportingId(null);
     }
-  }, [invokeXpmImport, reportXeroError]);
+  }, [invokeXpmImport, reportXeroError, navigate]);
 
   const handleConfirmXpmImport = useCallback(async (allowBesideManual: boolean) => {
     if (!xpmPreview || !xpmPreviewGroup) return;

@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
-import { XpmGroupPreviewDialog, type XpmGroupPreview } from "./XpmGroupPreviewDialog";
+import { XpmGroupPreviewDialog, isNothingToApply, type XpmGroupPreview } from "./XpmGroupPreviewDialog";
 
 interface XpmGroup {
   xpm_uuid: string;
