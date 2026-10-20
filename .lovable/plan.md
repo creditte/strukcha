@@ -1,4 +1,6 @@
-# S Dart Group: why the diagram is wrong, and how to fix it
+# Firm-wide fix: why XPM diagrams are wrong (S Dart Group is one example)
+
+**Scope across the firm (live data):** 42 clients are stored as Sole Trader, in 26 diagrams; 21 of them have XPM relationships that were rejected or held for review. About 34,000 evidence rows exist, many repeated across runs. Every fix below applies to all groups, and S Dart is used only as the test case.
 
 ## What I found (checked against the live data)
 
@@ -20,10 +22,10 @@ The result: Stephen, Amanda and SAXR Investments have **0 relationships**. Only 
 
 1. **Reproduce the Open-in-Editor loop** in the browser (signed in) from both the Structures list and the group page breadcrumb; fix navigation so Apply always opens the diagram, and skip the dialog entirely when there is nothing to change (open directly).
 2. **Treat XPM "sole trader" clients as a person who trades as a business.** Keep the person as an Individual (so Director / Shareholder / Spouse / Trustee / Beneficiary attach to them), and only create a separate Sole Trader business with one Trades As link when XPM really describes a business. Re-check existing Sole Trader clients that have person-type relationships.
-3. **Re-run the S Dart rules on the facts already saved** (no new XPM read needed) so the held/rejected relationships are re-decided under the corrected type, show a preview of what would be created, and apply only after you confirm.
+3. **Re-check every affected group firm-wide using the facts already saved.** No new XPM read is needed. Rejected or held relationships are decided again under the corrected type. You get one firm-wide preview (per group: what would be added), and nothing is applied until you confirm.
 4. **Stop duplicate evidence**: fill in the missing duplicate-check keys and make each preview/apply reuse existing rows instead of adding new ones; collapse existing duplicates for review.
 5. **Trust-as-shareholder**: offer a one-click fix in Review ("move shareholding to trustee SAXR Dart Pty Ltd / Stephen Dart") rather than leaving it a hard conflict.
-6. Then check a sample of other groups with Sole Trader members, report how many are affected, and fix them only with your approval.
+6. Apply the same trustee fix suggestion to every diagram where a trust is shown holding shares directly, then re-run Health for all affected diagrams. You'll get a before/after report.
 
 ## Safety
 No XPM sync, no changes to client or relationship data, and nothing applied to other groups without your explicit go-ahead. Manual edits and diagram positions are kept.
