@@ -87,6 +87,10 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
     setImportingId(group.xpm_uuid);
     try {
       const data = await invokeImport({ group_uuid: group.xpm_uuid, group_name: group.name, mode: "preview" });
+      if (isNothingToApply(data as XpmGroupPreview)) {
+        navigate(`/structures/${(data as XpmGroupPreview).structure_id}`);
+        return;
+      }
       setPreviewGroup(group);
       setPreview(data as XpmGroupPreview);
     } catch (err: unknown) {
