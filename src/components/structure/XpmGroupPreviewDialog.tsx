@@ -29,6 +29,14 @@ export interface XpmGroupPreview {
   };
 }
 
+/** True when the diagram already matches XPM: open it directly instead of asking. */
+export function isNothingToApply(p: XpmGroupPreview | null | undefined): boolean {
+  if (!p || p.status !== "ready" || p.match !== "uuid" || !p.structure_id) return false;
+  const s = p.summary;
+  return s.newEntities.length + s.membersToAdd.length + s.membersToRemove.length +
+    s.linksToAdd.length + s.linksToRemove.length + s.newRelationships.length + s.metadataUpdates.length === 0;
+}
+
 const fig = (u?: number | null, p?: number | null) =>
   [u != null ? `${u} units` : null, p != null ? `${p}%` : null].filter(Boolean).join(", ") || "none";
 const rel = (r: RelLabel) => (r.type ? `${r.from} → ${r.to} (${r.type.replace(/_/g, " ")})` : r.id ?? "");

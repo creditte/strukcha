@@ -32,7 +32,7 @@ import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
 import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
-import { XpmGroupPreviewDialog, type XpmGroupPreview } from "@/components/structure/XpmGroupPreviewDialog";
+import { XpmGroupPreviewDialog, isNothingToApply, type XpmGroupPreview } from "@/components/structure/XpmGroupPreviewDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -516,6 +516,11 @@ export default function Structures() {
     setImportingId(group.xpm_uuid);
     try {
       const data = await invokeXpmImport({ group_uuid: group.xpm_uuid, group_name: group.name, mode: "preview" });
+      if (isNothingToApply(data as XpmGroupPreview)) {
+        setSelectedGroup(null);
+        navigate(`/structures/${(data as XpmGroupPreview).structure_id}`);
+        return;
+      }
       setXpmPreviewGroup(group);
       setXpmPreview(data as XpmGroupPreview);
     } catch (err: unknown) {
@@ -525,7 +530,7 @@ export default function Structures() {
     } finally {
       setImportingId(null);
     }
-  }, [invokeXpmImport, reportXeroError]);
+  }, [invokeXpmImport, reportXeroError, navigate]);
 
   const handleConfirmXpmImport = useCallback(async (allowBesideManual: boolean) => {
     if (!xpmPreview || !xpmPreviewGroup) return;
@@ -568,6 +573,19 @@ export default function Structures() {
       setXpmApplying(false);
     }
   }, [xpmPreviewGroup, invokeXpmImport, invalidateStructures]);
+
+  // Rendered in both the group view and the list view, so the review box
+  // appears wherever "Open in Editor" was clicked.
+  const xpmPreviewDialog = (
+    <XpmGroupPreviewDialog
+      preview={xpmPreview}
+      applying={xpmApplying}
+      onCancel={() => { setXpmPreview(null); setXpmPreviewGroup(null); }}
+      onConfirm={handleConfirmXpmImport}
+      onLinkExisting={handleLinkExistingXpm}
+      onOpenExisting={(id) => { setXpmPreview(null); setXpmPreviewGroup(null); navigate(`/structures/${id}`); }}
+    />
+  );
 
   // ── Tab Bar ──
   const TabBar = () => (
@@ -655,6 +673,7 @@ export default function Structures() {
             onClose={() => setSelectedGroup(null)}
           />
         </div>
+        {xpmPreviewDialog}
       </div>
     );
   }
@@ -1148,14 +1167,7 @@ export default function Structures() {
         </div>
       )}
 
-      <XpmGroupPreviewDialog
-        preview={xpmPreview}
-        applying={xpmApplying}
-        onCancel={() => { setXpmPreview(null); setXpmPreviewGroup(null); }}
-        onConfirm={handleConfirmXpmImport}
-        onLinkExisting={handleLinkExistingXpm}
-        onOpenExisting={(id) => { setXpmPreview(null); setXpmPreviewGroup(null); navigate(`/structures/${id}`); }}
-      />
+      {xpmPreviewDialog}
       <CreateStructureModal
         open={showCreateModal}
         onOpenChange={setShowCreateModal}

@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import { xeroToastPayload } from "@/lib/xeroErrors";
 import { useXeroConnection } from "@/contexts/XeroConnectionContext";
-import { XpmGroupPreviewDialog, type XpmGroupPreview } from "./XpmGroupPreviewDialog";
+import { XpmGroupPreviewDialog, isNothingToApply, type XpmGroupPreview } from "./XpmGroupPreviewDialog";
 
 interface XpmGroup {
   xpm_uuid: string;
@@ -87,6 +87,10 @@ export default function XpmGroupCards({ onSelectGroup, selectedGroupId }: XpmGro
     setImportingId(group.xpm_uuid);
     try {
       const data = await invokeImport({ group_uuid: group.xpm_uuid, group_name: group.name, mode: "preview" });
+      if (isNothingToApply(data as XpmGroupPreview)) {
+        navigate(`/structures/${(data as XpmGroupPreview).structure_id}`);
+        return;
+      }
       setPreviewGroup(group);
       setPreview(data as XpmGroupPreview);
     } catch (err: unknown) {
