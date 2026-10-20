@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
-import { resolveEntityType } from "../_shared/xpm-entity-type.ts";
+import { resolveEntityType, xpmTypeCorrection } from "../_shared/xpm-entity-type.ts";
 import {
   classifyWithProvenance,
   normaliseXpmRelationship,
