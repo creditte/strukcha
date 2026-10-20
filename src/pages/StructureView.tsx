@@ -37,6 +37,7 @@ import CanvasHealthBadge from "@/components/structure/CanvasHealthBadge";
 import FloatingActions from "@/components/structure/FloatingActions";
 import SecondaryActionsMenu from "@/components/structure/SecondaryActionsMenu";
 import CanvasCommandBar from "@/components/structure/CanvasCommandBar";
+import XpmUpdatesBanner from "@/components/structure/XpmUpdatesBanner";
 import { formatDistanceToNow } from "date-fns";
 import type { Connection } from "@xyflow/react";
 
@@ -515,6 +516,8 @@ export default function StructureView() {
           />
         </div>
       </div>
+
+      {id && !isViewingSnapshot && <XpmUpdatesBanner structureId={id} onApplied={reload} />}
 
       {/* Export blocked banner */}
       {!isViewingSnapshot && (
