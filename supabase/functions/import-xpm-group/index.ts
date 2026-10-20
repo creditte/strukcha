@@ -238,6 +238,20 @@ Deno.serve(async (req) => {
       return data as GroupState;
     };
 
+    /** Stored "Sole Trader" clients XPM describes as a person (no Trades As owner) → Individual. */
+    const loadTypeCorrections = async (ents: Record<string, { id: string; type: string }>) => {
+      const out = new Map<string, { name: string; from: string; to: string }>();
+      const candidates = clients.filter((c) => ents[c.uuid]?.type === "Sole Trader");
+      if (candidates.length === 0) return out;
+      const ta = await loadTradesAsOwners(supabase, tenantId, candidates.map((c) => ents[c.uuid].id), FILTER_BATCH);
+      for (const c of candidates) {
+        const id = ents[c.uuid].id;
+        const to = xpmTypeCorrection("Sole Trader", c.businessStructure, (ta.owners.get(id)?.length ?? 0) > 0);
+        if (to) out.set(id, { name: c.name, from: "Sole Trader", to });
+      }
+      return out;
+    };
+
     /** Canonical edges between active members. Ids are entity ids or `new:<xpm uuid>`. */
     const buildEdges = async (idOf: (uuid: string) => string | null, storedType: (id: string) => string | undefined) => {
       const memberSet = new Set(clients.map((c) => c.uuid));
