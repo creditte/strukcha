@@ -45,15 +45,15 @@ describe("Data API grants in migrations", () => {
   });
 
   for (const dir of ["supabase/migrations", "supabase/pending-migrations"]) {
-    it(`every public table created in ${dir} has service_role + authenticated grants`, () => {
+    it(`every public table created in ${dir} has an explicit service_role grant`, () => {
       const missing: string[] = [];
       for (const f of sqlFiles(dir)) {
         const sql = readFileSync(f, "utf8");
         const sr = grantedTables(sql, "service_role");
-        const au = grantedTables(sql, "authenticated");
+        
         for (const t of createdTables(sql)) {
           const inBaseline = dir === "supabase/migrations" && baselineGrants.has(t);
-          if (!inBaseline && (!sr.has(t) || !au.has(t))) missing.push(`${f}: ${t}`);
+          if (!inBaseline && !sr.has(t)) missing.push(`${f}: ${t}`);
         }
       }
       expect(missing).toEqual([]);
