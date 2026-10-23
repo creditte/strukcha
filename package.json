@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:sql": "bun scripts/relationship-policy-sql-check.ts"
+    "test:sql": "bun scripts/relationship-policy-sql-check.ts",
+    "test:grants": "vitest run src/lib/migrationGrants.test.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^2.0.4",
