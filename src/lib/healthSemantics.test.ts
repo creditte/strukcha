@@ -21,7 +21,7 @@ describe("issue classification", () => {
     missing_unit_holders: "gap", missing_partners: "gap", missing_trades_as_owner: "gap",
     ownership_incomplete: "gap", ownership_under: "gap", duplicate_relationship: "gap",
     unclassified: "gap", orphan_entity: "gap",
-    missing_appointer: "info", ownership_no_percent: "info", missing_identifiers: "info",
+    missing_appointer: "info", ownership_no_percent: "info", ownership_units_only: "info", missing_identifiers: "info",
   };
   it.each(Object.entries(expected))("%s is %s", (code, sev) => {
     expect(ISSUE_DEFINITIONS[code].severity).toBe(sev);
@@ -117,6 +117,16 @@ describe("ownership percentage aggregation", () => {
     const i = run([null, null, null]);
     expect(i.map((x) => x.code)).toEqual(["ownership_no_percent"]);
     expect(i[0].deduction).toBe(0);
+  });
+  it("units only → ownership_units_only replaces ownership_no_percent", () => {
+    const ents = [ent("Co", "Company"), ent("P0", "Individual")];
+    const r = { ...rel("P0", "Co", "shareholder", null), ownership_units: 60 };
+    const h = computeHealthScoreV2(ents, [rel("P0", "Co", "director"), r]);
+    const i = h.issues.filter((x) => x.code.startsWith("ownership_"));
+    expect(i.map((x) => x.code)).toEqual(["ownership_units_only"]);
+    expect(i[0].severity).toBe("info");
+    expect(i[0].deduction).toBe(0);
+    expect(h.dataGapCount).toBe(0);
   });
   it("mixed → one ownership_incomplete", () => expect(run([50, null, null]).map((x) => x.code)).toEqual(["ownership_incomplete"]));
   it("under → one ownership_under", () => expect(run([40, 40]).map((x) => x.code)).toEqual(["ownership_under"]));

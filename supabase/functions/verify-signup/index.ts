@@ -1,5 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeadersFor } from "../_shared/cors.ts";
+import {
+  CODE_MAX_ATTEMPTS, CODE_TTL_MINUTES, GENERIC_CODE_ERROR, GENERIC_RESEND_RESPONSE, RATE_LIMITED_ERROR, SIGNUP_LIMITS,
+  clientAddress, generateCode, hashKey, normaliseEmail, withinLimits,
+} from "../_shared/signup-guard.ts";
 
 
 const SITE_NAME = "strukcha";
@@ -48,100 +52,89 @@ Deno.serve(async (req) => {
     });
 
   try {
-    const { email, code, action } = await req.json();
-
+    const { email: rawEmail, code, action } = await req.json();
+    const email = normaliseEmail(rawEmail);
     if (!email) return json({ error: "Email is required" }, 400);
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+    const emailKey = await hashKey("email", email);
+    const clientKey = await hashKey("client", clientAddress(req.headers));
 
     // ── RESEND ──────────────────────────────────────────────────────
     if (action === "resend") {
+      const allowed = await withinLimits(supabaseAdmin, [
+        { bucket: "resend_cooldown", key: emailKey, ...SIGNUP_LIMITS.resendCooldown },
+        { bucket: "resend_email", key: emailKey, ...SIGNUP_LIMITS.resendPerEmail },
+        { bucket: "resend_client", key: clientKey, ...SIGNUP_LIMITS.resendPerClient },
+      ]);
+      if (!allowed) return json({ error: RATE_LIMITED_ERROR });
+
       const { data: verRow } = await supabaseAdmin
         .from("signup_verifications")
         .select("user_id")
-        .eq("email", email.toLowerCase())
+        .eq("email", email)
         .eq("used", false)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (!verRow) return json({ error: "No pending verification found" }, 400);
+      // Same response whether or not there is a pending sign-up.
+      if (!verRow) return json({ ...GENERIC_RESEND_RESPONSE });
 
-      await supabaseAdmin
-        .from("signup_verifications")
-        .update({ used: true })
-        .eq("email", email.toLowerCase())
-        .eq("used", false);
-
-      const newCode = String(Math.floor(100000 + Math.random() * 900000));
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
+      await supabaseAdmin.from("signup_verifications").update({ used: true }).eq("email", email).eq("used", false);
+      const newCode = generateCode();
+      const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
       await supabaseAdmin.from("signup_verifications").insert({
-        user_id: verRow.user_id,
-        email: email.toLowerCase(),
-        code: newCode,
-        expires_at: expiresAt,
+        user_id: verRow.user_id, email, code: newCode, expires_at: expiresAt,
       });
-
       try {
         await sendViaSmtp2go(
           email,
           `Verify your strukcha account — ${newCode}`,
           renderVerificationHtml(newCode),
-          `Your strukcha verification code is: ${newCode}. It expires in 10 minutes.`
+          `Your strukcha verification code is: ${newCode}. It expires in ${CODE_TTL_MINUTES} minutes.`
         );
       } catch (sendErr) {
-        console.error("[VerifySignup] Failed to send email:", sendErr);
-        console.log(`[VerifySignup] Code for ${email}: ${newCode}`);
+        console.error("[VerifySignup] Failed to send email:", (sendErr as Error)?.message);
       }
-
-      return json({ ok: true });
+      return json({ ...GENERIC_RESEND_RESPONSE });
     }
 
     // ── VERIFY ──────────────────────────────────────────────────────
-    if (!code || typeof code !== "string" || code.length !== 6) {
+    if (!code || typeof code !== "string" || !/^\d{6}$/.test(code)) {
       return json({ error: "Invalid code format" }, 400);
     }
+    const allowed = await withinLimits(supabaseAdmin, [
+      { bucket: "verify_email", key: emailKey, ...SIGNUP_LIMITS.verifyPerEmail },
+      { bucket: "verify_client", key: clientKey, ...SIGNUP_LIMITS.verifyPerClient },
+    ]);
+    if (!allowed) return json({ error: RATE_LIMITED_ERROR });
 
-    const { data: codeRow } = await supabaseAdmin
-      .from("signup_verifications")
-      .select("*")
-      .eq("email", email.toLowerCase())
-      .eq("code", code)
-      .eq("used", false)
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // One-time, attempt-limited check done atomically in the database.
+    const { data: userId, error: checkErr } = await supabaseAdmin.rpc("signup_check_code", {
+      _email: email, _code: code, _max_attempts: CODE_MAX_ATTEMPTS,
+    });
+    if (checkErr) {
+      console.error("[VerifySignup] code check failed:", checkErr.message);
+      return json({ error: "Verification failed" }, 500);
+    }
+    if (!userId) return json({ error: GENERIC_CODE_ERROR });
 
-    if (!codeRow) return json({ error: "Invalid or expired code" }, 400);
-
-    await supabaseAdmin
-      .from("signup_verifications")
-      .update({ used: true })
-      .eq("id", codeRow.id);
-
-    const { data: existingUser, error: getUserErr } = await supabaseAdmin.auth.admin.getUserById(codeRow.user_id);
+    const { data: existingUser, error: getUserErr } = await supabaseAdmin.auth.admin.getUserById(userId);
     if (getUserErr || !existingUser.user) {
-      console.error("[VerifySignup] Failed to load user:", getUserErr);
+      console.error("[VerifySignup] Failed to load user:", getUserErr?.message);
       return json({ error: "Failed to verify email" }, 500);
     }
 
-    const mergedMeta = {
-      ...(existingUser.user.user_metadata ?? {}),
-      signup_source: "self_service",
-    };
-
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(codeRow.user_id, {
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       email_confirm: true,
-      user_metadata: mergedMeta,
+      user_metadata: { ...(existingUser.user.user_metadata ?? {}), signup_source: "self_service" },
     });
-
     if (updateError) {
-      console.error("[VerifySignup] Failed to confirm email:", updateError);
+      console.error("[VerifySignup] Failed to confirm email:", updateError.message);
       return json({ error: "Failed to verify email" }, 500);
     }
 
@@ -149,15 +142,12 @@ Deno.serve(async (req) => {
     await supabaseAdmin
       .from("profiles")
       .update({ onboarding_complete: true, password_set: true, updated_at: new Date().toISOString() })
-      .eq("user_id", codeRow.user_id);
+      .eq("user_id", userId);
 
-    // NOTE: the welcome email is intentionally NOT sent here. Registration is only
-    // complete once the Stripe free trial starts, so the welcome email is sent from
-    // the stripe-webhooks checkout.session.completed handler.
+    // Welcome email is sent by stripe-webhooks once the trial starts.
     return json({ ok: true, verified: true, needsPayment: true });
-
   } catch (err: any) {
-    console.error("[verify-signup] Error:", err);
-    return json({ error: err.message || "Verification failed" }, 500);
+    console.error("[verify-signup] Error:", err?.message);
+    return json({ error: "Verification failed" }, 500);
   }
 });

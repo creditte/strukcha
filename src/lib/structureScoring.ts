@@ -98,6 +98,7 @@ export const ISSUE_DEFINITIONS: Readonly<Record<string, IssueDef>> = {
   // Information — zero deduction
   missing_appointer: { severity: "info", category: "control", deduction: 0 },
   ownership_no_percent: { severity: "info", category: "governance", deduction: 0 },
+  ownership_units_only: { severity: "info", category: "governance", deduction: 0 },
   missing_identifiers: { severity: "info", category: "data", deduction: 0 },
 };
 
@@ -296,6 +297,14 @@ export function computeHealthScoreV2(
     const ref = { entity_id: targetId, entity_name: name };
     const entered = rels.filter((r) => r.ownership_percent != null);
     if (entered.length === 0) {
+      const units = rels.filter((r) => r.ownership_units != null);
+      if (units.length > 0) {
+        // Units recorded (e.g. XPM shares) but no percentage: information only.
+        // Percentages are never inferred from units.
+        const totalUnits = units.reduce((s, r) => s + Number(r.ownership_units), 0);
+        push("ownership_units_only", `${totalUnits} units are recorded for "${name}" but no ownership percentages.`, { ...ref, details: { units: totalUnits } });
+        continue;
+      }
       push("ownership_no_percent", `No ownership percentages are recorded for "${name}".`, ref);
       continue;
     }

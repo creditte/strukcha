@@ -1,4 +1,5 @@
 import { safeFrontend } from "../_shared/safe-redirect.ts";
+import { canonicalFrontend } from "../_shared/frontend-url.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptToken } from "../_shared/crypto.ts";
 import { verifyXeroIdToken } from "../_shared/verify-xero-id-token.ts";
@@ -27,7 +28,7 @@ Deno.serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const oauthError = url.searchParams.get("error");
 
-    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
+    const defaultFrontendUrl = canonicalFrontend();
 
     if (oauthError) {
       console.error("Xero OAuth error:", oauthError);
@@ -189,8 +190,9 @@ Deno.serve(async (req) => {
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
       const encryptedAccessToken = await encryptToken(tokens.access_token);
       const encryptedRefreshToken = await encryptToken(tokens.refresh_token);
-      // Sign-in uses basic Xero access. Never let it replace a firm's working
-      // Practice Manager link, or client syncs would stop.
+      // Sign-in uses basic Xero access. Never let it replace a firm's Practice
+      // Manager link — even one that needs reconnecting, which must stay
+      // flagged so the firm is prompted to re-authorise Practice Manager.
       let keepPracticeManager = false;
       if (connectionType === "standard") {
         const { data: pm } = await supabase
@@ -198,7 +200,6 @@ Deno.serve(async (req) => {
           .select("id")
           .eq("tenant_id", String(profile.tenant_id))
           .eq("connection_type", "practice_manager")
-          .neq("status", "needs_reauth")
           .limit(1);
         keepPracticeManager = Boolean(pm && pm.length > 0);
       }
@@ -250,7 +251,7 @@ Deno.serve(async (req) => {
     return Response.redirect(linkData.properties.action_link, 302);
   } catch (err) {
     console.error("xero-login-callback error:", err);
-    const fallback = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
+    const fallback = canonicalFrontend();
     return Response.redirect(`${fallback}/login?xero_login=error&reason=server_error`, 302);
   }
 });

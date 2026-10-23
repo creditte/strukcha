@@ -43,6 +43,7 @@ function getHumanIssueTitle(issue: ScoringIssue): string {
     case "invalid_relationship_direction": return "Conflicting relationship";
     case "ownership_incomplete": return "Some ownership % blank";
     case "ownership_under": return "Ownership below 100%";
+    case "ownership_units_only": return "Units recorded, no %";
     case "ownership_no_percent": return "No ownership % recorded";
     case "ownership_exceeds": return "Ownership exceeds 100%";
     case "orphan_entity": return "Disconnected entity";

@@ -32,6 +32,8 @@ import GroupStructureViewer from "@/components/structure/GroupStructureViewer";
 import GroupSearchDropdown from "@/components/structure/GroupSearchDropdown";
 import FavouriteGroups from "@/components/structure/FavouriteGroups";
 import CreateStructureModal from "@/components/structure/CreateStructureModal";
+import { XpmGroupPreviewDialog, isNothingToApply, type XpmGroupPreview } from "@/components/structure/XpmGroupPreviewDialog";
+import { findLinkedXpmStructure, editorUrlWithXpmCheck } from "@/lib/xpmOpen";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -103,6 +105,9 @@ export default function Structures() {
   const [deleteTarget, setDeleteTarget] = useState<ManualStructure | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [xpmPreview, setXpmPreview] = useState<XpmGroupPreview | null>(null);
+  const [xpmPreviewGroup, setXpmPreviewGroup] = useState<XpmGroup | null>(null);
+  const [xpmApplying, setXpmApplying] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -495,26 +500,37 @@ export default function Structures() {
     }
   }
 
+  const invokeXpmImport = useCallback(async (body: Record<string, unknown>) => {
+    const { data, error: fnError } = await supabase.functions.invoke("import-xpm-group", { body });
+    if (data?.mode === "preview") return data;
+    if (fnError) {
+      const ctx = (fnError as { context?: Response }).context;
+      const detail = ctx && typeof ctx.json === "function" ? await ctx.json().catch(() => null) : null;
+      throw new Error(detail?.detail || detail?.error || data?.detail || data?.error || fnError.message || "Failed to import group");
+    }
+    if (data?.error) throw new Error(data.detail || data.error);
+    return data;
+  }, []);
+
+  // Preview first (no changes); apply only after the user confirms.
   const handleImportToEditor = useCallback(async (group: XpmGroup) => {
     setImportingId(group.xpm_uuid);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("import-xpm-group", {
-        body: { group_uuid: group.xpm_uuid, group_name: group.name },
-      });
-      if (fnError) {
-        const msg = data?.detail || data?.error || fnError.message || "Failed to import group";
-        throw new Error(msg);
+      // Already linked: open immediately; the editor checks XPM in the background.
+      const linkedId = await findLinkedXpmStructure(group.xpm_uuid);
+      if (linkedId) {
+        setSelectedGroup(null);
+        navigate(editorUrlWithXpmCheck(linkedId));
+        return;
       }
-      if (data?.error) throw new Error(data.detail || data.error);
-      const relCount = data.relationships_count ?? 0;
-      if (relCount === 0) {
-        toast.warning(`Imported ${data.entities_count} entities but no relationships were saved. Try opening the group preview and contact support if this persists.`);
-      } else {
-        toast.success(`Imported ${data.entities_count} entities and ${relCount} relationships`);
+      const data = await invokeXpmImport({ group_uuid: group.xpm_uuid, group_name: group.name, mode: "preview" });
+      if (isNothingToApply(data as XpmGroupPreview)) {
+        setSelectedGroup(null);
+        navigate(`/structures/${(data as XpmGroupPreview).structure_id}`);
+        return;
       }
-      // Imported group adds structures/entities — refresh cached lists.
-      invalidateStructures();
-      navigate(`/structures/${data.structure_id}`);
+      setXpmPreviewGroup(group);
+      setXpmPreview(data as XpmGroupPreview);
     } catch (err: unknown) {
       reportXeroError(err);
       const payload = xeroToastPayload(err);
@@ -522,7 +538,63 @@ export default function Structures() {
     } finally {
       setImportingId(null);
     }
-  }, [navigate, reportXeroError, invalidateStructures]);
+  }, [invokeXpmImport, reportXeroError, navigate]);
+
+  const handleConfirmXpmImport = useCallback(async (allowBesideManual: boolean) => {
+    if (!xpmPreview || !xpmPreviewGroup) return;
+    setXpmApplying(true);
+    try {
+      const data = await invokeXpmImport({
+        group_uuid: xpmPreviewGroup.xpm_uuid,
+        group_name: xpmPreviewGroup.name,
+        mode: "apply",
+        expected_structure_id: xpmPreview.structure_id,
+        allow_create_beside_manual: allowBesideManual,
+      });
+      toast.success(`Opened ${xpmPreviewGroup.name}`);
+      setXpmPreview(null);
+      setXpmPreviewGroup(null);
+      invalidateStructures();
+      setSelectedGroup(null);
+      navigate(`/structures/${data.structure_id}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Could not apply changes", { description: message });
+    } finally {
+      setXpmApplying(false);
+    }
+  }, [xpmPreview, xpmPreviewGroup, invokeXpmImport, invalidateStructures, navigate]);
+
+  // Keep using the existing same-name diagram: link it to the XPM group, then review the XPM changes.
+  const handleLinkExistingXpm = useCallback(async (structureId: string) => {
+    if (!xpmPreviewGroup) return;
+    setXpmApplying(true);
+    try {
+      const base = { group_uuid: xpmPreviewGroup.xpm_uuid, group_name: xpmPreviewGroup.name };
+      await invokeXpmImport({ ...base, mode: "link", structure_id: structureId });
+      const data = await invokeXpmImport({ ...base, mode: "preview" });
+      setXpmPreview(data as XpmGroupPreview);
+      invalidateStructures();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error("Could not link the diagram", { description: message });
+    } finally {
+      setXpmApplying(false);
+    }
+  }, [xpmPreviewGroup, invokeXpmImport, invalidateStructures]);
+
+  // Rendered in both the group view and the list view, so the review box
+  // appears wherever "Open in Editor" was clicked.
+  const xpmPreviewDialog = (
+    <XpmGroupPreviewDialog
+      preview={xpmPreview}
+      applying={xpmApplying}
+      onCancel={() => { setXpmPreview(null); setXpmPreviewGroup(null); }}
+      onConfirm={handleConfirmXpmImport}
+      onLinkExisting={handleLinkExistingXpm}
+      onOpenExisting={(id) => { setXpmPreview(null); setXpmPreviewGroup(null); setSelectedGroup(null); navigate(`/structures/${id}`); }}
+    />
+  );
 
   // ── Tab Bar ──
   const TabBar = () => (
@@ -610,6 +682,7 @@ export default function Structures() {
             onClose={() => setSelectedGroup(null)}
           />
         </div>
+        {xpmPreviewDialog}
       </div>
     );
   }
@@ -1103,6 +1176,7 @@ export default function Structures() {
         </div>
       )}
 
+      {xpmPreviewDialog}
       <CreateStructureModal
         open={showCreateModal}
         onOpenChange={setShowCreateModal}

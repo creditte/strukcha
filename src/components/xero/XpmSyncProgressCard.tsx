@@ -50,7 +50,11 @@ export default function XpmSyncProgressCard({
     if (job.clientsFetched > 0) details.push(`${job.clientsFetched.toLocaleString()} clients`);
     if (job.groupsTotal > 0) details.push(`${job.groupsProcessed}/${job.groupsTotal} groups`);
     if (job.groupsCreated > 0) details.push(`${job.groupsCreated} new`);
-    if (job.groupsSkippedUnchanged > 0) details.push(`${job.groupsSkippedUnchanged} up to date`);
+    if (job.fullRefresh) details.push("full refresh");
+    if (job.groupsRefreshed > 0) details.push(`${job.groupsRefreshed} refreshed`);
+    if (job.groupsSkippedRecent > 0) details.push(`${job.groupsSkippedRecent} checked recently`);
+    if (job.groupsSkippedConflict > 0) details.push(`${job.groupsSkippedConflict} need review`);
+    if (job.groupsFailedIncomplete > 0) details.push(`${job.groupsFailedIncomplete} couldn't be read`);
   }
   if (elapsed) details.push(elapsed);
 

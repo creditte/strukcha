@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792766603225,
+      "tag": "0000_data_api_explicit_grants_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792767130788,
+      "tag": "0001_harden_function_and_anon_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792767332214,
+      "tag": "0002_revoke_trigger_function_execute",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792767976441,
+      "tag": "0003_fix_tenant_user_rpc_membership_and_billing_message",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792768518342,
+      "tag": "0004_restrict_get_user_tenant_id_to_self",
+      "breakpoints": true
+    }
+  ]
+}

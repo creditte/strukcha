@@ -1,4 +1,5 @@
 import { safeFrontend } from "../_shared/safe-redirect.ts";
+import { canonicalFrontend } from "../_shared/frontend-url.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
@@ -39,7 +40,7 @@ Deno.serve(async (req) => {
     const stateParam = url.searchParams.get("state");
     const oauthError = url.searchParams.get("error");
 
-    const defaultFrontendUrl = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
+    const defaultFrontendUrl = canonicalFrontend();
 
     if (oauthError) {
       console.error("Xero OAuth error:", oauthError);
@@ -360,7 +361,7 @@ Deno.serve(async (req) => {
     return Response.redirect(linkData.properties.action_link, 302);
   } catch (err) {
     console.error("xero-signup-callback error:", err);
-    const fallback = Deno.env.get("FRONTEND_URL") || "https://strukcha-dev.lovable.app";
+    const fallback = canonicalFrontend();
     return Response.redirect(`${fallback}/signup?xero_signup=error&reason=server_error`, 302);
   }
 });

@@ -33,6 +33,17 @@ export interface XpmSyncJob {
   groupsProcessed: number;
   groupsTotal: number;
   groupsSkippedUnchanged: number;
+  /** Re-read from XPM in full this run. */
+  groupsRefreshed: number;
+  /** Left alone because checked recently (normal sync only) — not reviewed. */
+  groupsSkippedRecent: number;
+  /** Not changed: name clashes with a hand-made or second diagram. */
+  groupsSkippedConflict: number;
+  /** Not changed: some client records couldn't be read from XPM. */
+  groupsFailedIncomplete: number;
+  incompleteGroupNames: string[];
+  /** True when this run was a full refresh. */
+  fullRefresh: boolean;
   staffFetched: number;
   /** Client groups that could not become diagrams (workspace full / inactive plan). */
   groupsBlockedByLimit: number;
@@ -60,6 +71,14 @@ function mapJob(row: any): XpmSyncJob {
     groupsProcessed: r.progress?.groupsProcessed ?? r.groupsProcessed ?? 0,
     groupsTotal: r.progress?.groupsTotal ?? r.groupsFound ?? 0,
     groupsSkippedUnchanged: r.groupsSkippedUnchanged ?? 0,
+    groupsRefreshed: r.groupsRefreshed ?? 0,
+    groupsSkippedRecent: r.groupsSkippedRecent ?? 0,
+    groupsSkippedConflict: r.groupsSkippedConflict ?? 0,
+    groupsFailedIncomplete: r.groupsFailedIncomplete ?? 0,
+    incompleteGroupNames: Array.isArray(r.incompleteGroups)
+      ? r.incompleteGroups.map((g: any) => String(g?.group_name ?? "")).filter(Boolean)
+      : [],
+    fullRefresh: r.progress?.fullSync === true,
     staffFetched: r.staffFetched ?? 0,
     groupsBlockedByLimit: r.groupsBlockedByLimit ?? 0,
     limitReached: r.limitReached === true,
@@ -68,6 +87,21 @@ function mapJob(row: any): XpmSyncJob {
     capacityRemaining: r.capacityRemaining ?? null,
     error: r.error,
   };
+}
+
+/**
+ * Plain group counts for a finished (or running) sync. "Checked recently" groups
+ * were not looked at this time, so they are never described as up to date.
+ */
+export function xpmGroupSummaryParts(job: Pick<XpmSyncJob,
+  "groupsRefreshed" | "groupsSkippedRecent" | "groupsSkippedConflict" | "groupsFailedIncomplete" | "groupsCreated">): string[] {
+  const parts: string[] = [];
+  if (job.groupsCreated > 0) parts.push(`${job.groupsCreated} diagrams created`);
+  if (job.groupsRefreshed > 0) parts.push(`${job.groupsRefreshed} groups refreshed`);
+  if (job.groupsSkippedRecent > 0) parts.push(`${job.groupsSkippedRecent} skipped (checked recently, not re-read)`);
+  if (job.groupsSkippedConflict > 0) parts.push(`${job.groupsSkippedConflict} skipped (name clash — needs your review)`);
+  if (job.groupsFailedIncomplete > 0) parts.push(`${job.groupsFailedIncomplete} not updated (some client records couldn't be read)`);
+  return parts;
 }
 
 /**
@@ -180,8 +214,7 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
             `${next.entitiesUpdated} updated`,
           ];
           if (next.relationshipsCreated > 0) parts.push(`${next.relationshipsCreated} relationships`);
-          if (next.groupsCreated > 0) parts.push(`${next.groupsCreated} diagrams created`);
-          if (next.groupsSkippedUnchanged > 0) parts.push(`${next.groupsSkippedUnchanged} unchanged`);
+          parts.push(...xpmGroupSummaryParts(next));
           const limitMsg = xpmSyncLimitMessage(next);
           if (limitMsg) {
             // The cap is never reported as a plain success any more.
@@ -191,7 +224,12 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
               variant: "destructive",
             });
           } else {
-            toast({ title: "XPM sync complete", description: parts.join(", ") + "." });
+            toast({
+              title: next.groupsFailedIncomplete > 0
+                ? "XPM sync finished — some groups weren't updated"
+                : next.fullRefresh ? "Full refresh complete" : "XPM sync complete",
+              description: parts.join(", ") + ".",
+            });
           }
         } else if (next.status === "failed") {
           // Never show Xero's raw status codes or JSON — translate first.
@@ -217,10 +255,13 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
     if (job?.status) lastStatus.current = job.status;
   }, [job?.status]);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (opts?: { fullRefresh?: boolean }) => {
     setStarting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("sync-xpm");
+      const { data, error } = await supabase.functions.invoke(
+        "sync-xpm",
+        opts?.fullRefresh ? { body: { full_sync: true } } : undefined,
+      );
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (data?.nothingSelected) {
@@ -249,8 +290,12 @@ export function useXpmSyncJob(options?: { onFinished?: (job: XpmSyncJob) => void
         });
       } else {
         toast({
-          title: data?.alreadyRunning ? "XPM sync already running" : "XPM sync started",
-          description: "Progress is shown here — you can keep working while it runs.",
+          title: data?.alreadyRunning
+            ? "XPM sync already running"
+            : opts?.fullRefresh ? "Full refresh started" : "XPM sync started",
+          description: opts?.fullRefresh
+            ? "Every selected client group is being read again from XPM. Progress is shown here."
+            : "Progress is shown here — you can keep working while it runs.",
         });
       }
       lastStatus.current = "processing";

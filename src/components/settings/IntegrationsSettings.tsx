@@ -10,6 +10,7 @@ import XeroLogo from "@/components/XeroLogo";
 import XeroErrorAlert from "@/components/XeroErrorAlert";
 import XeroConnectButton, { type XeroConnectionType } from "@/components/xero/XeroConnectButton";
 import XpmSyncProgressCard from "@/components/xero/XpmSyncProgressCard";
+import { xpmGroupSummaryParts } from "@/hooks/useXpmSyncJob";
 import XpmSyncLimitNotice from "@/components/xero/XpmSyncLimitNotice";
 import XpmGroupSelectionDialog from "@/components/structure/XpmGroupSelectionDialog";
 import { xeroToastPayload } from "@/lib/xeroErrors";
@@ -93,10 +94,10 @@ export default function IntegrationsSettings() {
     }
   };
 
-  const handleSync = async () => {
+  const handleSync = async (opts?: { fullRefresh?: boolean }) => {
     setXeroError(null);
     try {
-      await startXpmSync();
+      await startXpmSync(opts?.fullRefresh ? { fullRefresh: true } : undefined);
     } catch (err: unknown) {
       setXeroError(err);
       reportXeroError(err);
@@ -167,7 +168,7 @@ export default function IntegrationsSettings() {
           {xeroError && (
             <XeroErrorAlert
               error={xeroError}
-              onRetry={connection ? handleSync : handleConnect}
+              onRetry={connection ? () => handleSync() : handleConnect}
               retrying={syncing || connecting}
               onReconnect={handleConnect}
               reconnecting={connecting}
@@ -207,25 +208,52 @@ export default function IntegrationsSettings() {
                   stalled={syncStalled}
                   stopping={syncStopping}
                   onStop={() => stopXpmSync()}
-                  onResume={handleSync}
+                  onResume={() => handleSync()}
                   className="w-full sm:w-1/2"
                 />
               )}
 
               {syncLimitMessage && <XpmSyncLimitNotice message={syncLimitMessage} job={syncJob} />}
 
+              {syncJob?.status === "completed" && !syncing && xpmGroupSummaryParts(syncJob).length > 0 && (
+                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground">
+                    Last {syncJob.fullRefresh ? "full refresh" : "sync"}: {xpmGroupSummaryParts(syncJob).join(" · ")}
+                  </p>
+                  {!syncJob.fullRefresh && syncJob.groupsSkippedRecent > 0 && (
+                    <p className="mt-0.5">Groups checked recently weren't read again. Use Full refresh to re-read every group.</p>
+                  )}
+                  {syncJob.incompleteGroupNames.length > 0 && (
+                    <p className="mt-0.5">
+                      Left unchanged because XPM didn't return every client record: {syncJob.incompleteGroupNames.join(", ")}. They'll be tried again next sync.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-wrap items-center gap-2">
                 {xeroInvalid ? (
                   <XeroConnectButton onConnect={handleConnect} loading={connecting} reconnect />
                 ) : (
                   <Button
-                    onClick={handleSync}
+                    onClick={() => handleSync()}
                     disabled={syncing}
                     variant="outline"
                     className="h-10 gap-2 rounded-xl px-5 text-sm font-medium"
                   >
                     {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     {syncing ? "Syncing XPM…" : "Sync XPM"}
+                  </Button>
+                )}
+                {!xeroInvalid && (
+                  <Button
+                    onClick={() => handleSync({ fullRefresh: true })}
+                    disabled={syncing}
+                    variant="ghost"
+                    className="h-10 gap-2 rounded-xl px-4 text-sm font-medium"
+                    title="Reads every selected client group again from XPM, including ones checked recently."
+                  >
+                    Full refresh
                   </Button>
                 )}
                 <Button

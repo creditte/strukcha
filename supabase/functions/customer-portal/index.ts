@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveFrontend } from "../_shared/frontend-url.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { STRIPE_API_VERSION } from "../_shared/stripe-subscription.ts";
 import { stripeVar, stripeMode } from "../_shared/stripe-env.ts";
@@ -131,7 +132,7 @@ Deno.serve(async (req) => {
     }
 
     const stripe = new Stripe(stripeKey, { apiVersion: STRIPE_API_VERSION });
-    const origin = req.headers.get("origin") || Deno.env.get("FRONTEND_URL") || "https://strukcha.app";
+    const origin = resolveFrontend(req.headers.get("origin"));
 
     // Stripe IDs from another mode (legacy sandbox data) cannot be opened with the
     // active key — quarantine them and fall through to a fresh checkout instead of

@@ -10,7 +10,9 @@ export const BUSINESS_STRUCTURE_MAP: Record<string, string> = {
   Company: "Company",
   Trust: "Trust",
   Partnership: "Partnership",
-  "Sole Trader": "Sole Trader",
+  // In XPM a "Sole Trader" client is the person themselves (directors, spouses,
+  // shareholders and trustees all point at them), so it is stored as an Individual.
+  "Sole Trader": "Individual",
   "Trustee Company": "Company",
   "Discretionary Trust": "trust_discretionary",
   "Unit Trust": "trust_unit",
@@ -44,7 +46,7 @@ export function inferTypeFromText(text: string): string | null {
   if (/discretionary/.test(s)) return "trust_discretionary";
   if (/\btrust\b|trustee for/.test(s)) return "Trust";
   if (/partnership/.test(s)) return "Partnership";
-  if (/sole trader/.test(s)) return "Sole Trader";
+  if (/sole trader/.test(s)) return "Individual";
   if (/incorporated association|\bclub\b/.test(s)) return "Incorporated Association/Club";
   if (/\bcompany\b|pty\s*\.?\s*ltd|proprietary|\blimited\b|\bltd\b|\bpl\b$/.test(s)) return "Company";
   if (/individual|\bperson\b/.test(s)) return "Individual";
@@ -71,4 +73,21 @@ export function resolveEntityType(businessStructure?: string, clientName?: strin
     if (inferred) return inferred;
   }
   return "Unclassified";
+}
+
+/**
+ * Older imports stored XPM "Sole Trader" clients as the Sole Trader type, which
+ * blocks every person relationship (director, spouse, shareholder, trustee).
+ * Returns "Individual" when such a stored client should be corrected: XPM still
+ * calls it a sole trader and no Trades As owner exists (a real business with an
+ * owner keeps its type). Anything else returns null and is left alone.
+ */
+export function xpmTypeCorrection(
+  storedType: string | null | undefined,
+  businessStructure: string | null | undefined,
+  hasTradesAsOwner: boolean,
+): "Individual" | null {
+  if (storedType !== "Sole Trader" || hasTradesAsOwner) return null;
+  if (!/sole trader/i.test(businessStructure ?? "")) return null;
+  return "Individual";
 }
