@@ -64,3 +64,13 @@ Trigger workflows tested inside one deliberately rolled-back transaction (confir
 ### CRITICAL found: user-management RPCs skip the permission check for non-members
 `rpc_change_tenant_user_role`, `rpc_disable_tenant_user`, `rpc_enable_tenant_user`, `rpc_reinvite_tenant_user`, `rpc_restore_tenant_user` use `IF _actor_role NOT IN ('owner','admin')`, `rpc_soft_delete_tenant_user` uses `!= 'owner'`. When the caller is not an active member of `p_tenant_id`, `_actor_role` is NULL, the test is NULL, and the check is skipped. Verified: a Creditte user calling each against the other firm with a made-up user id got "User not found" (past the check) instead of "Unauthorized". With a real user id from another firm, the caller could change roles, disable, enable, re-invite, restore or delete users there. A disabled user could also re-enable themselves.
 Fix: `IF _actor_role IS NULL OR _actor_role NOT IN (...)` / `IF _actor_role IS DISTINCT FROM 'owner'`.
+
+## Follow-up fixes (migration 0003, applied 23/10/2026)
+
+- **A** — `rpc_change_tenant_user_role`, `rpc_disable_tenant_user`, `rpc_enable_tenant_user`, `rpc_reinvite_tenant_user`, `rpc_restore_tenant_user`: guard is now `_actor_role IS NULL OR _actor_role NOT IN ('owner','admin')`. `rpc_soft_delete_tenant_user`: `_actor_role IS NULL OR _actor_role <> 'owner'`. Nothing else in the functions changed; grants unchanged (authenticated + service_role).
+- **B** — `protect_tenant_billing_fields` builds its list with `array_append` (the old `text[] || 'literal'` was parsed as an array literal) and raises `Billing fields are managed by the billing system.` (SQLSTATE 42501, attempted fields in DETAIL). Signed-in users are also blocked earlier by column grants on `tenants`.
+- Verified in a rolled-back batch: all six refuse another firm's real user (target unchanged); disabled self-reactivation refused; own-firm admin disable/enable/reinvite/role change work; admin delete refused, owner delete/restore work; billing change refused with the new message; normal firm setting saves.
+
+## C — `get_user_tenant_id` (not changed)
+
+Every caller passes the caller's own ID: 54 RLS policies on 19 tables use `get_user_tenant_id(auth.uid())`; 7 SQL functions and 5 Edge Functions plus `CreateStructureModal` pass `auth.uid()` / `user.id`. Proposed restriction: inside the function return NULL when `_user_id <> auth.uid()` unless the caller is `service_role` or a super admin. All current uses keep working; only lookups of other users' firms stop.
