@@ -8,6 +8,13 @@
       "when": 1792766603225,
       "tag": "0000_data_api_explicit_grants_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792767130788,
+      "tag": "0001_harden_function_and_anon_access",
+      "breakpoints": true
     }
   ]
 }
