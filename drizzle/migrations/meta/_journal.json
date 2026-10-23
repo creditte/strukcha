@@ -29,6 +29,13 @@
       "when": 1792767976441,
       "tag": "0003_fix_tenant_user_rpc_membership_and_billing_message",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792768518342,
+      "tag": "0004_restrict_get_user_tenant_id_to_self",
+      "breakpoints": true
     }
   ]
 }
