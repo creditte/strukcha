@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:sql": "bun scripts/relationship-policy-sql-check.ts"
+    "test:sql": "bun scripts/relationship-policy-sql-check.ts",
+    "test:grants": "vitest run src/lib/migrationGrants.test.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^2.0.4",
@@ -84,6 +85,8 @@
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "autoprefixer": "^10.4.21",
+    "drizzle-kit": "0.x",
+    "drizzle-orm": "0.x",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -91,6 +94,7 @@
     "jsdom": "^20.0.3",
     "lovable-tagger": "^1.1.13",
     "postcss": "^8.5.6",
+    "postgres": "^3.4.9",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
