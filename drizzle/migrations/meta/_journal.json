@@ -15,6 +15,13 @@
       "when": 1792767130788,
       "tag": "0001_harden_function_and_anon_access",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792767332214,
+      "tag": "0002_revoke_trigger_function_execute",
+      "breakpoints": true
     }
   ]
 }
