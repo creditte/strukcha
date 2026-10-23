@@ -35,7 +35,7 @@ function grantedTables(sql: string, role: string): Set<string> {
   return out;
 }
 
-const migrations = sqlFiles("supabase/migrations").sort();
+const migrations = [...sqlFiles("supabase/migrations"), ...sqlFiles("drizzle/migrations")].sort();
 const baselineFile = migrations.find((f) => readFileSync(f, "utf8").includes(BASELINE_MARKER));
 const baselineGrants = baselineFile ? grantedTables(readFileSync(baselineFile, "utf8"), "service_role") : new Set<string>();
 
@@ -44,7 +44,7 @@ describe("Data API grants in migrations", () => {
     expect(baselineFile).toBeDefined();
   });
 
-  for (const dir of ["supabase/migrations", "supabase/pending-migrations"]) {
+  for (const dir of ["supabase/migrations", "drizzle/migrations", "supabase/pending-migrations"]) {
     it(`every public table created in ${dir} has an explicit service_role grant`, () => {
       const missing: string[] = [];
       for (const f of sqlFiles(dir)) {
@@ -52,7 +52,7 @@ describe("Data API grants in migrations", () => {
         const sr = grantedTables(sql, "service_role");
         
         for (const t of createdTables(sql)) {
-          const inBaseline = dir === "supabase/migrations" && baselineGrants.has(t);
+          const inBaseline = dir !== "supabase/pending-migrations" && baselineGrants.has(t);
           if (!inBaseline && !sr.has(t)) missing.push(`${f}: ${t}`);
         }
       }
