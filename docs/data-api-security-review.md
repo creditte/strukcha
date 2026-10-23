@@ -52,3 +52,15 @@ E. Optional tidy: REVOKE EXECUTE on trigger functions FROM anon, authenticated.
 - Not exercised: a real email send through the queue (service_role grants confirmed), browser click-through (MFA), fresh-database rebuild.
 - E (pending): trigger functions still executable by anon/authenticated; Postgres checks EXECUTE only at CREATE TRIGGER, so revoking is safe.
 - E applied (`drizzle/migrations/0002_revoke_trigger_function_execute.sql`): EXECUTE revoked from PUBLIC/anon/authenticated on 13 trigger functions; service_role kept; all triggers still enabled. Verified: signed-in invalid relationship insert was rejected by `validate_relationship_rules` (trigger ran without the grant; nothing saved).
+
+## Follow-up verification 23/10/2026 (no changes deployed)
+Trigger workflows tested inside one deliberately rolled-back transaction (confirmed nothing persisted):
+- Audit: 8 audit rows for 2 client inserts, 1 client edit, relationship insert/edit/soft-delete, structure edit — PASS. Structure insert itself writes no audit row (by design: only `audit_structure_update`).
+- Diagram count: Creditte 847→848 on new diagram — PASS. Limit: test firm limit 1, 2nd diagram refused, scenario allowed — PASS.
+- handle_new_user: test invitation + test account → profile in test firm, role viewer, invite accepted — PASS.
+- email_queue_wake: dummy queue message queued 1 wake-up call (rolled back, never sent) — PASS. Delivery by process-email-queue not exercised.
+- Billing protection: change blocked, but with "malformed array literal" instead of the intended message (`_changed || 'x'`) — PROTECTS, message bug. Non-billing edit still allowed.
+
+### CRITICAL found: user-management RPCs skip the permission check for non-members
+`rpc_change_tenant_user_role`, `rpc_disable_tenant_user`, `rpc_enable_tenant_user`, `rpc_reinvite_tenant_user`, `rpc_restore_tenant_user` use `IF _actor_role NOT IN ('owner','admin')`, `rpc_soft_delete_tenant_user` uses `!= 'owner'`. When the caller is not an active member of `p_tenant_id`, `_actor_role` is NULL, the test is NULL, and the check is skipped. Verified: a Creditte user calling each against the other firm with a made-up user id got "User not found" (past the check) instead of "Unauthorized". With a real user id from another firm, the caller could change roles, disable, enable, re-invite, restore or delete users there. A disabled user could also re-enable themselves.
+Fix: `IF _actor_role IS NULL OR _actor_role NOT IN (...)` / `IF _actor_role IS DISTINCT FROM 'owner'`.
