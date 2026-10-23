@@ -42,3 +42,12 @@ B. Urgent: add tenant guard inside `find_duplicate_entities` and `find_fuzzy_dup
 C. REVOKE EXECUTE FROM PUBLIC, anon on every remaining public SECURITY DEFINER function (signed-in grants kept where the app uses them).
 D. REVOKE ALL on all 38 public tables FROM anon.
 E. Optional tidy: REVOKE EXECUTE on trigger functions FROM anon, authenticated.
+
+## Applied 23/10/2026 — `drizzle/migrations/0001_harden_function_and_anon_access.sql`
+- A: merge + 4 email-queue functions + `email_queue_dispatch` → service_role only.
+- B: both duplicate finders now raise 42501 unless caller's own firm (or service_role); anon revoked.
+- C: every non-trigger SECURITY DEFINER function: PUBLIC/anon revoked; signed-in access kept exactly where it existed.
+- D: anon has no privileges on any public table/view/sequence; default privileges for future tables revoked for anon. RLS policies unchanged (38/38 enabled).
+- Verified live: signed-out tables/functions → permission denied; signed-in own-firm reads, duplicates (148 / 89), profile update, tenant/Xero/health RPCs OK; other-firm duplicates → 403; other-firm reads 0 rows, update 0 rows, insert refused; backend-only functions → 403 for signed-in.
+- Not exercised: a real email send through the queue (service_role grants confirmed), browser click-through (MFA), fresh-database rebuild.
+- E (pending): trigger functions still executable by anon/authenticated; Postgres checks EXECUTE only at CREATE TRIGGER, so revoking is safe.
