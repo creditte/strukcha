@@ -74,3 +74,7 @@ Fix: `IF _actor_role IS NULL OR _actor_role NOT IN (...)` / `IF _actor_role IS D
 ## C — `get_user_tenant_id` (not changed)
 
 Every caller passes the caller's own ID: 54 RLS policies on 19 tables use `get_user_tenant_id(auth.uid())`; 7 SQL functions and 5 Edge Functions plus `CreateStructureModal` pass `auth.uid()` / `user.id`. Proposed restriction: inside the function return NULL when `_user_id <> auth.uid()` unless the caller is `service_role` or a super admin. All current uses keep working; only lookups of other users' firms stop.
+
+## C applied (migration 0004, 23/10/2026)
+
+`get_user_tenant_id(_user_id)` now returns a firm only when there is no signed-in user (backend/service role, internal jobs), `_user_id = auth.uid()`, or the caller is a super admin. Grants unchanged (authenticated, service_role; no anon). Verified in a rolled-back batch: own lookup works, another firm's user returns NULL for a normal user, works for super admin and backend; RLS reads (entities, structures, relationships, xpm_groups, profiles, tenants) return own-firm rows only; duplicate search, Xero info, health fingerprint and a Create Structure-style insert work.
