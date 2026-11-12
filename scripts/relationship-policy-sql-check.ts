@@ -265,7 +265,6 @@ for (const stmt of read("supabase/pending-migrations/phase2/010_activate_uniquen
 await expectReject("second spouse fact", () => ins("spouse", qn, p));
 console.log("applied (in memory): phase2/010 uniqueness indexes");
 
-await db.close();
 // 6. Live follow-up: XPM-import rules for general "Trust" targets
 //    (drizzle migration *_xpm_generic_trust_policy.sql). Strict rules must be
 //    unchanged; the XPM variant must match the TypeScript xpmImport option.
@@ -308,5 +307,6 @@ await db.close();
   }
 }
 
+await db.close();
 if (failures) { console.error(`\n${failures} failure(s)`); process.exit(1); }
 console.log("\nAll SQL checks passed (in-memory only; nothing was applied to any real database).");
