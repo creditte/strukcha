@@ -1750,6 +1750,16 @@ export type Database = {
         Args: { _from: string; _rule: Json; _to: string }
         Returns: Json
       }
+      _rp_check_pair_x: {
+        Args: {
+          _from: string
+          _rule: Json
+          _to: string
+          _type: string
+          _xpm_import: boolean
+        }
+        Returns: Json
+      }
       _rp_check_source: {
         Args: { _rule: Json; _src: string; _tgt: string }
         Returns: Json
@@ -1863,6 +1873,25 @@ export type Database = {
         Returns: string
       }
       relationship_policy_evaluate: {
+        Args: {
+          _direction_known?: boolean
+          _from_type: string
+          _to_type: string
+          _type: string
+        }
+        Returns: Json
+      }
+      relationship_policy_evaluate_core: {
+        Args: {
+          _direction_known: boolean
+          _from_type: string
+          _to_type: string
+          _type: string
+          _xpm_import: boolean
+        }
+        Returns: Json
+      }
+      relationship_policy_evaluate_xpm: {
         Args: {
           _direction_known?: boolean
           _from_type: string

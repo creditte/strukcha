@@ -21,7 +21,7 @@
  */
 
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
-import { isDirectionValid, getDirectionError, getRelationshipLabel } from "@/lib/relationshipRules";
+import { isDirectionValid, getDirectionError, getRelationshipLabel, storedRelationshipOptions } from "@/lib/relationshipRules";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -368,8 +368,8 @@ export function computeHealthScoreV2(
   for (const rel of relationships) {
     const from = entityMap.get(rel.from_entity_id);
     const to = entityMap.get(rel.to_entity_id);
-    if (from && to && !isDirectionValid(rel.relationship_type, from.entity_type, to.entity_type)) {
-      const err = getDirectionError(rel.relationship_type, from.entity_type, to.entity_type);
+    if (from && to && !isDirectionValid(rel.relationship_type, from.entity_type, to.entity_type, storedRelationshipOptions(rel))) {
+      const err = getDirectionError(rel.relationship_type, from.entity_type, to.entity_type, storedRelationshipOptions(rel));
       push("invalid_relationship_direction",
         `${getRelationshipLabel(rel.relationship_type)} link "${from.name}" (${from.entity_type}) → "${to.name}" (${to.entity_type}) contradicts the relationship rules. ${err ?? ""}`.trim(),
         { entity_id: from.id, entity_name: from.name, relationship_id: rel.id });

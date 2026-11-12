@@ -11,6 +11,7 @@ import { getEntityLabel } from "@/lib/entityTypes";
 import {
   isReverseAllowed,
   getDirectionError,
+  storedRelationshipOptions,
   getRelationshipLabel,
   getEffectiveMetadataFields,
   getValidRelationshipTypes,
@@ -48,12 +49,12 @@ export default function RelationshipDetailPanel({ relationship, allEntities, all
 
   // Current status per the canonical policy (review is not valid).
   const currentEval = fromEntity && toEntity
-    ? evaluateRelationship(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
+    ? evaluateRelationship(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type, storedRelationshipOptions(relationship))
     : null;
   const isInvalid = !!currentEval && currentEval.outcome !== "valid";
   const isReviewState = currentEval?.outcome === "review" || currentEval?.outcome === "resolve_sole_trader";
   const invalidMessage = fromEntity && toEntity
-    ? getDirectionError(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type)
+    ? getDirectionError(relationship.relationship_type, fromEntity.entity_type, toEntity.entity_type, storedRelationshipOptions(relationship))
     : null;
 
   // Edit types: creatable types valid exactly as stored (endpoints don't change on edit).

@@ -15,6 +15,7 @@ import {
   policyMetadataFields,
   describePolicyReason,
   type EntityCategory,
+  type EvaluateOptions,
   type MetadataField as PolicyMetadataField,
   type RelationshipCategory as PolicyRelationshipCategory,
 } from "@/lib/relationshipPolicy";
@@ -70,13 +71,13 @@ export function isBareTrustBeneficiary(relationshipType: string, targetEntityTyp
 }
 
 /** True only when the policy outcome is `valid` as stored. Review is not valid. */
-export function isDirectionValid(relationshipType: string, fromEntityType: string, toEntityType: string): boolean {
-  return evaluateRelationship(relationshipType, fromEntityType, toEntityType).outcome === "valid";
+export function isDirectionValid(relationshipType: string, fromEntityType: string, toEntityType: string, options?: EvaluateOptions): boolean {
+  return evaluateRelationship(relationshipType, fromEntityType, toEntityType, options).outcome === "valid";
 }
 
 /** User-facing message for any non-valid outcome (invalid, review, resolve, deprecated). */
-export function getDirectionError(relationshipType: string, fromEntityType: string, toEntityType: string): string | null {
-  const e = evaluateRelationship(relationshipType, fromEntityType, toEntityType);
+export function getDirectionError(relationshipType: string, fromEntityType: string, toEntityType: string, options?: EvaluateOptions): string | null {
+  const e = evaluateRelationship(relationshipType, fromEntityType, toEntityType, options);
   if (e.outcome === "valid") return null;
   if (e.outcome === "reverse") return "This link is stored in the wrong direction. Reverse it to fix.";
   return describePolicyReason(e);
@@ -136,4 +137,13 @@ export function getEffectiveMetadataFields(relationshipType: string, targetEntit
  */
 export function isReverseAllowed(relationshipType: string, currentFromEntityType: string, currentToEntityType: string): boolean {
   return evaluateRelationship(relationshipType, currentToEntityType, currentFromEntityType).outcome === "valid";
+}
+
+/**
+ * Options for judging a STORED relationship. Imported rows were accepted under
+ * the XPM import rules (e.g. Trustee Of a general "Trust"), so they are judged
+ * the same way here; manual rows keep the strict rules.
+ */
+export function storedRelationshipOptions(rel: { source_data?: string | null }): EvaluateOptions {
+  return { xpmImport: rel.source_data === "imported" };
 }

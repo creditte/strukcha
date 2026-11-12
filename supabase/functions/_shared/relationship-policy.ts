@@ -181,7 +181,19 @@ export interface EvaluateOptions {
    * false and both orientations are valid, the result is review.
    */
   directionKnown?: boolean;
+  /**
+   * The fact comes from an XPM import (or is a stored imported row). XPM
+   * records Trustee / Beneficiary / Appointor / Unit Holder links to clients
+   * whose business structure is plain "Trust"; those are accepted against a
+   * general Trust instead of held for review. Manual input never sets this,
+   * so hand-made links keep the stricter trust-kind checks. The trust kind
+   * itself is never inferred or changed.
+   */
+  xpmImport?: boolean;
 }
+
+/** Types XPM may link to a general ("Trust", kind unknown) trust without review. */
+export const XPM_GENERIC_TRUST_TYPES: ReadonlySet<string> = new Set(["trustee", "beneficiary", "appointer", "unit_holder"]);
 
 type SideCheck = "ok" | "review" | "resolve" | "no";
 type Check = { result: SideCheck; reason: PolicyReason };
@@ -205,7 +217,10 @@ function checkTarget(rule: PolicyRule, tgt: EntityCategory): Check {
 
 const RANK: Record<SideCheck, number> = { ok: 0, resolve: 1, review: 2, no: 3 };
 
-function checkPair(rule: PolicyRule, from: EntityCategory, to: EntityCategory): Check {
+function checkPair(rule: PolicyRule, from: EntityCategory, to: EntityCategory, xpmImport = false): Check {
+  if (xpmImport && to === "generic_trust" && XPM_GENERIC_TRUST_TYPES.has(rule.type)) {
+    return checkSource(rule, from, to);
+  }
   const t = checkTarget(rule, to);
   const s = checkSource(rule, from, to);
   // Worst side wins; on a tie the target's reason is reported first.
@@ -219,6 +234,7 @@ export function evaluateRelationship(
   options: EvaluateOptions = {},
 ): PolicyEvaluation {
   const directionKnown = options.directionKnown ?? true;
+  const xpmImport = options.xpmImport ?? false;
   const type = (relationshipType ?? "").trim().toLowerCase();
   const from = fromDbType ?? "Unclassified";
   const to = toDbType ?? "Unclassified";
@@ -241,8 +257,8 @@ export function evaluateRelationship(
 
   const fc = categoryOf(from);
   const tc = categoryOf(to);
-  const fwd = checkPair(rule, fc, tc);
-  const rev = checkPair(rule, tc, fc);
+  const fwd = checkPair(rule, fc, tc, xpmImport);
+  const rev = checkPair(rule, tc, fc, xpmImport);
   const out = (outcome: PolicyOutcome, reason: PolicyReason, swapped = false): PolicyEvaluation => ({
     outcome,
     reason,
