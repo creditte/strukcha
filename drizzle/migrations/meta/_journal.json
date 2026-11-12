@@ -43,6 +43,13 @@
       "when": 1794500208264,
       "tag": "0005_xpm_generic_trust_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794500227985,
+      "tag": "0006_xpm_batch_functions_use_xpm_policy",
+      "breakpoints": true
     }
   ]
 }
