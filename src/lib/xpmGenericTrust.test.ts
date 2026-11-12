@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { evaluateRelationship } from "@/lib/relationshipPolicy";
 import { isDirectionValid, storedRelationshipOptions } from "@/lib/relationshipRules";
-import { planNewRelationship } from "@/lib/manualRelationship";
 import { normaliseXpmRelationship } from "../../supabase/functions/_shared/xpm-policy-normalise.ts";
 
 // XPM clients whose business structure is plain "Trust" (kind unknown).

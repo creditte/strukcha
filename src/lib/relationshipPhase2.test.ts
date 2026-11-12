@@ -305,8 +305,11 @@ describe("XPM normalisation outcomes", () => {
     expect(r.edge).toBeNull();
     expect(r.evidence).toMatchObject({ policy_outcome: "review", policy_reason: "ambiguous_direction", review_status: "pending" });
   });
-  it("Generic Trust / Unclassified → review evidence, no edge", () => {
-    expect(n("Trustee Of", "c", "g").edge).toBeNull();
+  it("Generic Trust (non-trust role) / Unclassified → review evidence, no edge", () => {
+    // XPM trustee/beneficiary/appointor/unit holder to a general Trust is accepted
+    // (see xpmGenericTrust.test.ts); other roles are still held.
+    expect(n("Trustee Of", "c", "g").edge).toEqual({ type: "trustee", fromId: "c", toId: "g" });
+    expect(n("Shareholder Of", "g", "c").edge).toBeNull();
     expect(n("Director Of", "u", "c").evidence.policy_outcome).toBe("review");
   });
   it("Family Trust follows Discretionary", () => {
