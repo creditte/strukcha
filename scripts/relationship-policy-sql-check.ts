@@ -266,5 +266,47 @@ await expectReject("second spouse fact", () => ins("spouse", qn, p));
 console.log("applied (in memory): phase2/010 uniqueness indexes");
 
 await db.close();
+// 6. Live follow-up: XPM-import rules for general "Trust" targets
+//    (drizzle migration *_xpm_generic_trust_policy.sql). Strict rules must be
+//    unchanged; the XPM variant must match the TypeScript xpmImport option.
+{
+  const { readdirSync } = await import("node:fs");
+  const file = readdirSync(join(root, "drizzle/migrations")).find((n) => n.endsWith("xpm_generic_trust_policy.sql"));
+  if (!file) fail("xpm_generic_trust_policy migration not found");
+  else {
+    await db.exec("CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$ SELECT current_setting('test.role', true) $$;");
+    try { await db.exec(process.env.XPM_POLICY_SQL ? readFileSync(process.env.XPM_POLICY_SQL, "utf8") : read(`drizzle/migrations/${file}`)); console.log("applied (in memory):", file); }
+    catch (e) { fail(`${file}: ${(e as Error).message}`); }
+    const evalX = async (t: string, f: string, g: string, d: boolean) =>
+      (await db.query<{ r: Record<string, unknown> }>("SELECT public.relationship_policy_evaluate_xpm($1,$2,$3,$4) r", [t, f, g, d])).rows[0].r;
+    let n6 = 0, s6 = 0;
+    for (const t of RELS) for (const f of TYPES) for (const g of TYPES) for (const d of [true, false]) {
+      for (const x of [false, true]) {
+        n6++;
+        const a = evaluateRelationship(t, f, g, { directionKnown: d, xpmImport: x });
+        const b = x ? await evalX(t, f, g, d) : await evalSql(t, f, g, d);
+        if (a.outcome === b.outcome && a.reason === b.reason && a.swapped === b.swapped && a.canonicalType === b.canonical_type && a.fromType === b.from_type && a.toType === b.to_type) s6++;
+        else if (n6 - s6 <= 5) fail(`xpm=${x} ${t} ${f}→${g} dir=${d}: ts=${JSON.stringify(a)} sql=${JSON.stringify(b)}`);
+      }
+    }
+    if (s6 !== n6) failures++;
+    console.log(`xpm generic trust: ${s6}/${n6} identical TS vs SQL`);
+    // Trigger: imported row by the backend is accepted; same row by a signed-in user is refused.
+    const gt = await ent("General Trust", "Trust");
+    const pi = await ent("Ivy", "Individual");
+    await db.exec("SELECT set_config('test.role', 'service_role', false)");
+    try { await q("INSERT INTO relationships (tenant_id,from_entity_id,to_entity_id,relationship_type,source) VALUES ($1,$2,$3,'trustee','imported')", [tenant, pi, gt]); console.log("trigger: backend imported trustee → general Trust accepted"); }
+    catch (e) { fail(`trigger backend imported: ${(e as Error).message}`); }
+    for (const [role, src] of [["authenticated", "imported"], ["authenticated", "manual"], ["service_role", "manual"]]) {
+      await db.exec(`SELECT set_config('test.role', '${role}', false)`);
+      let refused = false;
+      try { await q("INSERT INTO relationships (tenant_id,from_entity_id,to_entity_id,relationship_type,source) VALUES ($1,$2,$3,'beneficiary',$4)", [tenant, pi, gt, src]); } catch { refused = true; }
+      check(refused, `trigger must refuse ${role}/${src} beneficiary → general Trust`);
+      if (refused) console.log(`trigger: ${role}/${src} beneficiary → general Trust refused`);
+    }
+    await db.exec("SELECT set_config('test.role', '', false)");
+  }
+}
+
 if (failures) { console.error(`\n${failures} failure(s)`); process.exit(1); }
 console.log("\nAll SQL checks passed (in-memory only; nothing was applied to any real database).");
