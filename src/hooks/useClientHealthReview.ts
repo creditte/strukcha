@@ -18,6 +18,7 @@ import { qk } from "@/lib/queryKeys";
 import { computeHealthScoreV2 } from "@/lib/structureScoring";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import type { ScoringIssue } from "@/lib/structureScoring";
+import { partitionHealthDataset } from "@/lib/healthDatasetFilter";
 
 /* ── Types ──────────────────────────────────────────────────────── */
 
@@ -45,6 +46,8 @@ export interface ClientReview {
   needsAttention: number;
   /** Flat list of all issues across all structures, with structure context */
   allIssues: StructureIssue[];
+  /** Diagrams whose clients are all archived: not scored, never Healthy. */
+  inactiveStructures: { id: string; name: string }[];
   /** Change stamp of the underlying data at review time */
   fingerprint: string | null;
 }
@@ -90,7 +93,9 @@ async function buildReview(
   const { data, error } = await supabase.rpc("health_review_dataset" as any);
   if (error) throw error;
 
-  const structures: RawStructure[] = ((data as any)?.structures ?? []) as RawStructure[];
+  const { active: structures, inactive: inactiveStructures } = partitionHealthDataset(
+    ((data as any)?.structures ?? []) as any[],
+  ) as unknown as { active: RawStructure[]; inactive: { id: string; name: string }[] };
 
   if (structures.length === 0) {
     return {
@@ -101,6 +106,7 @@ async function buildReview(
       criticalStructures: 0,
       needsAttention: 0,
       allIssues: [],
+      inactiveStructures,
       fingerprint: null,
     };
   }
@@ -173,6 +179,7 @@ async function buildReview(
     criticalStructures: results.filter((r) => r.status === "critical").length,
     needsAttention: results.filter((r) => r.status !== "good").length,
     allIssues,
+    inactiveStructures,
     fingerprint,
   };
 }
