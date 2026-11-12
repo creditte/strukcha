@@ -138,7 +138,7 @@ export function normaliseXpmRelationship(raw: XpmRawRelationship, ctx: Normalise
 
   // Unknown labels go through the evaluator too → invalid / unknown_relationship_type.
   const evalType = parsed.type ?? `xpm:${raw.label}`;
-  const e = evaluateRelationship(evalType, fromType, toType, { directionKnown: parsed.directionKnown });
+  const e = evaluateRelationship(evalType, fromType, toType, { directionKnown: parsed.directionKnown, xpmImport: true });
   let edge = toCanonicalEdge(e, fromId, toId);
   let resolved = false;
 
@@ -149,7 +149,7 @@ export function normaliseXpmRelationship(raw: XpmRawRelationship, ctx: Normalise
     const owners = [...new Set(ctx.tradesAsOwners?.get(soleTraderId) ?? [])];
     if (owners.length === 1) {
       const individualType = ctx.entityTypes.get(owners[0]) ?? "Unclassified";
-      const re = evaluateRelationship(e.canonicalType!, individualType, otherType);
+      const re = evaluateRelationship(e.canonicalType!, individualType, otherType, { xpmImport: true });
       if (re.outcome === "valid") {
         edge = { type: re.canonicalType!, fromId: owners[0], toId: otherId };
         resolved = true;
