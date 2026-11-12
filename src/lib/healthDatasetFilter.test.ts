@@ -36,6 +36,17 @@ describe("Structure Health ignores archived clients and diagrams", () => {
     expect(out.inactive).toEqual([{ id: "s1", name: "A Hall Group" }]);
   });
 
+  it("an empty diagram (never had clients) is not marked Inactive", () => {
+    const out = partitionHealthDataset([{ id: "e", name: "Empty", entities: [], relationships: [] }]);
+    expect(out.inactive).toHaveLength(0);
+    expect(out.active).toHaveLength(1);
+  });
+
+  it("server 'inactive' flag is honoured", () => {
+    const out = partitionHealthDataset([{ id: "s", name: "S", inactive: true, entities: [], relationships: [] }]);
+    expect(out.inactive).toEqual([{ id: "s", name: "S" }]);
+  });
+
   it("unarchiving a client restores its eligibility", () => {
     const base = [ent("p", "Individual"), ent("c", "Company", true)];
     const s = (ents: any[]) => ({ id: "s1", name: "S", entities: ents, relationships: [rel("r1", "p", "c")] });

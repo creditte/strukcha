@@ -32,7 +32,9 @@ export function partitionHealthDataset<S extends RawHealthStructure>(structures:
     const relationships = (s.relationships ?? []).filter(
       (r) => ids.has(r.from_entity_id) && ids.has(r.to_entity_id),
     );
-    if (entities.length === 0) {
+    // Inactive = had clients, all archived (server flag or local check).
+    // A diagram that was simply empty keeps its normal treatment.
+    if (s.inactive || (entities.length === 0 && (s.entities ?? []).length > 0)) {
       inactive.push({ id: s.id, name: s.name });
       continue;
     }

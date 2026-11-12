@@ -64,6 +64,13 @@
       "when": 1794501305363,
       "tag": "0008_health_review_exclude_archived",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794501391754,
+      "tag": "0009_health_review_inactive_only_when_all_archived",
+      "breakpoints": true
     }
   ]
 }
