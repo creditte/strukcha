@@ -301,7 +301,11 @@ export default function ClientGovernance() {
             <Progress value={review.clientScore} className="h-1.5 rounded-full" />
             <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span>
-                {review.needsAttention} of {review.structures.length} structures have at least one item to review. {HEALTH_DISCLAIMER}
+                {review.needsAttention} of {review.structures.length} structures have at least one item to review.{" "}
+                {review.inactiveStructures?.length > 0 && (
+                  <>{review.inactiveStructures.length} inactive (all clients archived) not scored.{" "}</>
+                )}
+                {HEALTH_DISCLAIMER}
               </span>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 {STATUS_ORDER.map((k) => STATUS_META[k]).map((b) => (
