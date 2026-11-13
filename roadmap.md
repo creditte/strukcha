@@ -1,7 +1,7 @@
 # Roadmap — XPM diagram accuracy (firm-wide)
-- [ ] Accept plain Trust without classification penalties and expose it in entity selectors
-- [ ] Preserve original XPM business structure labels on future imports and syncs
-- [ ] Verify Trust scoring, selection, label persistence/display, and migration isolation
+- [x] Accept plain Trust without classification penalties and expose it in entity selectors
+- [x] Preserve original XPM business structure labels on future imports and syncs
+- [x] Verify Trust scoring, selection, label persistence/display, and migration isolation (live imports/signed-in workflows not run)
 - [x] Open in Editor on group page: review box now appears there; opens directly when nothing changes
 - [x] XPM "Sole Trader" clients imported as Individuals (new imports/previews)
 - [x] Stored XPM Sole Trader clients (no Trades As owner) are corrected to Individual per group, shown in the review box and applied only on confirm
