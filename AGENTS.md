@@ -1,4 +1,5 @@
 # Engineering rules
+- Stripe webhooks verify raw-body signatures against separate mode-bound secrets before mode checks; inactive-mode events are acknowledged without writes, and active-mode billing processing uses conditional event claims plus stable Stripe/email idempotency keys to prevent duplicate effects.
 - Original XPM business structure wording travels separately as `xpm_business_structure_label` through the shared source-label helper and tenant-scoped import RPCs; name-only mentions omit it and existing labels are not backfilled, so provenance never depends on inferred classification.
 
 - `supabase/functions/_shared/relationship-policy.ts` (re-exported as `src/lib/relationshipPolicy.ts`) and its SQL twin `relationship_policy_evaluate()` are the only relationship rules, kept in step via `src/test/fixtures/relationship-policy-vectors.json` and `bun run test:sql` — one matrix stops browser, imports and database disagreeing. Browser inputs use it now; `src/lib/relationshipRules.ts` is a rule-free facade over it.
