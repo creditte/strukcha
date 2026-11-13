@@ -1,4 +1,5 @@
-import type { StripeMode } from "./stripe-env.ts";
+// Kept runtime-independent so raw-body verification is testable outside Deno.
+type StripeMode = "test" | "live";
 
 export class WebhookSignatureError extends Error {
   constructor() {
