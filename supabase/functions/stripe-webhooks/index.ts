@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
   // 'processing'/'failed' state are re-processed on Stripe's retry.
   const { data: existing, error: lookupError } = await supabaseAdmin
     .from("stripe_webhook_events")
-    .select("id, status, attempts")
+    .select("id, status, attempts, processed_at")
     .eq("id", event.id)
     .maybeSingle();
 
@@ -150,10 +150,8 @@ Deno.serve(async (req) => {
 
   // A conditional claim prevents concurrent deliveries from running billing actions twice.
   // A crashed invocation can be reclaimed after its five-minute processing lease expires.
-  const { data: leaseRow } = existing ? await supabaseAdmin.from("stripe_webhook_events")
-    .select("processed_at").eq("id", event.id).maybeSingle() : { data: null };
-  if (existing?.status === "processing" && leaseRow?.processed_at &&
-      Date.parse(leaseRow.processed_at) > Date.now() - 5 * 60 * 1000) {
+  if (existing?.status === "processing" && existing.processed_at &&
+      Date.parse(existing.processed_at) > Date.now() - 5 * 60 * 1000) {
     return respond({ error: "Event is already processing; retry later" }, 503);
   }
 
@@ -174,7 +172,7 @@ Deno.serve(async (req) => {
     ? supabaseAdmin.from("stripe_webhook_events").update(claim)
       .eq("id", event.id).eq("status", existing.status).eq("attempts", existing.attempts)
     : supabaseAdmin.from("stripe_webhook_events").insert(claim);
-  if (existing && leaseRow?.processed_at) claimQuery = claimQuery.eq("processed_at", leaseRow.processed_at);
+  if (existing?.processed_at) claimQuery = claimQuery.eq("processed_at", existing.processed_at);
   const { data: claimed, error: claimError } = await claimQuery.select("id").maybeSingle();
 
   if (claimError) {
