@@ -21,6 +21,7 @@ import {
   xpmGetXml,
 } from "./_lib.ts";
 import { isServiceRoleRequest } from "../_shared/cron-auth.ts";
+import { xpmBusinessStructureFields } from "../_shared/xpm-business-structure.ts";
 import {
   classifyWithProvenance,
   normaliseXpmRelationship,
@@ -618,6 +619,7 @@ async function processClientPage(
         uuid: c.uuid,
         name: c.name,
         entity_type: c.entityType,
+        ...xpmBusinessStructureFields(c.businessStructure),
         abn: c.abn,
         acn: c.acn,
         is_trustee: isTrustee,

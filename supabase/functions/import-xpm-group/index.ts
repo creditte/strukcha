@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getXeroAccessToken, loadXeroConnection } from "../_shared/xero-token.ts";
 import { parse as parseXml } from "https://esm.sh/jsr/@libs/xml@6.0.1";
 import { resolveEntityType, xpmTypeCorrection } from "../_shared/xpm-entity-type.ts";
+import { xpmBusinessStructureFields } from "../_shared/xpm-business-structure.ts";
 import {
   classifyWithProvenance,
   normaliseXpmRelationship,
@@ -407,7 +408,7 @@ Deno.serve(async (req) => {
     for (const c of clients) {
       const e = ents[c.uuid];
       if (!e) continue;
-      const patch: Record<string, unknown> = {};
+      const patch: Record<string, unknown> = { ...xpmBusinessStructureFields(c.businessStructure) };
       if (e.archived) patch.is_archived = false;
       if (c.entityType !== "Unclassified" && e.type === "Unclassified") patch.entity_type = c.entityType;
       const fix = typeCorrections.get(e.id);
@@ -422,6 +423,7 @@ Deno.serve(async (req) => {
         missing.map((c) => ({
           name: c.name, entity_type: c.entityType, tenant_id: tenantId, source: "imported" as const,
           abn: c.abn, acn: c.acn, xpm_uuid: c.uuid,
+          ...xpmBusinessStructureFields(c.businessStructure),
         })),
       ).select("id, xpm_uuid, entity_type");
       if (entErr) console.error("[import-xpm-group] Entity insert error:", entErr.message);

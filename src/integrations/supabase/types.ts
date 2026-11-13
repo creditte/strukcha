@@ -222,6 +222,7 @@ export type Database = {
           trust_subtype: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at: string
           verified: boolean
+          xpm_business_structure_label: string | null
           xpm_last_seen_at: string | null
           xpm_uuid: string | null
         }
@@ -248,6 +249,7 @@ export type Database = {
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean
+          xpm_business_structure_label?: string | null
           xpm_last_seen_at?: string | null
           xpm_uuid?: string | null
         }
@@ -274,6 +276,7 @@ export type Database = {
           trust_subtype?: Database["public"]["Enums"]["trust_subtype"] | null
           updated_at?: string
           verified?: boolean
+          xpm_business_structure_label?: string | null
           xpm_last_seen_at?: string | null
           xpm_uuid?: string | null
         }

@@ -10,6 +10,7 @@ export interface EntityNode {
   name: string;
   entity_type: string;
   xpm_uuid: string | null;
+  xpm_business_structure_label?: string | null;
   abn: string | null;
   acn: string | null;
   is_operating_entity: boolean;
@@ -132,7 +133,7 @@ export function useStructureData(structureId: string | undefined) {
 
       const { data: entitiesData } = await supabase
         .from("entities")
-        .select("id, name, entity_type, xpm_uuid, abn, acn, is_operating_entity, is_trustee_company, is_investment_company, created_at, tfn, state, client_code, account_manager, gst_registered, is_archived")
+        .select("id, name, entity_type, xpm_uuid, xpm_business_structure_label, abn, acn, is_operating_entity, is_trustee_company, is_investment_company, created_at, tfn, state, client_code, account_manager, gst_registered, is_archived")
         .in("id", entityIds)
         .is("deleted_at", null)
         // Archived in XPM = no longer part of the active structure, but the

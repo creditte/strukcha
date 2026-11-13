@@ -3,6 +3,7 @@ import { corsHeadersFor } from "../_shared/cors.ts";
 import { normaliseXpmRelationship, parseXpmLabel, type EvidenceDraft } from "../_shared/xpm-policy-normalise.ts";
 import { relationshipIdentityKey } from "../_shared/relationship-policy.ts";
 import { loadTradesAsOwners } from "../_shared/xpm-trades-as.ts";
+import { xpmBusinessStructureFields } from "../_shared/xpm-business-structure.ts";
 
 let corsHeaders = corsHeadersFor(new Request("https://strukcha.app"));
 
@@ -305,16 +306,17 @@ async function runSlice(
   };
 
   // ── Build the payload entirely in memory (no DB calls) ────────────────
-  const wanted = new Map<string, { name: string; uuid: string | null; entity_type: string }>();
+  const wanted = new Map<string, { name: string; uuid: string | null; entity_type: string; xpm_business_structure_label?: string }>();
   const groupNames = new Set<string>();
 
-  const noteEntity = (name: string, uuid: string | null, entityType: string) => {
+  const noteEntity = (name: string, uuid: string | null, entityType: string, businessStructure?: string) => {
     const prev = wanted.get(name);
     if (!prev) {
-      wanted.set(name, { name, uuid, entity_type: entityType });
+      wanted.set(name, { name, uuid, entity_type: entityType, ...xpmBusinessStructureFields(businessStructure) });
       return;
     }
     if (!prev.uuid && uuid) prev.uuid = uuid;
+    Object.assign(prev, xpmBusinessStructureFields(businessStructure));
     if (prev.entity_type === "Unclassified" && entityType !== "Unclassified") prev.entity_type = entityType;
   };
 
@@ -326,7 +328,7 @@ async function runSlice(
 
   for (const row of rows) {
     if (row.client) {
-      noteEntity(row.client, row.uuid || null, ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified");
+      noteEntity(row.client, row.uuid || null, ENTITY_TYPE_MAP[row.businessStructure.toLowerCase()] ?? "Unclassified", row.businessStructure);
     }
     if (row.relatedClient) noteEntity(row.relatedClient, null, "Unclassified");
   }

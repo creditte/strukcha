@@ -160,7 +160,7 @@ export function groupIssuesBySeverity(issues: ScoringIssue[]): { severity: Issue
 
 // ── Type helpers ───────────────────────────────────────────────────
 
-/** Classified trust types (generic "Trust" must be classified first). */
+/** Specific trust types with existing role-completeness checks; plain Trust is also a valid classification. */
 const CLASSIFIED_TRUST_TYPES = new Set([
   "trust_discretionary", "trust_unit", "trust_hybrid", "trust_bare",
   "trust_testamentary", "trust_deceased_estate", "trust_family", "smsf",
@@ -276,8 +276,6 @@ export function computeHealthScoreV2(
 
     if (t === "Unclassified")
       push("unclassified", `"${e.name}" has no entity type recorded. Classify it to complete the structure data.`, ref);
-    else if (t === "Trust")
-      push("unclassified", `"${e.name}" is recorded as a generic trust. Choose the trust type to complete the structure data.`, ref);
 
     if (!allRelated.has(e.id))
       push("orphan_entity", `"${e.name}" has no relationships recorded.`, ref);
