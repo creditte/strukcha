@@ -1,4 +1,5 @@
 # Engineering rules
+- Original XPM business structure wording travels separately as `xpm_business_structure_label` through the shared source-label helper and tenant-scoped import RPCs; name-only mentions omit it and existing labels are not backfilled, so provenance never depends on inferred classification.
 
 - `supabase/functions/_shared/relationship-policy.ts` (re-exported as `src/lib/relationshipPolicy.ts`) and its SQL twin `relationship_policy_evaluate()` are the only relationship rules, kept in step via `src/test/fixtures/relationship-policy-vectors.json` and `bun run test:sql` — one matrix stops browser, imports and database disagreeing. Browser inputs use it now; `src/lib/relationshipRules.ts` is a rule-free facade over it.
 - Every XPM path (`sync-xpm`, `import-xpm`, `import-xpm-group`, preview `fetch-xpm-group`) decides relationships only through `_shared/xpm-policy-normalise.ts` and writes one evidence row per raw fact; sync/CSV call the bridge RPCs with `contract: 'canonical_v1'` and the job id as `import_run_id` — so retries never duplicate evidence and no path keeps its own label map.
