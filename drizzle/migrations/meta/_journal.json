@@ -71,6 +71,13 @@
       "when": 1794501391754,
       "tag": "0009_health_review_inactive_only_when_all_archived",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794570629707,
+      "tag": "0010_preserve_xpm_business_structure_label",
+      "breakpoints": true
     }
   ]
 }
