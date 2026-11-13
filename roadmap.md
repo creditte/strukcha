@@ -1,4 +1,5 @@
 # Roadmap — XPM diagram accuracy (firm-wide)
+- [ ] Fix Stripe webhook mode-aware signature verification and verify safe HTTP responses (no live billing actions)
 - [x] Accept plain Trust without classification penalties and expose it in entity selectors
 - [x] Preserve original XPM business structure labels on future imports and syncs
 - [x] Verify Trust scoring, selection, label persistence/display, and migration isolation (live imports/signed-in workflows not run)
