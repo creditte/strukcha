@@ -6,7 +6,6 @@ import { resolveEntityType } from "../../supabase/functions/_shared/xpm-entity-t
 import { xpmBusinessStructureFields } from "../../supabase/functions/_shared/xpm-business-structure";
 import EntityEditForm from "@/components/structure/EntityEditForm";
 import CanvasFixMode from "@/components/structure/CanvasFixMode";
-import EntityInfoFields from "@/components/structure/EntityInfoFields";
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 
 const { update } = vi.hoisted(() => ({ update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })) }));
