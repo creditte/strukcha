@@ -131,7 +131,8 @@ describe("real Stripe webhook entrypoint (isolated dependencies)", () => {
     const body = eventBody(type, false, { id: "object_fictional", customer: "cus_fictional", subscription: "sub_fictional", status: "active", metadata: { workspace_id: "firm_fictional" }, trial_end: Math.floor(Date.now() / 1000) + 86400, amount_due: 9900, currency: "aud" });
     expect((await h.deliver(body)).status).toBe(200);
     expect(h.rows.get("evt_fictional")?.status).toBe("completed");
-    expect(h.tenantWrites.length).toBeGreaterThan(0);
+    if (type === "invoice.upcoming") expect(h.email).toHaveBeenCalledTimes(1);
+    else expect(h.tenantWrites.length).toBeGreaterThan(0);
     const count = h.tenantWrites.length, emailCount = h.email.mock.calls.length;
     expect((await h.deliver(body)).status).toBe(200);
     expect(h.tenantWrites.length).toBe(count); expect(h.email.mock.calls.length).toBe(emailCount);

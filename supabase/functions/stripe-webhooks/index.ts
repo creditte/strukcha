@@ -25,9 +25,10 @@ import { verifyStripeWebhook, WebhookConfigurationError } from "../_shared/strip
 // plan limits apply once the subscription is paying.
 const PLAN_CONFIG: Record<string, { plan: string; diagramLimit: number }> = {};
 
-const PRICE_MAP = buildPriceMap();
+let PRICE_MAP: ReturnType<typeof buildPriceMap> = {};
 
 function initPlanConfig() {
+  PRICE_MAP = buildPriceMap();
   for (const [id, cfg] of Object.entries(buildPlanConfig())) {
     PLAN_CONFIG[id] = cfg;
   }
