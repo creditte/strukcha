@@ -24,6 +24,7 @@ import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
 import {
   getRelationshipEdgeLabel,
   isDirectionValid,
+  storedRelationshipOptions,
   isDiscretionaryTrustBeneficiary,
 } from "@/lib/relationshipRules";
 import type { ContextMenuState } from "./StructureContextMenu";
@@ -132,7 +133,7 @@ function buildEdges(
       const from = entityMap.get(r.from_entity_id);
       const to = entityMap.get(r.to_entity_id);
       if (from && to) {
-        invalid = !isDirectionValid(r.relationship_type, from.entity_type, to.entity_type);
+        invalid = !isDirectionValid(r.relationship_type, from.entity_type, to.entity_type, storedRelationshipOptions(r));
       }
     }
 

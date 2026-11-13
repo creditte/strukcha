@@ -36,6 +36,48 @@
       "when": 1792768518342,
       "tag": "0004_restrict_get_user_tenant_id_to_self",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794500208264,
+      "tag": "0005_xpm_generic_trust_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794500227985,
+      "tag": "0006_xpm_batch_functions_use_xpm_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794500279597,
+      "tag": "0007_xpm_policy_helpers_match_evaluate_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794501305363,
+      "tag": "0008_health_review_exclude_archived",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794501391754,
+      "tag": "0009_health_review_inactive_only_when_all_archived",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794570629707,
+      "tag": "0010_preserve_xpm_business_structure_label",
+      "breakpoints": true
     }
   ]
 }

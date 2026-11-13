@@ -21,7 +21,7 @@
  */
 
 import type { EntityNode, RelationshipEdge } from "@/hooks/useStructureData";
-import { isDirectionValid, getDirectionError, getRelationshipLabel } from "@/lib/relationshipRules";
+import { isDirectionValid, getDirectionError, getRelationshipLabel, storedRelationshipOptions } from "@/lib/relationshipRules";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -160,7 +160,7 @@ export function groupIssuesBySeverity(issues: ScoringIssue[]): { severity: Issue
 
 // ── Type helpers ───────────────────────────────────────────────────
 
-/** Classified trust types (generic "Trust" must be classified first). */
+/** Specific trust types with existing role-completeness checks; plain Trust is also a valid classification. */
 const CLASSIFIED_TRUST_TYPES = new Set([
   "trust_discretionary", "trust_unit", "trust_hybrid", "trust_bare",
   "trust_testamentary", "trust_deceased_estate", "trust_family", "smsf",
@@ -276,8 +276,6 @@ export function computeHealthScoreV2(
 
     if (t === "Unclassified")
       push("unclassified", `"${e.name}" has no entity type recorded. Classify it to complete the structure data.`, ref);
-    else if (t === "Trust")
-      push("unclassified", `"${e.name}" is recorded as a generic trust. Choose the trust type to complete the structure data.`, ref);
 
     if (!allRelated.has(e.id))
       push("orphan_entity", `"${e.name}" has no relationships recorded.`, ref);
@@ -368,8 +366,8 @@ export function computeHealthScoreV2(
   for (const rel of relationships) {
     const from = entityMap.get(rel.from_entity_id);
     const to = entityMap.get(rel.to_entity_id);
-    if (from && to && !isDirectionValid(rel.relationship_type, from.entity_type, to.entity_type)) {
-      const err = getDirectionError(rel.relationship_type, from.entity_type, to.entity_type);
+    if (from && to && !isDirectionValid(rel.relationship_type, from.entity_type, to.entity_type, storedRelationshipOptions(rel))) {
+      const err = getDirectionError(rel.relationship_type, from.entity_type, to.entity_type, storedRelationshipOptions(rel));
       push("invalid_relationship_direction",
         `${getRelationshipLabel(rel.relationship_type)} link "${from.name}" (${from.entity_type}) → "${to.name}" (${to.entity_type}) contradicts the relationship rules. ${err ?? ""}`.trim(),
         { entity_id: from.id, entity_name: from.name, relationship_id: rel.id });

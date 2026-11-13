@@ -35,6 +35,10 @@ export default function EntityInfoFields({ entity }: Props) {
 
   const fields: { label: string; value: React.ReactNode }[] = [];
 
+  if (entity.xpm_business_structure_label) {
+    fields.push({ label: "XPM Business Structure", value: <span className="text-xs break-words text-right min-w-0">{entity.xpm_business_structure_label}</span> });
+  }
+
   if (entity.tfn) {
     fields.push({
       label: "TFN",
@@ -88,8 +92,8 @@ export default function EntityInfoFields({ entity }: Props) {
   return (
     <div className="space-y-1.5 rounded-md border p-3 bg-muted/30">
       {fields.map((f) => (
-        <div key={f.label} className="flex items-center justify-between">
-          <p className="text-[11px] font-medium text-muted-foreground">{f.label}</p>
+        <div key={f.label} className="flex items-center justify-between gap-3">
+          <p className="text-[11px] font-medium text-muted-foreground shrink-0">{f.label}</p>
           {f.value}
         </div>
       ))}

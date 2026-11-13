@@ -6,6 +6,7 @@ export const ENTITY_TYPES = [
   "Partnership",
   "Sole Trader",
   "Incorporated Association/Club",
+  "Trust",
   "trust_discretionary",
   "trust_unit",
   "trust_hybrid",
@@ -35,7 +36,6 @@ export const ENTITY_TYPE_LABELS: Record<string, string> = {
   trust_family: "Family Trust",
   smsf: "SMSF",
   Unclassified: "Unclassified",
-  // Legacy value (should not appear after migration)
   Trust: "Trust",
 };
 

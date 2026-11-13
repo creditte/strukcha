@@ -55,10 +55,12 @@ describe("missing roles", () => {
       expect(i?.message).toContain("is recorded in strukcha");
     }
   });
-  it("generic Trust gets classification review, not subtype checks", () => {
+  it("plain Trust is classified without subtype checks or the 3-point deduction", () => {
     const h = computeHealthScoreV2([ent("T", "Trust")], []);
-    expect(codes(h)).toContain("unclassified");
+    expect(codes(h)).not.toContain("unclassified");
     expect(codes(h)).not.toContain("missing_trustee");
+    expect(h.structuralScore).toBe(18); // Only the existing 2-point disconnected-entity deduction.
+    expect(h.score).toBe(98);
   });
   it("Beneficiary / Appointor / Spouse are not required for export", () => {
     const h = computeHealthScoreV2([ent("T", "trust_discretionary")], []);
